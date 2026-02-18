@@ -59,7 +59,7 @@ function AppContent() {
 
       {showQuickCreate && (
         <TaskModal
-          defaultStatus="todo"
+          defaultStatus="backlog"
           onClose={() => setShowQuickCreate(false)}
         />
       )}

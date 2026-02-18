@@ -335,7 +335,7 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
 
       {showSubtaskModal && (
         <TaskModal
-          defaultStatus="todo"
+          defaultStatus="backlog"
           parentId={task.id}
           onClose={() => setShowSubtaskModal(false)}
         />
