@@ -95,6 +95,19 @@
   border-radius: 4px;
 }
 
+.drop-indicator {
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #6366f1, transparent);
+  border-radius: 2px;
+  margin: 2px 0;
+  animation: dropPulse 1s ease infinite;
+}
+
+@keyframes dropPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
 .column-empty {
   display: flex;
   align-items: center;

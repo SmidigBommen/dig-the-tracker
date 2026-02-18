@@ -7,7 +7,7 @@ import TaskDetailModal from './TaskDetailModal.tsx'
 import './KanbanBoard.css'
 
 export default function KanbanBoard() {
-  const { state, getFilteredTasks, moveTask } = useTaskContext()
+  const { state, getFilteredTasks, moveTask, reorderTask } = useTaskContext()
   const [createModalStatus, setCreateModalStatus] = useState<TaskStatus | null>(null)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
 
@@ -25,6 +25,7 @@ export default function KanbanBoard() {
             tasks={getFilteredTasks(column.id)}
             allTasks={state.tasks}
             onDrop={(taskId) => handleDrop(taskId, column.id)}
+            onReorder={(taskId, targetIndex) => reorderTask(taskId, column.id, targetIndex)}
             onOpenTask={(task) => setSelectedTask(task)}
             onAddTask={() => setCreateModalStatus(column.id)}
           />

@@ -25,6 +25,7 @@ type TaskAction =
   | { type: 'MOVE_TASK'; payload: { id: string; status: TaskStatus } }
   | { type: 'ADD_COMMENT'; payload: { taskId: string; text: string; author: string } }
   | { type: 'DELETE_COMMENT'; payload: { taskId: string; commentId: string } }
+  | { type: 'REORDER_TASK'; payload: { taskId: string; status: TaskStatus; targetIndex: number } }
   | { type: 'SET_SEARCH'; payload: string }
   | { type: 'SET_FILTER_PRIORITY'; payload: TaskPriority | 'all' }
   | { type: 'SET_VIEW'; payload: 'board' | 'reports' | 'profile' }
@@ -133,6 +134,29 @@ function taskReducer(state: TaskState, action: TaskAction): TaskState {
             : t
         ),
       }
+    case 'REORDER_TASK': {
+      const { taskId, status, targetIndex } = action.payload
+      const task = state.tasks.find((t) => t.id === taskId)
+      if (!task) return state
+      // Remove task from current position
+      const remaining = state.tasks.filter((t) => t.id !== taskId)
+      const updatedTask = { ...task, status, updatedAt: now(), completedAt: status === 'done' ? (task.completedAt ?? now()) : undefined }
+      // Get tasks in the target status to find the insertion point
+      const tasksInStatus = remaining.filter((t) => t.status === status)
+      const clampedIndex = Math.min(targetIndex, tasksInStatus.length)
+      // Find the actual index in the full array to insert at
+      let insertAt: number
+      if (clampedIndex >= tasksInStatus.length) {
+        // Insert after the last task in this status
+        const lastInStatus = tasksInStatus[tasksInStatus.length - 1]
+        insertAt = lastInStatus ? remaining.indexOf(lastInStatus) + 1 : remaining.length
+      } else {
+        // Insert before the task at clampedIndex
+        insertAt = remaining.indexOf(tasksInStatus[clampedIndex])
+      }
+      const tasks = [...remaining.slice(0, insertAt), updatedTask, ...remaining.slice(insertAt)]
+      return { ...state, tasks }
+    }
     case 'SET_SEARCH':
       return { ...state, searchQuery: action.payload }
     case 'SET_FILTER_PRIORITY':
@@ -330,6 +354,7 @@ interface TaskContextType {
   updateTask: (id: string, updates: Partial<Task>) => void
   deleteTask: (id: string) => void
   moveTask: (id: string, status: TaskStatus) => void
+  reorderTask: (taskId: string, status: TaskStatus, targetIndex: number) => void
   addComment: (taskId: string, text: string, author: string) => void
   deleteComment: (taskId: string, commentId: string) => void
   setSearch: (query: string) => void
@@ -375,6 +400,11 @@ export function TaskProvider({ children, initialTasks, initialProfile }: { child
   const moveTask = useCallback(
     (id: string, status: TaskStatus) =>
       dispatch({ type: 'MOVE_TASK', payload: { id, status } }),
+    []
+  )
+  const reorderTask = useCallback(
+    (taskId: string, status: TaskStatus, targetIndex: number) =>
+      dispatch({ type: 'REORDER_TASK', payload: { taskId, status, targetIndex } }),
     []
   )
   const addComment = useCallback(
@@ -437,6 +467,7 @@ export function TaskProvider({ children, initialTasks, initialProfile }: { child
         updateTask,
         deleteTask,
         moveTask,
+        reorderTask,
         addComment,
         deleteComment,
         setSearch,

@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from 'react'
+import { useState, useRef, type DragEvent } from 'react'
 import type { Task, Column } from '../types/index.ts'
 import TaskCard from './TaskCard.tsx'
 import './KanbanColumn.css'
@@ -8,29 +8,49 @@ interface KanbanColumnProps {
   tasks: Task[]
   allTasks: Task[]
   onDrop: (taskId: string) => void
+  onReorder: (taskId: string, targetIndex: number) => void
   onOpenTask: (task: Task) => void
   onAddTask: () => void
 }
 
-export default function KanbanColumn({ column, tasks, allTasks, onDrop, onOpenTask, onAddTask }: KanbanColumnProps) {
+export default function KanbanColumn({ column, tasks, allTasks, onDrop, onReorder, onOpenTask, onAddTask }: KanbanColumnProps) {
   const [isDragOver, setIsDragOver] = useState(false)
+  const [dropIndex, setDropIndex] = useState<number | null>(null)
+  const tasksRef = useRef<HTMLDivElement>(null)
+
+  function getDropIndex(e: DragEvent<HTMLDivElement>): number {
+    const container = tasksRef.current
+    if (!container) return tasks.length
+    const cards = Array.from(container.querySelectorAll('.task-card'))
+    for (let i = 0; i < cards.length; i++) {
+      const rect = cards[i].getBoundingClientRect()
+      const midY = rect.top + rect.height / 2
+      if (e.clientY < midY) return i
+    }
+    return tasks.length
+  }
 
   function handleDragOver(e: DragEvent<HTMLDivElement>) {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     setIsDragOver(true)
+    setDropIndex(getDropIndex(e))
   }
 
   function handleDragLeave(e: DragEvent<HTMLDivElement>) {
     if (e.currentTarget.contains(e.relatedTarget as Node)) return
     setIsDragOver(false)
+    setDropIndex(null)
   }
 
   function handleDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault()
     setIsDragOver(false)
     const taskId = e.dataTransfer.getData('text/plain')
-    if (taskId) onDrop(taskId)
+    if (!taskId) return
+    const idx = getDropIndex(e)
+    setDropIndex(null)
+    onReorder(taskId, idx)
   }
 
   return (
@@ -58,16 +78,20 @@ export default function KanbanColumn({ column, tasks, allTasks, onDrop, onOpenTa
         </button>
       </div>
 
-      <div className="column-tasks">
-        {tasks.map((task) => {
+      <div className="column-tasks" ref={tasksRef}>
+        {tasks.map((task, i) => {
           const parentTitle = task.parentId
             ? allTasks.find((t) => t.id === task.parentId)?.title
             : undefined
           return (
-            <TaskCard key={task.id} task={task} parentTitle={parentTitle} onOpen={onOpenTask} />
+            <div key={task.id}>
+              {isDragOver && dropIndex === i && <div className="drop-indicator" />}
+              <TaskCard task={task} parentTitle={parentTitle} onOpen={onOpenTask} />
+            </div>
           )
         })}
-        {tasks.length === 0 && (
+        {isDragOver && dropIndex === tasks.length && <div className="drop-indicator" />}
+        {tasks.length === 0 && !isDragOver && (
           <div className="column-empty">
             <p>No tasks</p>
           </div>
