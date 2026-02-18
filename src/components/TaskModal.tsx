@@ -10,7 +10,10 @@ interface TaskModalProps {
 }
 
 export default function TaskModal({ defaultStatus, parentId, onClose }: TaskModalProps) {
-  const { addTask } = useTaskContext()
+  const { state, addTask } = useTaskContext()
+  const { profile } = state
+  const currentUser = profile.displayName || profile.username
+
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<TaskPriority>('medium')
@@ -35,6 +38,7 @@ export default function TaskModal({ defaultStatus, parentId, onClose }: TaskModa
       status: defaultStatus,
       priority,
       assignee: assignee.trim(),
+      createdBy: currentUser,
       tags,
       parentId: parentId || undefined,
       subtaskIds: [],
@@ -53,6 +57,11 @@ export default function TaskModal({ defaultStatus, parentId, onClose }: TaskModa
           <h2>{parentId ? 'Add Subtask' : 'Create New Task'}</h2>
           <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
         </div>
+        {currentUser && (
+          <div className="modal-creator-info">
+            Creating as <strong>{currentUser}</strong>
+          </div>
+        )}
         <form onSubmit={handleSubmit} noValidate>
           <div className={`form-group ${getFieldError('title') ? 'has-error' : ''}`}>
             <label htmlFor="task-title">Title *</label>
@@ -96,13 +105,25 @@ export default function TaskModal({ defaultStatus, parentId, onClose }: TaskModa
 
             <div className="form-group">
               <label htmlFor="task-assignee">Assignee</label>
-              <input
-                id="task-assignee"
-                type="text"
-                value={assignee}
-                onChange={(e) => setAssignee(e.target.value)}
-                placeholder="Assign to..."
-              />
+              <div className="assignee-field">
+                <input
+                  id="task-assignee"
+                  type="text"
+                  value={assignee}
+                  onChange={(e) => setAssignee(e.target.value)}
+                  placeholder="Assign to..."
+                />
+                {currentUser && assignee !== currentUser && (
+                  <button
+                    type="button"
+                    className="assign-me-btn"
+                    onClick={() => setAssignee(currentUser)}
+                    title="Assign to me"
+                  >
+                    Me
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

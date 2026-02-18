@@ -13,6 +13,8 @@ interface TaskDetailModalProps {
 export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProps) {
   const { state, updateTask, deleteTask, addComment, deleteComment, moveTask } = useTaskContext()
   const task = state.tasks.find((t) => t.id === taskId)
+  const { profile } = state
+  const currentUser = profile.displayName || profile.username
 
   const [isEditing, setIsEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(task?.title ?? '')
@@ -23,7 +25,6 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
   const [editErrors, setEditErrors] = useState<ValidationError[]>([])
 
   const [commentText, setCommentText] = useState('')
-  const [commentAuthor, setCommentAuthor] = useState('')
   const [commentErrors, setCommentErrors] = useState<ValidationError[]>([])
 
   const [showSubtaskModal, setShowSubtaskModal] = useState(false)
@@ -55,15 +56,16 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
 
   function handleAddComment(e: FormEvent) {
     e.preventDefault()
+    const author = currentUser
     const validationErrors = validateComment(commentText)
-    if (!commentAuthor.trim()) {
-      validationErrors.push({ field: 'author', message: 'Author name is required' })
+    if (!author) {
+      validationErrors.push({ field: 'author', message: 'Set up your profile to comment' })
     }
     if (validationErrors.length > 0) {
       setCommentErrors(validationErrors)
       return
     }
-    addComment(task!.id, commentText.trim(), commentAuthor.trim())
+    addComment(task!.id, commentText.trim(), author)
     setCommentText('')
     setCommentErrors([])
   }
@@ -138,7 +140,12 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
               </div>
               <div className="form-group">
                 <label htmlFor="edit-assignee">Assignee</label>
-                <input id="edit-assignee" type="text" value={editAssignee} onChange={(e) => setEditAssignee(e.target.value)} />
+                <div className="assignee-field">
+                  <input id="edit-assignee" type="text" value={editAssignee} onChange={(e) => setEditAssignee(e.target.value)} />
+                  {currentUser && editAssignee !== currentUser && (
+                    <button type="button" className="assign-me-btn" onClick={() => setEditAssignee(currentUser)} title="Assign to me">Me</button>
+                  )}
+                </div>
               </div>
             </div>
             <div className="form-group">
@@ -181,12 +188,32 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
                 </div>
                 <div className="meta-item">
                   <span className="meta-label">Assignee</span>
-                  <span>{task.assignee || 'Unassigned'}</span>
+                  <div className="meta-assignee">
+                    <span>{task.assignee || 'Unassigned'}</span>
+                    {currentUser && task.assignee !== currentUser && (
+                      <button
+                        className="assign-me-link"
+                        onClick={() => updateTask(task.id, { assignee: currentUser })}
+                      >
+                        Assign to me
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="meta-item">
                   <span className="meta-label">Created</span>
                   <span>{new Date(task.createdAt).toLocaleDateString()}</span>
                 </div>
+                <div className="meta-item">
+                  <span className="meta-label">Created by</span>
+                  <span className="created-by-value">{task.createdBy || 'Unknown'}</span>
+                </div>
+                {task.completedAt && (
+                  <div className="meta-item">
+                    <span className="meta-label">Completed</span>
+                    <span>{new Date(task.completedAt).toLocaleDateString()}</span>
+                  </div>
+                )}
               </div>
 
               {task.tags.length > 0 && (
@@ -261,6 +288,7 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
                     <div className="comment-header">
                       <span className="comment-avatar">{comment.author.charAt(0).toUpperCase()}</span>
                       <span className="comment-author">{comment.author}</span>
+                      {comment.author === currentUser && <span className="comment-you-badge">you</span>}
                       <span className="comment-time">{new Date(comment.createdAt).toLocaleString()}</span>
                       <button
                         className="comment-delete"
@@ -278,29 +306,28 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
                   <p className="no-comments">No comments yet. Start the conversation!</p>
                 )}
               </div>
-              <form className="comment-form" onSubmit={handleAddComment} noValidate>
-                <div className={`form-group ${getCommentError('author') ? 'has-error' : ''}`}>
-                  <input
-                    type="text"
-                    placeholder="Your name"
-                    value={commentAuthor}
-                    onChange={(e) => { setCommentAuthor(e.target.value); setCommentErrors(commentErrors.filter(err => err.field !== 'author')) }}
-                    className="comment-author-input"
-                  />
-                  {getCommentError('author') && <span className="field-error">{getCommentError('author')}</span>}
+              {currentUser ? (
+                <form className="comment-form" onSubmit={handleAddComment} noValidate>
+                  <div className="comment-as-info">
+                    Commenting as <strong>{currentUser}</strong>
+                  </div>
+                  <div className={`form-group ${getCommentError('text') ? 'has-error' : ''}`}>
+                    <textarea
+                      placeholder="Write a comment..."
+                      value={commentText}
+                      onChange={(e) => { setCommentText(e.target.value); setCommentErrors(commentErrors.filter(err => err.field !== 'text')) }}
+                      rows={2}
+                      maxLength={500}
+                    />
+                    {getCommentError('text') && <span className="field-error">{getCommentError('text')}</span>}
+                  </div>
+                  <button type="submit" className="btn btn-primary btn-sm">Post Comment</button>
+                </form>
+              ) : (
+                <div className="comment-form-disabled">
+                  <p>Set up your profile to leave comments.</p>
                 </div>
-                <div className={`form-group ${getCommentError('text') ? 'has-error' : ''}`}>
-                  <textarea
-                    placeholder="Write a comment..."
-                    value={commentText}
-                    onChange={(e) => { setCommentText(e.target.value); setCommentErrors(commentErrors.filter(err => err.field !== 'text')) }}
-                    rows={2}
-                    maxLength={500}
-                  />
-                  {getCommentError('text') && <span className="field-error">{getCommentError('text')}</span>}
-                </div>
-                <button type="submit" className="btn btn-primary btn-sm">Post Comment</button>
-              </form>
+              )}
             </div>
           </div>
         )}

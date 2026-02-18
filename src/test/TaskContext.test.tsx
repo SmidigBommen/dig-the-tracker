@@ -12,6 +12,7 @@ function createTestTask(overrides: Partial<Task> = {}): Task {
     status: 'todo',
     priority: 'medium',
     assignee: 'Tester',
+    createdBy: 'Tester',
     tags: ['test'],
     comments: [],
     createdAt: new Date().toISOString(),

@@ -206,6 +206,7 @@ const SAMPLE_TASKS: Task[] = [
     status: 'in-progress',
     priority: 'high',
     assignee: 'Alice',
+    createdBy: 'Alice',
     tags: ['design', 'frontend'],
     comments: [
       { id: 'c1', text: 'Started the wireframes, looking great!', author: 'Bob', createdAt: new Date(Date.now() - 86400000).toISOString() },
@@ -221,6 +222,7 @@ const SAMPLE_TASKS: Task[] = [
     status: 'done',
     priority: 'medium',
     assignee: 'Alice',
+    createdBy: 'Alice',
     tags: ['design'],
     comments: [],
     createdAt: new Date(Date.now() - 172800000).toISOString(),
@@ -236,6 +238,7 @@ const SAMPLE_TASKS: Task[] = [
     status: 'in-progress',
     priority: 'medium',
     assignee: 'Alice',
+    createdBy: 'Alice',
     tags: ['frontend'],
     comments: [],
     createdAt: new Date(Date.now() - 172800000).toISOString(),
@@ -250,6 +253,7 @@ const SAMPLE_TASKS: Task[] = [
     status: 'todo',
     priority: 'medium',
     assignee: 'Charlie',
+    createdBy: 'Bob',
     tags: ['devops'],
     comments: [],
     createdAt: new Date(Date.now() - 259200000).toISOString(),
@@ -263,6 +267,7 @@ const SAMPLE_TASKS: Task[] = [
     status: 'review',
     priority: 'urgent',
     assignee: 'Diana',
+    createdBy: 'Diana',
     tags: ['bug', 'auth'],
     comments: [
       { id: 'c2', text: 'Found the issue - refresh token was not being stored correctly.', author: 'Diana', createdAt: new Date(Date.now() - 7200000).toISOString() },
@@ -279,6 +284,7 @@ const SAMPLE_TASKS: Task[] = [
     status: 'backlog',
     priority: 'low',
     assignee: '',
+    createdBy: 'Charlie',
     tags: ['docs'],
     comments: [],
     createdAt: new Date(Date.now() - 432000000).toISOString(),
@@ -292,6 +298,7 @@ const SAMPLE_TASKS: Task[] = [
     status: 'done',
     priority: 'medium',
     assignee: 'Eve',
+    createdBy: 'Eve',
     tags: ['feature', 'ui'],
     comments: [
       { id: 'c4', text: 'Shipped! Looks beautiful.', author: 'Alice', createdAt: new Date(Date.now() - 86400000).toISOString() },
@@ -308,6 +315,7 @@ const SAMPLE_TASKS: Task[] = [
     status: 'todo',
     priority: 'high',
     assignee: 'Bob',
+    createdBy: 'Bob',
     tags: ['performance', 'backend'],
     comments: [],
     createdAt: new Date(Date.now() - 518400000).toISOString(),
@@ -334,7 +342,7 @@ interface TaskContextType {
 
 const TaskContext = createContext<TaskContextType | null>(null)
 
-export function TaskProvider({ children, initialTasks }: { children: ReactNode; initialTasks?: Task[] }) {
+export function TaskProvider({ children, initialTasks, initialProfile }: { children: ReactNode; initialTasks?: Task[]; initialProfile?: Partial<UserProfile> }) {
   const [state, dispatch] = useReducer(taskReducer, {
     tasks: initialTasks ?? SAMPLE_TASKS,
     searchQuery: '',
@@ -346,6 +354,7 @@ export function TaskProvider({ children, initialTasks }: { children: ReactNode; 
       email: '',
       displayName: '',
       avatarColor: '#6366f1',
+      ...initialProfile,
     },
   })
 

@@ -213,6 +213,45 @@
   font-size: 0.78rem;
 }
 
+.modal-creator-info {
+  padding: 8px 24px 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.modal-creator-info strong {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.assignee-field {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.assignee-field input {
+  flex: 1;
+}
+
+.assign-me-btn {
+  padding: 6px 10px;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.1);
+  color: rgba(99, 102, 241, 0.8);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.assign-me-btn:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
 @media (max-width: 640px) {
   .form-row {
     grid-template-columns: 1fr;

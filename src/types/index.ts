@@ -16,6 +16,7 @@ export interface Task {
   status: TaskStatus
   priority: TaskPriority
   assignee: string
+  createdBy: string
   tags: string[]
   comments: Comment[]
   createdAt: string

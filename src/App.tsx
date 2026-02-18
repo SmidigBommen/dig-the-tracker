@@ -27,10 +27,6 @@ function AppContent() {
         e.preventDefault()
         setView('board')
         break
-      case 'r':
-        e.preventDefault()
-        setView('reports')
-        break
       case 'p':
         e.preventDefault()
         setView('profile')
@@ -58,7 +54,6 @@ function AppContent() {
       <div className="shortcut-hint">
         <span><kbd>C</kbd> Create</span>
         <span><kbd>B</kbd> Board</span>
-        <span><kbd>R</kbd> Reports</span>
         <span><kbd>P</kbd> Profile</span>
       </div>
 

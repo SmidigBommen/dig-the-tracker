@@ -15,6 +15,7 @@ function createTestTask(overrides: Partial<Task> = {}): Task {
     status: 'todo',
     priority: 'medium',
     assignee: 'Tester',
+    createdBy: 'Tester',
     tags: ['test'],
     comments: [],
     createdAt: new Date().toISOString(),
@@ -24,9 +25,9 @@ function createTestTask(overrides: Partial<Task> = {}): Task {
   }
 }
 
-function renderWithProvider(component: React.ReactNode, initialTasks?: Task[]) {
+function renderWithProvider(component: React.ReactNode, initialTasks?: Task[], initialProfile?: { username?: string; email?: string; displayName?: string; avatarColor?: string }) {
   return render(
-    <TaskProvider initialTasks={initialTasks}>
+    <TaskProvider initialTasks={initialTasks} initialProfile={initialProfile}>
       {component}
     </TaskProvider>
   )
@@ -196,30 +197,40 @@ describe('Task Detail Modal', () => {
     expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1)
   })
 
-  it('can add comments', async () => {
+  it('can add comments when profile is set', async () => {
     const user = userEvent.setup()
     renderWithProvider(
       <KanbanBoard />,
-      [createTestTask({ id: '1', title: 'Comment Task', status: 'todo' })]
+      [createTestTask({ id: '1', title: 'Comment Task', status: 'todo' })],
+      { username: 'bob', displayName: 'Bob' }
     )
     await user.click(screen.getByText('Comment Task'))
-    await user.type(screen.getByPlaceholderText('Your name'), 'Bob')
     await user.type(screen.getByPlaceholderText('Write a comment...'), 'Great work!')
     await user.click(screen.getByText('Post Comment'))
     expect(screen.getByText('Great work!')).toBeInTheDocument()
-    expect(screen.getByText('Bob')).toBeInTheDocument()
+    expect(screen.getAllByText('Bob').length).toBeGreaterThanOrEqual(1)
   })
 
   it('validates empty comment', async () => {
     const user = userEvent.setup()
     renderWithProvider(
       <KanbanBoard />,
-      [createTestTask({ id: '1', title: 'Comment Task', status: 'todo' })]
+      [createTestTask({ id: '1', title: 'Comment Task', status: 'todo' })],
+      { username: 'bob', displayName: 'Bob' }
     )
     await user.click(screen.getByText('Comment Task'))
     await user.click(screen.getByText('Post Comment'))
     expect(screen.getByText('Comment text is required')).toBeInTheDocument()
-    expect(screen.getByText('Author name is required')).toBeInTheDocument()
+  })
+
+  it('disables comments when no profile is set', async () => {
+    const user = userEvent.setup()
+    renderWithProvider(
+      <KanbanBoard />,
+      [createTestTask({ id: '1', title: 'No Profile Task', status: 'todo' })]
+    )
+    await user.click(screen.getByText('No Profile Task'))
+    expect(screen.getByText('Set up your profile to leave comments.')).toBeInTheDocument()
   })
 
   it('deletes task with confirmation', async () => {
