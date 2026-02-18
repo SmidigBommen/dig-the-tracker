@@ -1,0 +1,22 @@
+.kanban-board {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.kanban-columns {
+  display: flex;
+  gap: 16px;
+  padding: 24px;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+@media (max-width: 768px) {
+  .kanban-columns {
+    padding: 12px;
+    gap: 12px;
+  }
+}
