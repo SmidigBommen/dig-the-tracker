@@ -1,0 +1,7 @@
+services:
+  dig-tracker:
+    build:
+      context: .
+      dockerfile: Containerfile
+    ports:
+      - "8080:8080"

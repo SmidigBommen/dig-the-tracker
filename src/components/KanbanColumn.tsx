@@ -13,7 +13,7 @@ interface KanbanColumnProps {
   onAddTask: () => void
 }
 
-export default function KanbanColumn({ column, tasks, allTasks, onDrop, onReorder, onOpenTask, onAddTask }: KanbanColumnProps) {
+export default function KanbanColumn({ column, tasks, allTasks, onDrop: _onDrop, onReorder, onOpenTask, onAddTask }: KanbanColumnProps) {
   const [isDragOver, setIsDragOver] = useState(false)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
   const tasksRef = useRef<HTMLDivElement>(null)

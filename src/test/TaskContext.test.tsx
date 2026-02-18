@@ -41,10 +41,10 @@ function TestComponent() {
           </li>
         ))}
       </ul>
-      <button onClick={() => addTask({ title: 'New Task', description: 'Desc', status: 'todo', priority: 'high', assignee: 'Alice', tags: ['new'], subtaskIds: [] })}>
+      <button onClick={() => addTask({ title: 'New Task', description: 'Desc', status: 'todo', priority: 'high', assignee: 'Alice', createdBy: 'Alice', tags: ['new'], subtaskIds: [] })}>
         Add Task
       </button>
-      <button onClick={() => addTask({ title: 'Subtask', description: 'Sub', status: 'todo', priority: 'low', assignee: '', tags: [], parentId: 'test-1', subtaskIds: [] })}>
+      <button onClick={() => addTask({ title: 'Subtask', description: 'Sub', status: 'todo', priority: 'low', assignee: '', createdBy: 'Tester', tags: [], parentId: 'test-1', subtaskIds: [] })}>
         Add Subtask
       </button>
       <button onClick={() => updateTask('test-1', { title: 'Updated Title' })}>

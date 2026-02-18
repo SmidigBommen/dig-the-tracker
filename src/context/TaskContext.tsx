@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useReducer, useCallback, useEffect, type ReactNode } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import type { Task, TaskStatus, TaskPriority, ValidationError } from '../types/index.ts'
 
@@ -222,6 +222,39 @@ export function validateComment(text: string): ValidationError[] {
   return errors
 }
 
+const STORAGE_KEY = 'dig-tracker-state'
+
+interface PersistedState {
+  tasks: Task[]
+  profile: UserProfile
+  showSubtasksOnBoard: boolean
+}
+
+function loadState(): PersistedState | undefined {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return undefined
+    const parsed = JSON.parse(raw) as PersistedState
+    if (!Array.isArray(parsed.tasks)) return undefined
+    return parsed
+  } catch {
+    return undefined
+  }
+}
+
+function saveState(state: TaskState): void {
+  try {
+    const persisted: PersistedState = {
+      tasks: state.tasks,
+      profile: state.profile,
+      showSubtasksOnBoard: state.showSubtasksOnBoard,
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted))
+  } catch {
+    // Storage full or unavailable — silently ignore
+  }
+}
+
 const SAMPLE_TASKS: Task[] = [
   {
     id: 'task-1',
@@ -368,13 +401,14 @@ interface TaskContextType {
 const TaskContext = createContext<TaskContextType | null>(null)
 
 export function TaskProvider({ children, initialTasks, initialProfile }: { children: ReactNode; initialTasks?: Task[]; initialProfile?: Partial<UserProfile> }) {
+  const saved = initialTasks ? undefined : loadState()
   const [state, dispatch] = useReducer(taskReducer, {
-    tasks: initialTasks ?? SAMPLE_TASKS,
+    tasks: initialTasks ?? saved?.tasks ?? SAMPLE_TASKS,
     searchQuery: '',
     filterPriority: 'all',
     currentView: 'board',
-    showSubtasksOnBoard: false,
-    profile: {
+    showSubtasksOnBoard: saved?.showSubtasksOnBoard ?? false,
+    profile: saved?.profile ?? {
       username: '',
       email: '',
       displayName: '',
@@ -382,6 +416,10 @@ export function TaskProvider({ children, initialTasks, initialProfile }: { child
       ...initialProfile,
     },
   })
+
+  useEffect(() => {
+    saveState(state)
+  }, [state.tasks, state.profile, state.showSubtasksOnBoard])
 
   const addTask = useCallback(
     (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) =>
