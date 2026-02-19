@@ -1,7 +1,8 @@
 import { createContext, useContext, useReducer, useCallback, useEffect, type ReactNode } from 'react'
 import { v4 as uuidv4 } from 'uuid'
-import type { Task, TaskStatus, TaskPriority, ValidationError, Column } from '../types/index.ts'
+import type { Task, TaskStatus, TaskPriority, Column } from '../types/index.ts'
 import { DEFAULT_COLUMNS, PROTECTED_COLUMN_IDS } from '../types/index.ts'
+import { formatTaskKey } from './taskUtils.ts'
 
 export interface UserProfile {
   username: string
@@ -13,6 +14,7 @@ export interface UserProfile {
 interface TaskState {
   tasks: Task[]
   columns: Column[]
+  nextTaskNumber: number
   searchQuery: string
   filterPriority: TaskPriority | 'all'
   currentView: 'board' | 'reports' | 'profile'
@@ -21,7 +23,7 @@ interface TaskState {
 }
 
 type TaskAction =
-  | { type: 'ADD_TASK'; payload: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments'> }
+  | { type: 'ADD_TASK'; payload: Omit<Task, 'id' | 'number' | 'createdAt' | 'updatedAt' | 'comments'> }
   | { type: 'UPDATE_TASK'; payload: { id: string; updates: Partial<Task> } }
   | { type: 'DELETE_TASK'; payload: string }
   | { type: 'MOVE_TASK'; payload: { id: string; status: TaskStatus } }
@@ -53,9 +55,11 @@ function taskReducer(state: TaskState, action: TaskAction): TaskState {
   switch (action.type) {
     case 'ADD_TASK': {
       const newId = uuidv4()
+      const taskNumber = state.nextTaskNumber
       const newTask: Task = {
         ...action.payload,
         id: newId,
+        number: taskNumber,
         comments: [],
         subtaskIds: action.payload.subtaskIds ?? [],
         createdAt: now(),
@@ -70,7 +74,7 @@ function taskReducer(state: TaskState, action: TaskAction): TaskState {
             : t
         )
       }
-      return { ...state, tasks }
+      return { ...state, tasks, nextTaskNumber: taskNumber + 1 }
     }
     case 'UPDATE_TASK':
       return {
@@ -211,61 +215,12 @@ function taskReducer(state: TaskState, action: TaskAction): TaskState {
   }
 }
 
-export function validateTask(task: {
-  title?: string
-  description?: string
-}): ValidationError[] {
-  const errors: ValidationError[] = []
-  if (!task.title || task.title.trim().length === 0) {
-    errors.push({ field: 'title', message: 'Title is required' })
-  } else if (task.title.trim().length < 3) {
-    errors.push({ field: 'title', message: 'Title must be at least 3 characters' })
-  } else if (task.title.trim().length > 100) {
-    errors.push({ field: 'title', message: 'Title must be less than 100 characters' })
-  }
-  if (task.description && task.description.trim().length > 1000) {
-    errors.push({ field: 'description', message: 'Description must be less than 1000 characters' })
-  }
-  return errors
-}
-
-export function validateProfile(profile: { username?: string; email?: string; displayName?: string }): ValidationError[] {
-  const errors: ValidationError[] = []
-  if (!profile.username || profile.username.trim().length === 0) {
-    errors.push({ field: 'username', message: 'Username is required' })
-  } else if (profile.username.trim().length < 2) {
-    errors.push({ field: 'username', message: 'Username must be at least 2 characters' })
-  } else if (profile.username.trim().length > 30) {
-    errors.push({ field: 'username', message: 'Username must be less than 30 characters' })
-  } else if (!/^[a-zA-Z0-9_.-]+$/.test(profile.username.trim())) {
-    errors.push({ field: 'username', message: 'Username can only contain letters, numbers, dots, hyphens, and underscores' })
-  }
-  if (!profile.email || profile.email.trim().length === 0) {
-    errors.push({ field: 'email', message: 'Email is required' })
-  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email.trim())) {
-    errors.push({ field: 'email', message: 'Please enter a valid email address' })
-  }
-  if (profile.displayName && profile.displayName.trim().length > 50) {
-    errors.push({ field: 'displayName', message: 'Display name must be less than 50 characters' })
-  }
-  return errors
-}
-
-export function validateComment(text: string): ValidationError[] {
-  const errors: ValidationError[] = []
-  if (!text || text.trim().length === 0) {
-    errors.push({ field: 'text', message: 'Comment text is required' })
-  } else if (text.trim().length > 500) {
-    errors.push({ field: 'text', message: 'Comment must be less than 500 characters' })
-  }
-  return errors
-}
-
 const STORAGE_KEY = 'dig-tracker-state'
 
 interface PersistedState {
   tasks: Task[]
   columns?: Column[]
+  nextTaskNumber?: number
   profile: UserProfile
   showSubtasksOnBoard: boolean
 }
@@ -276,6 +231,23 @@ function loadState(): PersistedState | undefined {
     if (!raw) return undefined
     const parsed = JSON.parse(raw) as PersistedState
     if (!Array.isArray(parsed.tasks)) return undefined
+    // Migrate tasks missing the `number` field
+    let maxNumber = 0
+    const needsMigration = parsed.tasks.some((t) => t.number == null)
+    if (needsMigration) {
+      parsed.tasks = parsed.tasks.map((t, i) => {
+        if (t.number == null) {
+          const num = i + 1
+          if (num > maxNumber) maxNumber = num
+          return { ...t, number: num }
+        }
+        if (t.number > maxNumber) maxNumber = t.number
+        return t
+      })
+      if (parsed.nextTaskNumber == null || parsed.nextTaskNumber <= maxNumber) {
+        parsed.nextTaskNumber = maxNumber + 1
+      }
+    }
     return parsed
   } catch {
     return undefined
@@ -287,6 +259,7 @@ function saveState(state: TaskState): void {
     const persisted: PersistedState = {
       tasks: state.tasks,
       columns: state.columns,
+      nextTaskNumber: state.nextTaskNumber,
       profile: state.profile,
       showSubtasksOnBoard: state.showSubtasksOnBoard,
     }
@@ -299,6 +272,7 @@ function saveState(state: TaskState): void {
 const SAMPLE_TASKS: Task[] = [
   {
     id: 'task-1',
+    number: 1,
     title: 'Design new landing page',
     description: 'Create a modern, responsive landing page with hero section, features grid, and testimonials.',
     status: 'in-progress',
@@ -315,6 +289,7 @@ const SAMPLE_TASKS: Task[] = [
   },
   {
     id: 'task-1a',
+    number: 2,
     title: 'Create hero section mockup',
     description: 'Design the hero section with gradient background and CTA.',
     status: 'done',
@@ -331,6 +306,7 @@ const SAMPLE_TASKS: Task[] = [
   },
   {
     id: 'task-1b',
+    number: 3,
     title: 'Build features grid component',
     description: 'Implement the responsive features grid.',
     status: 'in-progress',
@@ -346,6 +322,7 @@ const SAMPLE_TASKS: Task[] = [
   },
   {
     id: 'task-2',
+    number: 4,
     title: 'Set up CI/CD pipeline',
     description: 'Configure GitHub Actions for automated testing and deployment.',
     status: 'todo',
@@ -360,6 +337,7 @@ const SAMPLE_TASKS: Task[] = [
   },
   {
     id: 'task-3',
+    number: 5,
     title: 'Fix authentication bug',
     description: 'Users are being logged out after 5 minutes. Need to fix token refresh logic.',
     status: 'review',
@@ -377,6 +355,7 @@ const SAMPLE_TASKS: Task[] = [
   },
   {
     id: 'task-4',
+    number: 6,
     title: 'Write API documentation',
     description: 'Document all REST API endpoints with examples using OpenAPI spec.',
     status: 'backlog',
@@ -391,6 +370,7 @@ const SAMPLE_TASKS: Task[] = [
   },
   {
     id: 'task-5',
+    number: 7,
     title: 'Implement dark mode',
     description: 'Add dark mode toggle with system preference detection and local storage persistence.',
     status: 'done',
@@ -408,6 +388,7 @@ const SAMPLE_TASKS: Task[] = [
   },
   {
     id: 'task-6',
+    number: 8,
     title: 'Optimize database queries',
     description: 'Profile slow queries and add proper indexes to improve performance.',
     status: 'todo',
@@ -424,7 +405,7 @@ const SAMPLE_TASKS: Task[] = [
 
 interface TaskContextType {
   state: TaskState
-  addTask: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) => void
+  addTask: (task: Omit<Task, 'id' | 'number' | 'createdAt' | 'updatedAt' | 'comments'>) => void
   updateTask: (id: string, updates: Partial<Task>) => void
   deleteTask: (id: string) => void
   moveTask: (id: string, status: TaskStatus) => void
@@ -446,9 +427,14 @@ const TaskContext = createContext<TaskContextType | null>(null)
 
 export function TaskProvider({ children, initialTasks, initialProfile }: { children: ReactNode; initialTasks?: Task[]; initialProfile?: Partial<UserProfile> }) {
   const saved = initialTasks ? undefined : loadState()
+  const tasks = initialTasks ?? saved?.tasks ?? SAMPLE_TASKS
+  const defaultNextNumber = tasks.length > 0
+    ? Math.max(...tasks.map((t) => t.number ?? 0)) + 1
+    : 1
   const [state, dispatch] = useReducer(taskReducer, {
-    tasks: initialTasks ?? saved?.tasks ?? SAMPLE_TASKS,
+    tasks,
     columns: saved?.columns ?? DEFAULT_COLUMNS,
+    nextTaskNumber: saved?.nextTaskNumber ?? defaultNextNumber,
     searchQuery: '',
     filterPriority: 'all',
     currentView: 'board',
@@ -464,10 +450,10 @@ export function TaskProvider({ children, initialTasks, initialProfile }: { child
 
   useEffect(() => {
     saveState(state)
-  }, [state.tasks, state.columns, state.profile, state.showSubtasksOnBoard])
+  }, [state])
 
   const addTask = useCallback(
-    (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) =>
+    (task: Omit<Task, 'id' | 'number' | 'createdAt' | 'updatedAt' | 'comments'>) =>
       dispatch({ type: 'ADD_TASK', payload: task }),
     []
   )
@@ -541,12 +527,16 @@ export function TaskProvider({ children, initialTasks, initialProfile }: { child
         if (task.status !== status) return false
         // Only show subtasks on board when toggle is on
         if (task.parentId && !state.showSubtasksOnBoard) return false
-        if (
-          state.searchQuery &&
-          !task.title.toLowerCase().includes(state.searchQuery.toLowerCase()) &&
-          !task.description.toLowerCase().includes(state.searchQuery.toLowerCase())
-        )
-          return false
+        if (state.searchQuery) {
+          const q = state.searchQuery.toLowerCase()
+          const taskKey = formatTaskKey(task.number).toLowerCase()
+          if (
+            !task.title.toLowerCase().includes(q) &&
+            !task.description.toLowerCase().includes(q) &&
+            !taskKey.includes(q)
+          )
+            return false
+        }
         if (state.filterPriority !== 'all' && task.priority !== state.filterPriority)
           return false
         return true

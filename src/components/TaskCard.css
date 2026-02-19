@@ -57,9 +57,22 @@
   letter-spacing: 0.02em;
 }
 
+.task-card-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .task-comment-count {
   font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.35);
+}
+
+.task-key-badge {
+  font-size: 0.65rem;
+  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', monospace;
+  color: rgba(255, 255, 255, 0.3);
+  font-weight: 500;
 }
 
 .task-card-title {

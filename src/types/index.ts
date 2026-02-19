@@ -11,6 +11,7 @@ export interface Comment {
 
 export interface Task {
   id: string
+  number: number
   title: string
   description: string
   status: TaskStatus

@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import type { TaskPriority, TaskStatus, ValidationError } from '../types/index.ts'
 import { PRIORITY_CONFIG } from '../types/index.ts'
-import { useTaskContext, validateTask, validateComment } from '../context/TaskContext.tsx'
+import { useTaskContext } from '../context/TaskContext.tsx'
+import { validateTask, validateComment, formatTaskKey } from '../context/taskUtils.ts'
 import TaskModal from './TaskModal.tsx'
 import './TaskDetailModal.css'
 
@@ -99,7 +100,7 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
                 ↑ {parentTask.title.slice(0, 30)}{parentTask.title.length > 30 ? '...' : ''}
               </button>
             )}
-            <span className="task-id-badge">#{task.id.slice(0, 6)}</span>
+            <span className="task-id-badge">{formatTaskKey(task.number)}</span>
           </div>
           <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
         </div>

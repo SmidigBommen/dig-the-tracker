@@ -10,6 +10,7 @@ import ReportsPage from '../components/ReportsPage.tsx'
 function createTestTask(overrides: Partial<Task> = {}): Task {
   return {
     id: 'test-1',
+    number: 1,
     title: 'Test Task',
     description: 'Test Description',
     status: 'todo',
@@ -42,8 +43,8 @@ describe('Header', () => {
 
   it('shows task counts', () => {
     renderWithProvider(<Header />, [
-      createTestTask({ id: '1', status: 'todo' }),
-      createTestTask({ id: '2', status: 'done' }),
+      createTestTask({ id: '1', number: 1, status: 'todo' }),
+      createTestTask({ id: '2', number: 2, status: 'done' }),
     ])
     expect(screen.getByText('2 tasks')).toBeInTheDocument()
     expect(screen.getByText('1 done')).toBeInTheDocument()
@@ -96,8 +97,8 @@ describe('KanbanBoard', () => {
     renderWithProvider(
       <KanbanBoard />,
       [
-        createTestTask({ id: '1', title: 'Todo Task', status: 'todo' }),
-        createTestTask({ id: '2', title: 'Done Task', status: 'done' }),
+        createTestTask({ id: '1', number: 1, title: 'Todo Task', status: 'todo' }),
+        createTestTask({ id: '2', number: 2, title: 'Done Task', status: 'done' }),
       ]
     )
     expect(screen.getByText('Todo Task')).toBeInTheDocument()
@@ -252,8 +253,8 @@ describe('Task Detail Modal', () => {
     renderWithProvider(
       <KanbanBoard />,
       [
-        createTestTask({ id: '1', title: 'Parent Task', status: 'todo', subtaskIds: ['sub-1'] }),
-        createTestTask({ id: 'sub-1', title: 'Child Subtask', status: 'todo', parentId: '1', subtaskIds: [] }),
+        createTestTask({ id: '1', number: 1, title: 'Parent Task', status: 'todo', subtaskIds: ['sub-1'] }),
+        createTestTask({ id: 'sub-1', number: 2, title: 'Child Subtask', status: 'todo', parentId: '1', subtaskIds: [] }),
       ]
     )
     await user.click(screen.getByText('Parent Task'))
@@ -266,8 +267,8 @@ describe('Task Detail Modal', () => {
     renderWithProvider(
       <KanbanBoard />,
       [
-        createTestTask({ id: '1', title: 'Parent Task', status: 'todo', subtaskIds: ['sub-1'] }),
-        createTestTask({ id: 'sub-1', title: 'Child Subtask', status: 'todo', parentId: '1', subtaskIds: [] }),
+        createTestTask({ id: '1', number: 1, title: 'Parent Task', status: 'todo', subtaskIds: ['sub-1'] }),
+        createTestTask({ id: 'sub-1', number: 2, title: 'Child Subtask', status: 'todo', parentId: '1', subtaskIds: [] }),
       ]
     )
     await user.click(screen.getByText('Parent Task'))
@@ -336,8 +337,8 @@ describe('ReportsPage', () => {
     renderWithProvider(
       <ReportsPage />,
       [
-        createTestTask({ id: '1', status: 'todo' }),
-        createTestTask({ id: '2', status: 'done', completedAt: new Date().toISOString() }),
+        createTestTask({ id: '1', number: 1, status: 'todo' }),
+        createTestTask({ id: '2', number: 2, status: 'done', completedAt: new Date().toISOString() }),
       ]
     )
     expect(screen.getByText('Reports & Analytics')).toBeInTheDocument()
@@ -350,9 +351,9 @@ describe('ReportsPage', () => {
     renderWithProvider(
       <ReportsPage />,
       [
-        createTestTask({ id: '1', status: 'todo' }),
-        createTestTask({ id: '2', status: 'done' }),
-        createTestTask({ id: '3', status: 'in-progress' }),
+        createTestTask({ id: '1', number: 1, status: 'todo' }),
+        createTestTask({ id: '2', number: 2, status: 'done' }),
+        createTestTask({ id: '3', number: 3, status: 'in-progress' }),
       ]
     )
     // The summary card should show 3 total tasks

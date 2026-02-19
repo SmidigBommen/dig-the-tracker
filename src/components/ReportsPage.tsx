@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { PRIORITY_CONFIG, type TaskPriority } from '../types/index.ts'
 import { useTaskContext } from '../context/TaskContext.tsx'
 import './ReportsPage.css'
@@ -6,6 +6,7 @@ import './ReportsPage.css'
 export default function ReportsPage() {
   const { state } = useTaskContext()
   const { tasks, columns } = state
+  const [currentTime] = useState(() => Date.now())
 
   const stats = useMemo(() => {
     const topLevel = tasks.filter((t) => !t.parentId)
@@ -55,17 +56,22 @@ export default function ReportsPage() {
     })
 
     // Recent activity (tasks updated in last 24h)
-    const oneDayAgo = Date.now() - 86400000
+    const oneDayAgo = currentTime - 86400000
     const recentlyActive = tasks.filter((t) => new Date(t.updatedAt).getTime() > oneDayAgo)
 
     // Tasks with most comments
     const mostCommented = [...topLevel].sort((a, b) => b.comments.length - a.comments.length).slice(0, 5)
 
     // Overdue-like: tasks older than 7 days not done
-    const sevenDaysAgo = Date.now() - 7 * 86400000
+    const sevenDaysAgo = currentTime - 7 * 86400000
     const aging = topLevel.filter(
       (t) => t.status !== 'done' && new Date(t.createdAt).getTime() < sevenDaysAgo
     )
+
+    const agingWithDays = aging.map((task) => ({
+      task,
+      ageDays: Math.floor((currentTime - new Date(task.createdAt).getTime()) / 86400000),
+    }))
 
     return {
       totalTasks: topLevel.length,
@@ -80,10 +86,10 @@ export default function ReportsPage() {
       tagMap,
       recentlyActive: recentlyActive.length,
       mostCommented,
-      aging,
+      agingWithDays,
       totalComments: tasks.reduce((sum, t) => sum + t.comments.length, 0),
     }
-  }, [tasks, columns])
+  }, [tasks, columns, currentTime])
 
   const maxStatusCount = Math.max(...Object.values(stats.statusCounts), 1)
   const maxPriorityCount = Math.max(...Object.values(stats.priorityCounts), 1)
@@ -245,19 +251,16 @@ export default function ReportsPage() {
         <div className="report-card">
           <h3>Aging Tasks ({'>'}7 days)</h3>
           <div className="aging-list">
-            {stats.aging.map((task) => {
-              const age = Math.floor((Date.now() - new Date(task.createdAt).getTime()) / 86400000)
-              return (
-                <div key={task.id} className="aging-item">
-                  <div className="aging-info">
-                    <span className="aging-title">{task.title}</span>
-                    <span className="aging-status">{columns.find(c => c.id === task.status)?.icon} {columns.find(c => c.id === task.status)?.title}</span>
-                  </div>
-                  <span className="aging-days">{age}d</span>
+            {stats.agingWithDays.map(({ task, ageDays }) => (
+              <div key={task.id} className="aging-item">
+                <div className="aging-info">
+                  <span className="aging-title">{task.title}</span>
+                  <span className="aging-status">{columns.find(c => c.id === task.status)?.icon} {columns.find(c => c.id === task.status)?.title}</span>
                 </div>
-              )
-            })}
-            {stats.aging.length === 0 && <p className="empty-state">No aging tasks</p>}
+                <span className="aging-days">{ageDays}d</span>
+              </div>
+            ))}
+            {stats.agingWithDays.length === 0 && <p className="empty-state">No aging tasks</p>}
           </div>
         </div>
       </div>

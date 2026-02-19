@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import type { ValidationError } from '../types/index.ts'
-import { useTaskContext, validateProfile } from '../context/TaskContext.tsx'
+import { useTaskContext } from '../context/TaskContext.tsx'
+import { validateProfile } from '../context/taskUtils.ts'
 import './ProfilePage.css'
 
 const AVATAR_COLORS = [

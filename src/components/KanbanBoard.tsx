@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { PROTECTED_COLUMN_IDS, type Task, type TaskStatus } from '../types/index.ts'
 import { useTaskContext } from '../context/TaskContext.tsx'
+import { formatTaskKey } from '../context/taskUtils.ts'
 import KanbanColumn from './KanbanColumn.tsx'
 import TaskModal from './TaskModal.tsx'
 import TaskDetailModal from './TaskDetailModal.tsx'
@@ -11,10 +12,22 @@ const COLOR_SWATCHES = [
   '#10b981', '#ef4444', '#06b6d4', '#6b7280',
 ]
 
+function parseTaskNumberFromHash(hash: string): number | null {
+  const match = hash.match(/^#DIG-(\d+)$/i)
+  return match ? parseInt(match[1], 10) : null
+}
+
 export default function KanbanBoard() {
-  const { state, getFilteredTasks, moveTask, reorderTask, addColumn, removeColumn } = useTaskContext()
+  const { state, getFilteredTasks, reorderTask, addColumn, removeColumn } = useTaskContext()
   const [createModalStatus, setCreateModalStatus] = useState<TaskStatus | null>(null)
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [selectedTask, setSelectedTask] = useState<Task | null>(() => {
+    // Open task from hash on mount
+    const num = parseTaskNumberFromHash(location.hash)
+    if (num != null) {
+      return state.tasks.find((t) => t.number === num) ?? null
+    }
+    return null
+  })
   const [showAddColumn, setShowAddColumn] = useState(false)
   const [newColTitle, setNewColTitle] = useState('')
   const [newColColor, setNewColColor] = useState(COLOR_SWATCHES[0])
@@ -22,9 +35,33 @@ export default function KanbanBoard() {
   const defaultPosition = state.columns.length >= 2 ? state.columns[state.columns.length - 2].id : state.columns[state.columns.length - 1]?.id ?? ''
   const [newColPosition, setNewColPosition] = useState(defaultPosition)
 
-  function handleDrop(taskId: string, status: TaskStatus) {
-    moveTask(taskId, status)
-  }
+  useEffect(() => {
+    const onHashChange = () => {
+      const num = parseTaskNumberFromHash(location.hash)
+      if (num != null) {
+        const task = state.tasks.find((t) => t.number === num)
+        if (task) setSelectedTask(task)
+      } else {
+        setSelectedTask(null)
+      }
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [state.tasks])
+
+  // Sync hash when selectedTask changes
+  useEffect(() => {
+    if (selectedTask) {
+      const key = formatTaskKey(selectedTask.number)
+      if (location.hash !== `#${key}`) {
+        history.pushState(null, '', `#${key}`)
+      }
+    } else {
+      if (location.hash) {
+        history.pushState(null, '', location.pathname + location.search)
+      }
+    }
+  }, [selectedTask])
 
   function handleAddColumn() {
     if (!newColTitle.trim()) return
@@ -45,7 +82,6 @@ export default function KanbanBoard() {
             column={column}
             tasks={getFilteredTasks(column.id)}
             allTasks={state.tasks}
-            onDrop={(taskId) => handleDrop(taskId, column.id)}
             onReorder={(taskId, targetIndex) => reorderTask(taskId, column.id, targetIndex)}
             onOpenTask={(task) => setSelectedTask(task)}
             onAddTask={() => setCreateModalStatus(column.id)}

@@ -7,6 +7,7 @@ import type { Task } from '../types/index.ts'
 function createTestTask(overrides: Partial<Task> = {}): Task {
   return {
     id: 'test-1',
+    number: 1,
     title: 'Test Task',
     description: 'Test Description',
     status: 'todo',
@@ -157,8 +158,8 @@ describe('TaskContext', () => {
   it('filters tasks by search query', async () => {
     const user = userEvent.setup()
     renderWithProvider([
-      createTestTask({ id: 'a', title: 'Alpha Task' }),
-      createTestTask({ id: 'b', title: 'Beta Task' }),
+      createTestTask({ id: 'a', number: 1, title: 'Alpha Task' }),
+      createTestTask({ id: 'b', number: 2, title: 'Beta Task' }),
     ])
     await user.click(screen.getByText('Update Task')) // won't find test-1 but that's ok
     await user.click(screen.getByText('Search Updated'))
@@ -168,8 +169,8 @@ describe('TaskContext', () => {
   it('filters tasks by priority', async () => {
     const user = userEvent.setup()
     renderWithProvider([
-      createTestTask({ id: 'a', title: 'High Priority', priority: 'high' }),
-      createTestTask({ id: 'b', title: 'Low Priority', priority: 'low' }),
+      createTestTask({ id: 'a', number: 1, title: 'High Priority', priority: 'high' }),
+      createTestTask({ id: 'b', number: 2, title: 'Low Priority', priority: 'low' }),
     ])
     await user.click(screen.getByText('Filter High'))
     expect(screen.getByTestId('todo-count').textContent).toBe('1')
@@ -189,8 +190,8 @@ describe('TaskContext', () => {
 
   it('deleting a parent also deletes its subtasks', async () => {
     const user = userEvent.setup()
-    const parent = createTestTask({ id: 'test-1', subtaskIds: ['sub-1'] })
-    const subtask = createTestTask({ id: 'sub-1', title: 'Subtask', parentId: 'test-1', subtaskIds: [] })
+    const parent = createTestTask({ id: 'test-1', number: 1, subtaskIds: ['sub-1'] })
+    const subtask = createTestTask({ id: 'sub-1', number: 2, title: 'Subtask', parentId: 'test-1', subtaskIds: [] })
     renderWithProvider([parent, subtask])
     expect(screen.getByTestId('task-count').textContent).toBe('2')
     await user.click(screen.getByText('Delete Task'))
@@ -199,8 +200,8 @@ describe('TaskContext', () => {
 
   it('subtasks are not shown in filtered top-level results', async () => {
     renderWithProvider([
-      createTestTask({ id: 'parent', subtaskIds: ['child'] }),
-      createTestTask({ id: 'child', parentId: 'parent', subtaskIds: [] }),
+      createTestTask({ id: 'parent', number: 1, subtaskIds: ['child'] }),
+      createTestTask({ id: 'child', number: 2, parentId: 'parent', subtaskIds: [] }),
     ])
     // getFilteredTasks should exclude subtasks
     expect(screen.getByTestId('todo-count').textContent).toBe('1')

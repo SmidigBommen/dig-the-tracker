@@ -36,6 +36,8 @@ src/
 ## Architecture notes
 
 - **State management:** Single `useReducer` in `TaskContext.tsx` with localStorage persistence
+- **Task numbering:** Each task has a sequential `number` field (1, 2, 3...). Displayed as `DIG-N` via `formatTaskKey()`. Counter stored as `nextTaskNumber` in state and persisted. Migration in `loadState()` handles existing data missing `number` fields.
+- **Deep-linking:** Hash-based URL routing (`#DIG-N`). `KanbanBoard` syncs `selectedTask` with `location.hash` and listens for `hashchange`. `App` switches to board view on mount if hash matches.
 - **Views:** Routed via `state.currentView` (`'board' | 'reports' | 'profile'`)
 - **Columns:** Dynamic, stored in state. Protected columns: `backlog`, `done`
 - **Modals:** Use `.modal-overlay` / `.modal-content` CSS pattern from TaskModal

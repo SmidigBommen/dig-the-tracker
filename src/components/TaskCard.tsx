@@ -1,6 +1,7 @@
 import { useState, type DragEvent } from 'react'
 import type { Task } from '../types/index.ts'
 import { PRIORITY_CONFIG } from '../types/index.ts'
+import { formatTaskKey } from '../context/taskUtils.ts'
 import './TaskCard.css'
 
 interface TaskCardProps {
@@ -43,11 +44,14 @@ export default function TaskCard({ task, parentTitle, onOpen }: TaskCardProps) {
         >
           {priority.icon} {priority.label}
         </span>
-        {task.comments.length > 0 && (
-          <span className="task-comment-count" title={`${task.comments.length} comment(s)`}>
-            💬 {task.comments.length}
-          </span>
-        )}
+        <div className="task-card-header-right">
+          {task.comments.length > 0 && (
+            <span className="task-comment-count" title={`${task.comments.length} comment(s)`}>
+              💬 {task.comments.length}
+            </span>
+          )}
+          <span className="task-key-badge">{formatTaskKey(task.number)}</span>
+        </div>
       </div>
 
       {parentTitle && (

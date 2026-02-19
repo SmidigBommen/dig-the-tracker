@@ -11,6 +11,13 @@ function AppContent() {
   const { state, setView } = useTaskContext()
   const [showQuickCreate, setShowQuickCreate] = useState(false)
 
+  // If URL hash matches #DIG-N on mount, ensure we're on the board view
+  useEffect(() => {
+    if (/^#DIG-\d+$/i.test(location.hash) && state.currentView !== 'board') {
+      setView('board')
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps -- only on mount
+
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Don't trigger shortcuts when typing in inputs/textareas/selects
     const tag = (e.target as HTMLElement).tagName

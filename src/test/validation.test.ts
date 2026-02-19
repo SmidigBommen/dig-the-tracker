@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { validateTask, validateComment } from '../context/TaskContext.tsx'
+import { validateTask, validateComment } from '../context/taskUtils.ts'
 
 describe('validateTask', () => {
   it('returns error when title is empty', () => {

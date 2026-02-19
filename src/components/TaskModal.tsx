@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import type { TaskStatus, TaskPriority, ValidationError } from '../types/index.ts'
-import { useTaskContext, validateTask } from '../context/TaskContext.tsx'
+import { useTaskContext } from '../context/TaskContext.tsx'
+import { validateTask } from '../context/taskUtils.ts'
 import './TaskModal.css'
 
 interface TaskModalProps {
