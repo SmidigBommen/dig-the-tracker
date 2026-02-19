@@ -277,6 +277,60 @@ describe('Task Detail Modal', () => {
   })
 })
 
+describe('Dynamic Columns', () => {
+  it('renders add column button', () => {
+    renderWithProvider(<KanbanBoard />, [])
+    expect(screen.getByText('+ Add Column')).toBeInTheDocument()
+  })
+
+  it('opens add column form when clicking button', async () => {
+    const user = userEvent.setup()
+    renderWithProvider(<KanbanBoard />, [])
+    await user.click(screen.getByText('+ Add Column'))
+    expect(screen.getByText('New Column')).toBeInTheDocument()
+    expect(screen.getByLabelText('Title')).toBeInTheDocument()
+    expect(screen.getByLabelText('Icon')).toBeInTheDocument()
+  })
+
+  it('adds a new column', async () => {
+    const user = userEvent.setup()
+    renderWithProvider(<KanbanBoard />, [])
+    await user.click(screen.getByText('+ Add Column'))
+    await user.clear(screen.getByLabelText('Title'))
+    await user.type(screen.getByLabelText('Title'), 'Testing')
+    await user.click(screen.getByText('Add'))
+    expect(screen.getByText('Testing')).toBeInTheDocument()
+  })
+
+  it('shows remove button on non-protected columns', () => {
+    renderWithProvider(<KanbanBoard />, [])
+    // "To Do", "In Progress", "Review" should have remove buttons
+    expect(screen.getByLabelText('Remove To Do column')).toBeInTheDocument()
+    expect(screen.getByLabelText('Remove In Progress column')).toBeInTheDocument()
+    expect(screen.getByLabelText('Remove Review column')).toBeInTheDocument()
+  })
+
+  it('does not show remove button on Backlog or Done', () => {
+    renderWithProvider(<KanbanBoard />, [])
+    expect(screen.queryByLabelText('Remove Backlog column')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Remove Done column')).not.toBeInTheDocument()
+  })
+
+  it('disables remove button when column has tasks', () => {
+    renderWithProvider(<KanbanBoard />, [createTestTask({ id: '1', status: 'todo' })])
+    const removeBtn = screen.getByLabelText('Remove To Do column')
+    expect(removeBtn).toBeDisabled()
+  })
+
+  it('removes an empty column', async () => {
+    const user = userEvent.setup()
+    renderWithProvider(<KanbanBoard />, [])
+    const removeBtn = screen.getByLabelText('Remove Review column')
+    await user.click(removeBtn)
+    expect(screen.queryByText('Review')).not.toBeInTheDocument()
+  })
+})
+
 describe('ReportsPage', () => {
   it('renders summary cards', () => {
     renderWithProvider(

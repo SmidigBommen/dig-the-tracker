@@ -1,11 +1,11 @@
 import { useMemo } from 'react'
-import { COLUMNS, PRIORITY_CONFIG, type TaskStatus, type TaskPriority } from '../types/index.ts'
+import { PRIORITY_CONFIG, type TaskPriority } from '../types/index.ts'
 import { useTaskContext } from '../context/TaskContext.tsx'
 import './ReportsPage.css'
 
 export default function ReportsPage() {
   const { state } = useTaskContext()
-  const tasks = state.tasks
+  const { tasks, columns } = state
 
   const stats = useMemo(() => {
     const topLevel = tasks.filter((t) => !t.parentId)
@@ -14,14 +14,9 @@ export default function ReportsPage() {
     const completedSubtasks = subtasks.filter((t) => t.status === 'done')
 
     // Status distribution
-    const statusCounts: Record<TaskStatus, number> = {
-      backlog: 0,
-      todo: 0,
-      'in-progress': 0,
-      review: 0,
-      done: 0,
-    }
-    topLevel.forEach((t) => { statusCounts[t.status]++ })
+    const statusCounts: Record<string, number> = {}
+    columns.forEach((c) => { statusCounts[c.id] = 0 })
+    topLevel.forEach((t) => { if (t.status in statusCounts) statusCounts[t.status]++ })
 
     // Priority distribution
     const priorityCounts: Record<TaskPriority, number> = {
@@ -88,7 +83,7 @@ export default function ReportsPage() {
       aging,
       totalComments: tasks.reduce((sum, t) => sum + t.comments.length, 0),
     }
-  }, [tasks])
+  }, [tasks, columns])
 
   const maxStatusCount = Math.max(...Object.values(stats.statusCounts), 1)
   const maxPriorityCount = Math.max(...Object.values(stats.priorityCounts), 1)
@@ -151,19 +146,19 @@ export default function ReportsPage() {
         <div className="report-card">
           <h3>Status Distribution</h3>
           <div className="bar-chart">
-            {COLUMNS.map((col) => (
+            {columns.map((col) => (
               <div key={col.id} className="bar-row">
                 <span className="bar-label">{col.icon} {col.title}</span>
                 <div className="bar-track">
                   <div
                     className="bar-fill"
                     style={{
-                      width: `${(stats.statusCounts[col.id] / maxStatusCount) * 100}%`,
+                      width: `${((stats.statusCounts[col.id] ?? 0) / maxStatusCount) * 100}%`,
                       backgroundColor: col.color,
                     }}
                   />
                 </div>
-                <span className="bar-value">{stats.statusCounts[col.id]}</span>
+                <span className="bar-value">{stats.statusCounts[col.id] ?? 0}</span>
               </div>
             ))}
           </div>
@@ -256,7 +251,7 @@ export default function ReportsPage() {
                 <div key={task.id} className="aging-item">
                   <div className="aging-info">
                     <span className="aging-title">{task.title}</span>
-                    <span className="aging-status">{COLUMNS.find(c => c.id === task.status)?.icon} {COLUMNS.find(c => c.id === task.status)?.title}</span>
+                    <span className="aging-status">{columns.find(c => c.id === task.status)?.icon} {columns.find(c => c.id === task.status)?.title}</span>
                   </div>
                   <span className="aging-days">{age}d</span>
                 </div>

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import type { TaskPriority, TaskStatus, ValidationError } from '../types/index.ts'
-import { COLUMNS, PRIORITY_CONFIG } from '../types/index.ts'
+import { PRIORITY_CONFIG } from '../types/index.ts'
 import { useTaskContext, validateTask, validateComment } from '../context/TaskContext.tsx'
 import TaskModal from './TaskModal.tsx'
 import './TaskDetailModal.css'
@@ -175,7 +175,7 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
                     onChange={(e) => moveTask(task.id, e.target.value as TaskStatus)}
                     aria-label="Change status"
                   >
-                    {COLUMNS.map((col) => (
+                    {state.columns.map((col) => (
                       <option key={col.id} value={col.id}>{col.icon} {col.title}</option>
                     ))}
                   </select>

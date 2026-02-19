@@ -11,9 +11,10 @@ interface KanbanColumnProps {
   onReorder: (taskId: string, targetIndex: number) => void
   onOpenTask: (task: Task) => void
   onAddTask: () => void
+  onRemoveColumn?: () => void
 }
 
-export default function KanbanColumn({ column, tasks, allTasks, onDrop: _onDrop, onReorder, onOpenTask, onAddTask }: KanbanColumnProps) {
+export default function KanbanColumn({ column, tasks, allTasks, onDrop: _onDrop, onReorder, onOpenTask, onAddTask, onRemoveColumn }: KanbanColumnProps) {
   const [isDragOver, setIsDragOver] = useState(false)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
   const tasksRef = useRef<HTMLDivElement>(null)
@@ -68,14 +69,27 @@ export default function KanbanColumn({ column, tasks, allTasks, onDrop: _onDrop,
             {tasks.length}
           </span>
         </div>
-        <button
-          className="column-add-btn"
-          onClick={onAddTask}
-          title={`Add task to ${column.title}`}
-          aria-label={`Add task to ${column.title}`}
-        >
-          +
-        </button>
+        <div className="column-header-right">
+          {onRemoveColumn && (
+            <button
+              className="column-remove-btn"
+              onClick={onRemoveColumn}
+              disabled={tasks.length > 0}
+              title={tasks.length > 0 ? 'Remove all tasks before deleting this column' : `Remove ${column.title} column`}
+              aria-label={`Remove ${column.title} column`}
+            >
+              ×
+            </button>
+          )}
+          <button
+            className="column-add-btn"
+            onClick={onAddTask}
+            title={`Add task to ${column.title}`}
+            aria-label={`Add task to ${column.title}`}
+          >
+            +
+          </button>
+        </div>
       </div>
 
       <div className="column-tasks" ref={tasksRef}>

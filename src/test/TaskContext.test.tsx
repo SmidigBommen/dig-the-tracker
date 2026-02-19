@@ -23,7 +23,7 @@ function createTestTask(overrides: Partial<Task> = {}): Task {
 }
 
 function TestComponent() {
-  const { state, addTask, updateTask, deleteTask, moveTask, addComment, getFilteredTasks, setSearch, setFilterPriority } = useTaskContext()
+  const { state, addTask, updateTask, deleteTask, moveTask, addComment, getFilteredTasks, setSearch, setFilterPriority, addColumn, removeColumn } = useTaskContext()
   const todoTasks = getFilteredTasks('todo')
   const doneTasks = getFilteredTasks('done')
 
@@ -32,8 +32,14 @@ function TestComponent() {
       <div data-testid="task-count">{state.tasks.length}</div>
       <div data-testid="todo-count">{todoTasks.length}</div>
       <div data-testid="done-count">{doneTasks.length}</div>
+      <div data-testid="column-count">{state.columns.length}</div>
       <div data-testid="search">{state.searchQuery}</div>
       <div data-testid="filter">{state.filterPriority}</div>
+      <ul data-testid="column-list">
+        {state.columns.map(c => (
+          <li key={c.id} data-testid={`col-${c.id}`}>{c.title}</li>
+        ))}
+      </ul>
       <ul data-testid="task-list">
         {state.tasks.map(t => (
           <li key={t.id} data-testid={`task-${t.id}`}>
@@ -70,6 +76,21 @@ function TestComponent() {
       </button>
       <button onClick={() => setSearch('')}>
         Clear Search
+      </button>
+      <button onClick={() => addColumn('QA', '#ec4899', '🧪')}>
+        Add Column
+      </button>
+      <button onClick={() => removeColumn('review')}>
+        Remove Review
+      </button>
+      <button onClick={() => removeColumn('backlog')}>
+        Remove Backlog
+      </button>
+      <button onClick={() => removeColumn('done')}>
+        Remove Done
+      </button>
+      <button onClick={() => removeColumn('todo')}>
+        Remove Todo
       </button>
     </div>
   )
@@ -206,5 +227,66 @@ describe('TaskContext', () => {
     expect(screen.getByTestId('filter').textContent).toBe('high')
     await user.click(screen.getByText('Filter All'))
     expect(screen.getByTestId('filter').textContent).toBe('all')
+  })
+})
+
+describe('Column Management', () => {
+  it('starts with 5 default columns', () => {
+    renderWithProvider()
+    expect(screen.getByTestId('column-count').textContent).toBe('5')
+  })
+
+  it('adds a new column before Done', async () => {
+    const user = userEvent.setup()
+    renderWithProvider()
+    await user.click(screen.getByText('Add Column'))
+    expect(screen.getByTestId('column-count').textContent).toBe('6')
+    expect(screen.getByTestId('col-qa')).toBeInTheDocument()
+    // Verify it's before Done
+    const list = screen.getByTestId('column-list')
+    const items = within(list).getAllByRole('listitem')
+    const qaIndex = items.findIndex(item => item.textContent === 'QA')
+    const doneIndex = items.findIndex(item => item.textContent === 'Done')
+    expect(qaIndex).toBeLessThan(doneIndex)
+  })
+
+  it('prevents removing protected column: backlog', async () => {
+    const user = userEvent.setup()
+    renderWithProvider([])
+    await user.click(screen.getByText('Remove Backlog'))
+    expect(screen.getByTestId('column-count').textContent).toBe('5')
+  })
+
+  it('prevents removing protected column: done', async () => {
+    const user = userEvent.setup()
+    renderWithProvider([])
+    await user.click(screen.getByText('Remove Done'))
+    expect(screen.getByTestId('column-count').textContent).toBe('5')
+  })
+
+  it('removes an empty non-protected column', async () => {
+    const user = userEvent.setup()
+    renderWithProvider([])
+    await user.click(screen.getByText('Remove Review'))
+    expect(screen.getByTestId('column-count').textContent).toBe('4')
+    expect(screen.queryByTestId('col-review')).not.toBeInTheDocument()
+  })
+
+  it('prevents removing a column that has tasks', async () => {
+    const user = userEvent.setup()
+    renderWithProvider([createTestTask({ id: 'test-1', status: 'todo' })])
+    await user.click(screen.getByText('Remove Todo'))
+    expect(screen.getByTestId('column-count').textContent).toBe('5')
+    expect(screen.getByTestId('col-todo')).toBeInTheDocument()
+  })
+
+  it('prevents adding duplicate column IDs', async () => {
+    const user = userEvent.setup()
+    renderWithProvider()
+    await user.click(screen.getByText('Add Column'))
+    expect(screen.getByTestId('column-count').textContent).toBe('6')
+    // Click again - same title => same slug => no-op
+    await user.click(screen.getByText('Add Column'))
+    expect(screen.getByTestId('column-count').textContent).toBe('6')
   })
 })

@@ -1,6 +1,7 @@
 import { createContext, useContext, useReducer, useCallback, useEffect, type ReactNode } from 'react'
 import { v4 as uuidv4 } from 'uuid'
-import type { Task, TaskStatus, TaskPriority, ValidationError } from '../types/index.ts'
+import type { Task, TaskStatus, TaskPriority, ValidationError, Column } from '../types/index.ts'
+import { DEFAULT_COLUMNS, PROTECTED_COLUMN_IDS } from '../types/index.ts'
 
 export interface UserProfile {
   username: string
@@ -11,6 +12,7 @@ export interface UserProfile {
 
 interface TaskState {
   tasks: Task[]
+  columns: Column[]
   searchQuery: string
   filterPriority: TaskPriority | 'all'
   currentView: 'board' | 'reports' | 'profile'
@@ -31,8 +33,21 @@ type TaskAction =
   | { type: 'SET_VIEW'; payload: 'board' | 'reports' | 'profile' }
   | { type: 'TOGGLE_SUBTASKS_ON_BOARD' }
   | { type: 'UPDATE_PROFILE'; payload: Partial<UserProfile> }
+  | { type: 'ADD_COLUMN'; payload: { title: string; color: string; icon: string } }
+  | { type: 'REMOVE_COLUMN'; payload: string }
+  | { type: 'REORDER_COLUMNS'; payload: Column[] }
 
 const now = () => new Date().toISOString()
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
 
 function taskReducer(state: TaskState, action: TaskAction): TaskState {
   switch (action.type) {
@@ -167,6 +182,24 @@ function taskReducer(state: TaskState, action: TaskAction): TaskState {
       return { ...state, showSubtasksOnBoard: !state.showSubtasksOnBoard }
     case 'UPDATE_PROFILE':
       return { ...state, profile: { ...state.profile, ...action.payload } }
+    case 'ADD_COLUMN': {
+      const id = slugify(action.payload.title)
+      if (!id || state.columns.some((c) => c.id === id)) return state
+      const newColumn: Column = { id, title: action.payload.title.trim(), color: action.payload.color, icon: action.payload.icon }
+      // Insert before the last column (Done)
+      const doneIndex = state.columns.findIndex((c) => c.id === 'done')
+      const insertAt = doneIndex >= 0 ? doneIndex : state.columns.length
+      const columns = [...state.columns.slice(0, insertAt), newColumn, ...state.columns.slice(insertAt)]
+      return { ...state, columns }
+    }
+    case 'REMOVE_COLUMN': {
+      const colId = action.payload
+      if (PROTECTED_COLUMN_IDS.includes(colId)) return state
+      if (state.tasks.some((t) => t.status === colId)) return state
+      return { ...state, columns: state.columns.filter((c) => c.id !== colId) }
+    }
+    case 'REORDER_COLUMNS':
+      return { ...state, columns: action.payload }
     default:
       return state
   }
@@ -226,6 +259,7 @@ const STORAGE_KEY = 'dig-tracker-state'
 
 interface PersistedState {
   tasks: Task[]
+  columns?: Column[]
   profile: UserProfile
   showSubtasksOnBoard: boolean
 }
@@ -246,6 +280,7 @@ function saveState(state: TaskState): void {
   try {
     const persisted: PersistedState = {
       tasks: state.tasks,
+      columns: state.columns,
       profile: state.profile,
       showSubtasksOnBoard: state.showSubtasksOnBoard,
     }
@@ -396,6 +431,9 @@ interface TaskContextType {
   toggleSubtasksOnBoard: () => void
   updateProfile: (updates: Partial<UserProfile>) => void
   getFilteredTasks: (status: TaskStatus) => Task[]
+  addColumn: (title: string, color: string, icon: string) => void
+  removeColumn: (columnId: string) => void
+  reorderColumns: (columns: Column[]) => void
 }
 
 const TaskContext = createContext<TaskContextType | null>(null)
@@ -404,6 +442,7 @@ export function TaskProvider({ children, initialTasks, initialProfile }: { child
   const saved = initialTasks ? undefined : loadState()
   const [state, dispatch] = useReducer(taskReducer, {
     tasks: initialTasks ?? saved?.tasks ?? SAMPLE_TASKS,
+    columns: saved?.columns ?? DEFAULT_COLUMNS,
     searchQuery: '',
     filterPriority: 'all',
     currentView: 'board',
@@ -419,7 +458,7 @@ export function TaskProvider({ children, initialTasks, initialProfile }: { child
 
   useEffect(() => {
     saveState(state)
-  }, [state.tasks, state.profile, state.showSubtasksOnBoard])
+  }, [state.tasks, state.columns, state.profile, state.showSubtasksOnBoard])
 
   const addTask = useCallback(
     (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'comments'>) =>
@@ -476,6 +515,19 @@ export function TaskProvider({ children, initialTasks, initialProfile }: { child
     (updates: Partial<UserProfile>) => dispatch({ type: 'UPDATE_PROFILE', payload: updates }),
     []
   )
+  const addColumn = useCallback(
+    (title: string, color: string, icon: string) =>
+      dispatch({ type: 'ADD_COLUMN', payload: { title, color, icon } }),
+    []
+  )
+  const removeColumn = useCallback(
+    (columnId: string) => dispatch({ type: 'REMOVE_COLUMN', payload: columnId }),
+    []
+  )
+  const reorderColumns = useCallback(
+    (columns: Column[]) => dispatch({ type: 'REORDER_COLUMNS', payload: columns }),
+    []
+  )
 
   const getFilteredTasks = useCallback(
     (status: TaskStatus): Task[] => {
@@ -514,6 +566,9 @@ export function TaskProvider({ children, initialTasks, initialProfile }: { child
         toggleSubtasksOnBoard,
         updateProfile,
         getFilteredTasks,
+        addColumn,
+        removeColumn,
+        reorderColumns,
       }}
     >
       {children}
