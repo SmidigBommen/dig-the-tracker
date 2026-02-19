@@ -33,7 +33,7 @@ type TaskAction =
   | { type: 'SET_VIEW'; payload: 'board' | 'reports' | 'profile' }
   | { type: 'TOGGLE_SUBTASKS_ON_BOARD' }
   | { type: 'UPDATE_PROFILE'; payload: Partial<UserProfile> }
-  | { type: 'ADD_COLUMN'; payload: { title: string; color: string; icon: string } }
+  | { type: 'ADD_COLUMN'; payload: { title: string; color: string; icon: string; afterColumnId?: string } }
   | { type: 'REMOVE_COLUMN'; payload: string }
   | { type: 'REORDER_COLUMNS'; payload: Column[] }
 
@@ -186,9 +186,15 @@ function taskReducer(state: TaskState, action: TaskAction): TaskState {
       const id = slugify(action.payload.title)
       if (!id || state.columns.some((c) => c.id === id)) return state
       const newColumn: Column = { id, title: action.payload.title.trim(), color: action.payload.color, icon: action.payload.icon }
-      // Insert before the last column (Done)
-      const doneIndex = state.columns.findIndex((c) => c.id === 'done')
-      const insertAt = doneIndex >= 0 ? doneIndex : state.columns.length
+      let insertAt: number
+      if (action.payload.afterColumnId) {
+        const afterIndex = state.columns.findIndex((c) => c.id === action.payload.afterColumnId)
+        insertAt = afterIndex >= 0 ? afterIndex + 1 : state.columns.length
+      } else {
+        // Default: insert before Done
+        const doneIndex = state.columns.findIndex((c) => c.id === 'done')
+        insertAt = doneIndex >= 0 ? doneIndex : state.columns.length
+      }
       const columns = [...state.columns.slice(0, insertAt), newColumn, ...state.columns.slice(insertAt)]
       return { ...state, columns }
     }
@@ -431,7 +437,7 @@ interface TaskContextType {
   toggleSubtasksOnBoard: () => void
   updateProfile: (updates: Partial<UserProfile>) => void
   getFilteredTasks: (status: TaskStatus) => Task[]
-  addColumn: (title: string, color: string, icon: string) => void
+  addColumn: (title: string, color: string, icon: string, afterColumnId?: string) => void
   removeColumn: (columnId: string) => void
   reorderColumns: (columns: Column[]) => void
 }
@@ -516,8 +522,8 @@ export function TaskProvider({ children, initialTasks, initialProfile }: { child
     []
   )
   const addColumn = useCallback(
-    (title: string, color: string, icon: string) =>
-      dispatch({ type: 'ADD_COLUMN', payload: { title, color, icon } }),
+    (title: string, color: string, icon: string, afterColumnId?: string) =>
+      dispatch({ type: 'ADD_COLUMN', payload: { title, color, icon, afterColumnId } }),
     []
   )
   const removeColumn = useCallback(

@@ -19,6 +19,8 @@ export default function KanbanBoard() {
   const [newColTitle, setNewColTitle] = useState('')
   const [newColColor, setNewColColor] = useState(COLOR_SWATCHES[0])
   const [newColIcon, setNewColIcon] = useState('📌')
+  const defaultPosition = state.columns.length >= 2 ? state.columns[state.columns.length - 2].id : state.columns[state.columns.length - 1]?.id ?? ''
+  const [newColPosition, setNewColPosition] = useState(defaultPosition)
 
   function handleDrop(taskId: string, status: TaskStatus) {
     moveTask(taskId, status)
@@ -26,10 +28,11 @@ export default function KanbanBoard() {
 
   function handleAddColumn() {
     if (!newColTitle.trim()) return
-    addColumn(newColTitle, newColColor, newColIcon)
+    addColumn(newColTitle, newColColor, newColIcon, newColPosition || undefined)
     setNewColTitle('')
     setNewColColor(COLOR_SWATCHES[0])
     setNewColIcon('📌')
+    setNewColPosition(defaultPosition)
     setShowAddColumn(false)
   }
 
@@ -92,6 +95,20 @@ export default function KanbanBoard() {
                     />
                   ))}
                 </div>
+              </div>
+              <div className="add-column-field">
+                <label htmlFor="new-col-position">Insert after</label>
+                <select
+                  id="new-col-position"
+                  value={newColPosition}
+                  onChange={(e) => setNewColPosition(e.target.value)}
+                >
+                  {state.columns.map((col) => (
+                    <option key={col.id} value={col.id}>
+                      {col.icon} {col.title}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="add-column-actions">
                 <button className="btn btn-secondary btn-sm" onClick={() => setShowAddColumn(false)}>Cancel</button>

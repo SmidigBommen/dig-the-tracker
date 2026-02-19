@@ -80,6 +80,9 @@ function TestComponent() {
       <button onClick={() => addColumn('QA', '#ec4899', '🧪')}>
         Add Column
       </button>
+      <button onClick={() => addColumn('QA', '#ec4899', '🧪', 'backlog')}>
+        Add Column After Backlog
+      </button>
       <button onClick={() => removeColumn('review')}>
         Remove Review
       </button>
@@ -288,5 +291,17 @@ describe('Column Management', () => {
     // Click again - same title => same slug => no-op
     await user.click(screen.getByText('Add Column'))
     expect(screen.getByTestId('column-count').textContent).toBe('6')
+  })
+
+  it('inserts a column after a specific column when afterColumnId is provided', async () => {
+    const user = userEvent.setup()
+    renderWithProvider([])
+    await user.click(screen.getByText('Add Column After Backlog'))
+    expect(screen.getByTestId('column-count').textContent).toBe('6')
+    const list = screen.getByTestId('column-list')
+    const items = within(list).getAllByRole('listitem')
+    const backlogIndex = items.findIndex(item => item.textContent === 'Backlog')
+    const qaIndex = items.findIndex(item => item.textContent === 'QA')
+    expect(qaIndex).toBe(backlogIndex + 1)
   })
 })
