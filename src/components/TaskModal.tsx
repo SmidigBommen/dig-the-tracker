@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import type { TaskStatus, TaskPriority, ValidationError } from '../types/index.ts'
 import { useTaskContext } from '../context/TaskContext.tsx'
+import { useAuth } from '../context/AuthContext.tsx'
 import { validateTask } from '../context/taskUtils.ts'
 import './TaskModal.css'
 
@@ -11,9 +12,9 @@ interface TaskModalProps {
 }
 
 export default function TaskModal({ defaultStatus, parentId, onClose }: TaskModalProps) {
-  const { state, addTask } = useTaskContext()
-  const { profile } = state
-  const currentUser = profile.displayName || profile.username
+  const { addTask } = useTaskContext()
+  const { profile: authProfile } = useAuth()
+  const currentUser = authProfile?.display_name || ''
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -21,8 +22,9 @@ export default function TaskModal({ defaultStatus, parentId, onClose }: TaskModa
   const [assignee, setAssignee] = useState('')
   const [tagsInput, setTagsInput] = useState('')
   const [errors, setErrors] = useState<ValidationError[]>([])
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     const validationErrors = validateTask({ title, description })
     if (validationErrors.length > 0) {
@@ -33,7 +35,8 @@ export default function TaskModal({ defaultStatus, parentId, onClose }: TaskModa
       .split(',')
       .map((t) => t.trim())
       .filter(Boolean)
-    addTask({
+    setIsSubmitting(true)
+    await addTask({
       title: title.trim(),
       description: description.trim(),
       status: defaultStatus,
@@ -44,6 +47,7 @@ export default function TaskModal({ defaultStatus, parentId, onClose }: TaskModa
       parentId: parentId || undefined,
       subtaskIds: [],
     })
+    setIsSubmitting(false)
     onClose()
   }
 
@@ -141,8 +145,8 @@ export default function TaskModal({ defaultStatus, parentId, onClose }: TaskModa
 
           <div className="modal-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary">
-              {parentId ? 'Add Subtask' : 'Create Task'}
+            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+              {isSubmitting ? 'Creating...' : parentId ? 'Add Subtask' : 'Create Task'}
             </button>
           </div>
         </form>

@@ -2,6 +2,7 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import type { TaskPriority, TaskStatus, ValidationError } from '../types/index.ts'
 import { PRIORITY_CONFIG } from '../types/index.ts'
 import { useTaskContext } from '../context/TaskContext.tsx'
+import { useAuth } from '../context/AuthContext.tsx'
 import { validateTask, validateComment, formatTaskKey } from '../context/taskUtils.ts'
 import TaskModal from './TaskModal.tsx'
 import './TaskDetailModal.css'
@@ -36,10 +37,12 @@ interface TaskDetailModalProps {
 }
 
 export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProps) {
-  const { state, updateTask, deleteTask, addComment, deleteComment, moveTask } = useTaskContext()
+  const { state, updateTask, deleteTask, addComment, deleteComment, moveTask, getComments } = useTaskContext()
+  const { profile: authProfile } = useAuth()
   const task = state.tasks.find((t) => t.id === taskId)
-  const { profile } = state
-  const currentUser = profile.displayName || profile.username
+  const currentUser = authProfile?.display_name || ''
+
+  const comments = getComments(taskId)
 
   const [isEditing, setIsEditing] = useState(false)
   const [editTitle, setEditTitle] = useState(task?.title ?? '')
@@ -48,9 +51,11 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
   const [editAssignee, setEditAssignee] = useState(task?.assignee ?? '')
   const [editTags, setEditTags] = useState(task?.tags.join(', ') ?? '')
   const [editErrors, setEditErrors] = useState<ValidationError[]>([])
+  const [isSaving, setIsSaving] = useState(false)
 
   const [commentText, setCommentText] = useState('')
   const [commentErrors, setCommentErrors] = useState<ValidationError[]>([])
+  const [isPostingComment, setIsPostingComment] = useState(false)
 
   const [showSubtaskModal, setShowSubtaskModal] = useState(false)
   const [openSubtaskId, setOpenSubtaskId] = useState<string | null>(null)
@@ -62,24 +67,26 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
   const parentTask = task.parentId ? state.tasks.find((t) => t.id === task.parentId) : null
   const completedSubtasks = subtasks.filter((t) => t.status === 'done').length
 
-  function handleSaveEdit(e: FormEvent) {
+  async function handleSaveEdit(e: FormEvent) {
     e.preventDefault()
     const validationErrors = validateTask({ title: editTitle, description: editDescription })
     if (validationErrors.length > 0) {
       setEditErrors(validationErrors)
       return
     }
-    updateTask(task!.id, {
+    setIsSaving(true)
+    await updateTask(task!.id, {
       title: editTitle.trim(),
       description: editDescription.trim(),
       priority: editPriority,
       assignee: editAssignee.trim(),
       tags: editTags.split(',').map((t) => t.trim()).filter(Boolean),
     })
+    setIsSaving(false)
     setIsEditing(false)
   }
 
-  function handleAddComment(e: FormEvent) {
+  async function handleAddComment(e: FormEvent) {
     e.preventDefault()
     const author = currentUser
     const validationErrors = validateComment(commentText)
@@ -90,18 +97,22 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
       setCommentErrors(validationErrors)
       return
     }
-    addComment(task!.id, commentText.trim(), author)
+    setIsPostingComment(true)
+    await addComment(task!.id, commentText.trim(), author)
     setCommentText('')
     setCommentErrors([])
+    setIsPostingComment(false)
   }
 
-  function handleDelete() {
+  async function handleDelete() {
     if (!confirmDelete) {
       setConfirmDelete(true)
       return
     }
-    subtasks.forEach((st) => deleteTask(st.id))
-    deleteTask(task!.id)
+    for (const st of subtasks) {
+      await deleteTask(st.id)
+    }
+    await deleteTask(task!.id)
     onClose()
   }
 
@@ -179,7 +190,9 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
             </div>
             <div className="modal-actions">
               <button type="button" className="btn btn-secondary" onClick={() => setIsEditing(false)}>Cancel</button>
-              <button type="submit" className="btn btn-primary">Save Changes</button>
+              <button type="submit" className="btn btn-primary" disabled={isSaving}>
+                {isSaving ? 'Saving...' : 'Save Changes'}
+              </button>
             </div>
           </form>
         ) : (
@@ -306,15 +319,15 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
 
             {/* Comments section */}
             <div className="detail-comments">
-              <h3>Comments ({task.comments.length})</h3>
+              <h3>Comments ({comments.length})</h3>
               <div className="comments-list">
-                {task.comments.map((comment) => (
+                {comments.map((comment) => (
                   <div key={comment.id} className="comment-item">
                     <div className="comment-header">
-                      <span className="comment-avatar">{comment.author.charAt(0).toUpperCase()}</span>
-                      <span className="comment-author">{comment.author}</span>
-                      {comment.author === currentUser && <span className="comment-you-badge">you</span>}
-                      <span className="comment-time">{new Date(comment.createdAt).toLocaleString()}</span>
+                      <span className="comment-avatar">{comment.author_name.charAt(0).toUpperCase()}</span>
+                      <span className="comment-author">{comment.author_name}</span>
+                      {comment.author_name === currentUser && <span className="comment-you-badge">you</span>}
+                      <span className="comment-time">{new Date(comment.created_at).toLocaleString()}</span>
                       <button
                         className="comment-delete"
                         onClick={() => deleteComment(task.id, comment.id)}
@@ -327,7 +340,7 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
                     <p className="comment-text">{renderLinkedText(comment.text)}</p>
                   </div>
                 ))}
-                {task.comments.length === 0 && (
+                {comments.length === 0 && (
                   <p className="no-comments">No comments yet. Start the conversation!</p>
                 )}
               </div>
@@ -346,7 +359,9 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
                     />
                     {getCommentError('text') && <span className="field-error">{getCommentError('text')}</span>}
                   </div>
-                  <button type="submit" className="btn btn-primary btn-sm">Post Comment</button>
+                  <button type="submit" className="btn btn-primary btn-sm" disabled={isPostingComment}>
+                    {isPostingComment ? 'Posting...' : 'Post Comment'}
+                  </button>
                 </form>
               ) : (
                 <div className="comment-form-disabled">

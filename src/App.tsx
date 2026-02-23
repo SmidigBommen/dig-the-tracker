@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
+import { AuthProvider, useAuth } from './context/AuthContext.tsx'
 import { TaskProvider, useTaskContext } from './context/TaskContext.tsx'
 import Header from './components/Header.tsx'
 import KanbanBoard from './components/KanbanBoard.tsx'
 import ReportsPage from './components/ReportsPage.tsx'
 import ProfilePage from './components/ProfilePage.tsx'
 import TaskModal from './components/TaskModal.tsx'
+import LoginPage from './components/LoginPage.tsx'
+import InviteHandler from './components/InviteHandler.tsx'
 import './App.css'
 
 function AppContent() {
@@ -74,10 +77,41 @@ function AppContent() {
   )
 }
 
-export default function App() {
+function AuthGate() {
+  const { session, loading } = useAuth()
+
+  // Check for invite token in URL query params
+  const params = new URLSearchParams(window.location.search)
+  const inviteToken = params.get('invite')
+
+  if (loading) {
+    return (
+      <div className="app-loading">
+        <div className="loading-spinner" />
+        <p>Loading...</p>
+      </div>
+    )
+  }
+
+  if (inviteToken) {
+    return <InviteHandler token={inviteToken} />
+  }
+
+  if (!session) {
+    return <LoginPage />
+  }
+
   return (
     <TaskProvider>
       <AppContent />
     </TaskProvider>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
   )
 }

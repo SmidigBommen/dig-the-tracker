@@ -1,181 +1,127 @@
-import { createContext, useContext, useReducer, useCallback, useEffect, type ReactNode } from 'react'
-import { v4 as uuidv4 } from 'uuid'
-import type { Task, TaskStatus, TaskPriority, Column } from '../types/index.ts'
-import { DEFAULT_COLUMNS, PROTECTED_COLUMN_IDS } from '../types/index.ts'
+import { createContext, useContext, useReducer, useCallback, useEffect, useRef, type ReactNode } from 'react'
+import type { Task, TaskStatus, TaskPriority, TaskComment, Column } from '../types/index.ts'
+import { DEFAULT_COLUMNS, PROTECTED_COLUMN_IDS, mapTask, mapColumn } from '../types/index.ts'
 import { formatTaskKey } from './taskUtils.ts'
+import { supabase } from '../lib/supabase.ts'
+import { useAuth } from './AuthContext.tsx'
 
-export interface UserProfile {
-  username: string
-  email: string
-  displayName: string
-  avatarColor: string
-}
+// ============================================================
+// State
+// ============================================================
 
 interface TaskState {
   tasks: Task[]
   columns: Column[]
-  nextTaskNumber: number
+  commentsByTask: Record<string, TaskComment[]>
+  boardId: string | null
+  loading: boolean
+  error: string | null
   searchQuery: string
   filterPriority: TaskPriority | 'all'
   currentView: 'board' | 'reports' | 'profile'
   showSubtasksOnBoard: boolean
-  profile: UserProfile
 }
 
+// ============================================================
+// Actions
+// ============================================================
+
 type TaskAction =
-  | { type: 'ADD_TASK'; payload: Omit<Task, 'id' | 'number' | 'createdAt' | 'updatedAt' | 'comments'> }
-  | { type: 'UPDATE_TASK'; payload: { id: string; updates: Partial<Task> } }
-  | { type: 'DELETE_TASK'; payload: string }
-  | { type: 'MOVE_TASK'; payload: { id: string; status: TaskStatus } }
-  | { type: 'ADD_COMMENT'; payload: { taskId: string; text: string; author: string } }
-  | { type: 'DELETE_COMMENT'; payload: { taskId: string; commentId: string } }
-  | { type: 'REORDER_TASK'; payload: { taskId: string; status: TaskStatus; targetIndex: number } }
+  | { type: 'SET_INITIAL_DATA'; payload: { boardId: string; tasks: Task[]; columns: Column[]; comments: TaskComment[] } }
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_ERROR'; payload: string | null }
+  | { type: 'REALTIME_TASK_INSERT'; payload: Task }
+  | { type: 'REALTIME_TASK_UPDATE'; payload: Task }
+  | { type: 'REALTIME_TASK_DELETE'; payload: { id: string } }
+  | { type: 'REALTIME_COMMENT_INSERT'; payload: TaskComment }
+  | { type: 'REALTIME_COMMENT_DELETE'; payload: { id: string; task_id: string } }
+  | { type: 'REALTIME_COLUMN_INSERT'; payload: Column }
+  | { type: 'REALTIME_COLUMN_UPDATE'; payload: Column }
+  | { type: 'REALTIME_COLUMN_DELETE'; payload: { slug: string } }
   | { type: 'SET_SEARCH'; payload: string }
   | { type: 'SET_FILTER_PRIORITY'; payload: TaskPriority | 'all' }
   | { type: 'SET_VIEW'; payload: 'board' | 'reports' | 'profile' }
   | { type: 'TOGGLE_SUBTASKS_ON_BOARD' }
-  | { type: 'UPDATE_PROFILE'; payload: Partial<UserProfile> }
-  | { type: 'ADD_COLUMN'; payload: { title: string; color: string; icon: string; afterColumnId?: string } }
-  | { type: 'REMOVE_COLUMN'; payload: string }
-  | { type: 'REORDER_COLUMNS'; payload: Column[] }
-
-const now = () => new Date().toISOString()
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/[\s_]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-}
 
 function taskReducer(state: TaskState, action: TaskAction): TaskState {
   switch (action.type) {
-    case 'ADD_TASK': {
-      const newId = uuidv4()
-      const taskNumber = state.nextTaskNumber
-      const newTask: Task = {
-        ...action.payload,
-        id: newId,
-        number: taskNumber,
-        comments: [],
-        subtaskIds: action.payload.subtaskIds ?? [],
-        createdAt: now(),
-        updatedAt: now(),
+    case 'SET_INITIAL_DATA': {
+      const commentsByTask: Record<string, TaskComment[]> = {}
+      for (const c of action.payload.comments) {
+        if (!commentsByTask[c.task_id]) commentsByTask[c.task_id] = []
+        commentsByTask[c.task_id].push(c)
       }
-      let tasks = [...state.tasks, newTask]
-      // If has parentId, add this task's id to parent's subtaskIds
-      if (action.payload.parentId) {
-        tasks = tasks.map((t) =>
-          t.id === action.payload.parentId
-            ? { ...t, subtaskIds: [...t.subtaskIds, newId], updatedAt: now() }
-            : t
-        )
-      }
-      return { ...state, tasks, nextTaskNumber: taskNumber + 1 }
-    }
-    case 'UPDATE_TASK':
       return {
         ...state,
-        tasks: state.tasks.map((t) =>
-          t.id === action.payload.id
-            ? { ...t, ...action.payload.updates, updatedAt: now() }
-            : t
-        ),
-      }
-    case 'DELETE_TASK': {
-      const taskToDelete = state.tasks.find((t) => t.id === action.payload)
-      let tasks = state.tasks.filter((t) => t.id !== action.payload)
-      // Remove from parent's subtaskIds
-      if (taskToDelete?.parentId) {
-        tasks = tasks.map((t) =>
-          t.id === taskToDelete.parentId
-            ? { ...t, subtaskIds: t.subtaskIds.filter((id) => id !== action.payload) }
-            : t
-        )
-      }
-      // Also delete child subtasks
-      if (taskToDelete) {
-        const childIds = new Set(taskToDelete.subtaskIds)
-        tasks = tasks.filter((t) => !childIds.has(t.id))
-      }
-      return { ...state, tasks }
-    }
-    case 'MOVE_TASK': {
-      const completedAt = action.payload.status === 'done' ? now() : undefined
-      return {
-        ...state,
-        tasks: state.tasks.map((t) =>
-          t.id === action.payload.id
-            ? {
-                ...t,
-                status: action.payload.status,
-                updatedAt: now(),
-                completedAt: action.payload.status === 'done' ? (t.completedAt ?? completedAt) : undefined,
-              }
-            : t
-        ),
+        boardId: action.payload.boardId,
+        tasks: action.payload.tasks,
+        columns: action.payload.columns.length > 0 ? action.payload.columns : DEFAULT_COLUMNS,
+        commentsByTask,
+        loading: false,
+        error: null,
       }
     }
-    case 'ADD_COMMENT':
+    case 'SET_LOADING':
+      return { ...state, loading: action.payload }
+    case 'SET_ERROR':
+      return { ...state, error: action.payload, loading: false }
+
+    // Realtime: tasks
+    case 'REALTIME_TASK_INSERT':
+      if (state.tasks.some((t) => t.id === action.payload.id)) return state
+      return { ...state, tasks: [...state.tasks, action.payload] }
+    case 'REALTIME_TASK_UPDATE':
       return {
         ...state,
-        tasks: state.tasks.map((t) =>
-          t.id === action.payload.taskId
-            ? {
-                ...t,
-                comments: [
-                  ...t.comments,
-                  {
-                    id: uuidv4(),
-                    text: action.payload.text,
-                    author: action.payload.author,
-                    createdAt: now(),
-                  },
-                ],
-                updatedAt: now(),
-              }
-            : t
-        ),
+        tasks: state.tasks.map((t) => (t.id === action.payload.id ? action.payload : t)),
       }
-    case 'DELETE_COMMENT':
+    case 'REALTIME_TASK_DELETE':
       return {
         ...state,
-        tasks: state.tasks.map((t) =>
-          t.id === action.payload.taskId
-            ? {
-                ...t,
-                comments: t.comments.filter((c) => c.id !== action.payload.commentId),
-                updatedAt: now(),
-              }
-            : t
-        ),
+        tasks: state.tasks.filter((t) => t.id !== action.payload.id),
       }
-    case 'REORDER_TASK': {
-      const { taskId, status, targetIndex } = action.payload
-      const task = state.tasks.find((t) => t.id === taskId)
-      if (!task) return state
-      // Remove task from current position
-      const remaining = state.tasks.filter((t) => t.id !== taskId)
-      const updatedTask = { ...task, status, updatedAt: now(), completedAt: status === 'done' ? (task.completedAt ?? now()) : undefined }
-      // Get tasks in the target status to find the insertion point
-      const tasksInStatus = remaining.filter((t) => t.status === status)
-      const clampedIndex = Math.min(targetIndex, tasksInStatus.length)
-      // Find the actual index in the full array to insert at
-      let insertAt: number
-      if (clampedIndex >= tasksInStatus.length) {
-        // Insert after the last task in this status
-        const lastInStatus = tasksInStatus[tasksInStatus.length - 1]
-        insertAt = lastInStatus ? remaining.indexOf(lastInStatus) + 1 : remaining.length
-      } else {
-        // Insert before the task at clampedIndex
-        insertAt = remaining.indexOf(tasksInStatus[clampedIndex])
+
+    // Realtime: comments
+    case 'REALTIME_COMMENT_INSERT': {
+      const taskId = action.payload.task_id
+      const existing = state.commentsByTask[taskId] ?? []
+      if (existing.some((c) => c.id === action.payload.id)) return state
+      return {
+        ...state,
+        commentsByTask: {
+          ...state.commentsByTask,
+          [taskId]: [...existing, action.payload],
+        },
       }
-      const tasks = [...remaining.slice(0, insertAt), updatedTask, ...remaining.slice(insertAt)]
-      return { ...state, tasks }
     }
+    case 'REALTIME_COMMENT_DELETE': {
+      const taskId = action.payload.task_id
+      const existing = state.commentsByTask[taskId] ?? []
+      return {
+        ...state,
+        commentsByTask: {
+          ...state.commentsByTask,
+          [taskId]: existing.filter((c) => c.id !== action.payload.id),
+        },
+      }
+    }
+
+    // Realtime: columns
+    case 'REALTIME_COLUMN_INSERT': {
+      if (state.columns.some((c) => c.slug === action.payload.slug)) return state
+      const cols = [...state.columns, action.payload].sort((a, b) => a.position - b.position)
+      return { ...state, columns: cols }
+    }
+    case 'REALTIME_COLUMN_UPDATE': {
+      const cols = state.columns
+        .map((c) => (c.slug === action.payload.slug ? action.payload : c))
+        .sort((a, b) => a.position - b.position)
+      return { ...state, columns: cols }
+    }
+    case 'REALTIME_COLUMN_DELETE':
+      return { ...state, columns: state.columns.filter((c) => c.slug !== action.payload.slug) }
+
+    // Local UI state
     case 'SET_SEARCH':
       return { ...state, searchQuery: action.payload }
     case 'SET_FILTER_PRIORITY':
@@ -184,315 +130,329 @@ function taskReducer(state: TaskState, action: TaskAction): TaskState {
       return { ...state, currentView: action.payload }
     case 'TOGGLE_SUBTASKS_ON_BOARD':
       return { ...state, showSubtasksOnBoard: !state.showSubtasksOnBoard }
-    case 'UPDATE_PROFILE':
-      return { ...state, profile: { ...state.profile, ...action.payload } }
-    case 'ADD_COLUMN': {
-      const id = slugify(action.payload.title)
-      if (!id || state.columns.some((c) => c.id === id)) return state
-      const newColumn: Column = { id, title: action.payload.title.trim(), color: action.payload.color, icon: action.payload.icon }
-      let insertAt: number
-      if (action.payload.afterColumnId) {
-        const afterIndex = state.columns.findIndex((c) => c.id === action.payload.afterColumnId)
-        insertAt = afterIndex >= 0 ? afterIndex + 1 : state.columns.length
-      } else {
-        // Default: insert before Done
-        const doneIndex = state.columns.findIndex((c) => c.id === 'done')
-        insertAt = doneIndex >= 0 ? doneIndex : state.columns.length
-      }
-      const columns = [...state.columns.slice(0, insertAt), newColumn, ...state.columns.slice(insertAt)]
-      return { ...state, columns }
-    }
-    case 'REMOVE_COLUMN': {
-      const colId = action.payload
-      if (PROTECTED_COLUMN_IDS.includes(colId)) return state
-      if (state.tasks.some((t) => t.status === colId)) return state
-      return { ...state, columns: state.columns.filter((c) => c.id !== colId) }
-    }
-    case 'REORDER_COLUMNS':
-      return { ...state, columns: action.payload }
     default:
       return state
   }
 }
 
-const STORAGE_KEY = 'dig-tracker-state'
-
-interface PersistedState {
-  tasks: Task[]
-  columns?: Column[]
-  nextTaskNumber?: number
-  profile: UserProfile
-  showSubtasksOnBoard: boolean
-}
-
-function loadState(): PersistedState | undefined {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return undefined
-    const parsed = JSON.parse(raw) as PersistedState
-    if (!Array.isArray(parsed.tasks)) return undefined
-    // Migrate tasks missing the `number` field
-    let maxNumber = 0
-    const needsMigration = parsed.tasks.some((t) => t.number == null)
-    if (needsMigration) {
-      parsed.tasks = parsed.tasks.map((t, i) => {
-        if (t.number == null) {
-          const num = i + 1
-          if (num > maxNumber) maxNumber = num
-          return { ...t, number: num }
-        }
-        if (t.number > maxNumber) maxNumber = t.number
-        return t
-      })
-      if (parsed.nextTaskNumber == null || parsed.nextTaskNumber <= maxNumber) {
-        parsed.nextTaskNumber = maxNumber + 1
-      }
-    }
-    return parsed
-  } catch {
-    return undefined
-  }
-}
-
-function saveState(state: TaskState): void {
-  try {
-    const persisted: PersistedState = {
-      tasks: state.tasks,
-      columns: state.columns,
-      nextTaskNumber: state.nextTaskNumber,
-      profile: state.profile,
-      showSubtasksOnBoard: state.showSubtasksOnBoard,
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted))
-  } catch {
-    // Storage full or unavailable — silently ignore
-  }
-}
-
-const SAMPLE_TASKS: Task[] = [
-  {
-    id: 'task-1',
-    number: 1,
-    title: 'Design new landing page',
-    description: 'Create a modern, responsive landing page with hero section, features grid, and testimonials.',
-    status: 'in-progress',
-    priority: 'high',
-    assignee: 'Alice',
-    createdBy: 'Alice',
-    tags: ['design', 'frontend'],
-    comments: [
-      { id: 'c1', text: 'Started the wireframes, looking great!', author: 'Bob', createdAt: new Date(Date.now() - 86400000).toISOString() },
-    ],
-    createdAt: new Date(Date.now() - 172800000).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000).toISOString(),
-    subtaskIds: ['task-1a', 'task-1b'],
-  },
-  {
-    id: 'task-1a',
-    number: 2,
-    title: 'Create hero section mockup',
-    description: 'Design the hero section with gradient background and CTA.',
-    status: 'done',
-    priority: 'medium',
-    assignee: 'Alice',
-    createdBy: 'Alice',
-    tags: ['design'],
-    comments: [],
-    createdAt: new Date(Date.now() - 172800000).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000).toISOString(),
-    completedAt: new Date(Date.now() - 86400000).toISOString(),
-    parentId: 'task-1',
-    subtaskIds: [],
-  },
-  {
-    id: 'task-1b',
-    number: 3,
-    title: 'Build features grid component',
-    description: 'Implement the responsive features grid.',
-    status: 'in-progress',
-    priority: 'medium',
-    assignee: 'Alice',
-    createdBy: 'Alice',
-    tags: ['frontend'],
-    comments: [],
-    createdAt: new Date(Date.now() - 172800000).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000).toISOString(),
-    parentId: 'task-1',
-    subtaskIds: [],
-  },
-  {
-    id: 'task-2',
-    number: 4,
-    title: 'Set up CI/CD pipeline',
-    description: 'Configure GitHub Actions for automated testing and deployment.',
-    status: 'todo',
-    priority: 'medium',
-    assignee: 'Charlie',
-    createdBy: 'Bob',
-    tags: ['devops'],
-    comments: [],
-    createdAt: new Date(Date.now() - 259200000).toISOString(),
-    updatedAt: new Date(Date.now() - 259200000).toISOString(),
-    subtaskIds: [],
-  },
-  {
-    id: 'task-3',
-    number: 5,
-    title: 'Fix authentication bug',
-    description: 'Users are being logged out after 5 minutes. Need to fix token refresh logic.',
-    status: 'review',
-    priority: 'urgent',
-    assignee: 'Diana',
-    createdBy: 'Diana',
-    tags: ['bug', 'auth'],
-    comments: [
-      { id: 'c2', text: 'Found the issue - refresh token was not being stored correctly.', author: 'Diana', createdAt: new Date(Date.now() - 7200000).toISOString() },
-      { id: 'c3', text: 'PR is up for review!', author: 'Diana', createdAt: new Date(Date.now() - 3600000).toISOString() },
-    ],
-    createdAt: new Date(Date.now() - 345600000).toISOString(),
-    updatedAt: new Date(Date.now() - 1800000).toISOString(),
-    subtaskIds: [],
-  },
-  {
-    id: 'task-4',
-    number: 6,
-    title: 'Write API documentation',
-    description: 'Document all REST API endpoints with examples using OpenAPI spec.',
-    status: 'backlog',
-    priority: 'low',
-    assignee: '',
-    createdBy: 'Charlie',
-    tags: ['docs'],
-    comments: [],
-    createdAt: new Date(Date.now() - 432000000).toISOString(),
-    updatedAt: new Date(Date.now() - 432000000).toISOString(),
-    subtaskIds: [],
-  },
-  {
-    id: 'task-5',
-    number: 7,
-    title: 'Implement dark mode',
-    description: 'Add dark mode toggle with system preference detection and local storage persistence.',
-    status: 'done',
-    priority: 'medium',
-    assignee: 'Eve',
-    createdBy: 'Eve',
-    tags: ['feature', 'ui'],
-    comments: [
-      { id: 'c4', text: 'Shipped! Looks beautiful.', author: 'Alice', createdAt: new Date(Date.now() - 86400000).toISOString() },
-    ],
-    createdAt: new Date(Date.now() - 604800000).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000).toISOString(),
-    completedAt: new Date(Date.now() - 86400000).toISOString(),
-    subtaskIds: [],
-  },
-  {
-    id: 'task-6',
-    number: 8,
-    title: 'Optimize database queries',
-    description: 'Profile slow queries and add proper indexes to improve performance.',
-    status: 'todo',
-    priority: 'high',
-    assignee: 'Bob',
-    createdBy: 'Bob',
-    tags: ['performance', 'backend'],
-    comments: [],
-    createdAt: new Date(Date.now() - 518400000).toISOString(),
-    updatedAt: new Date(Date.now() - 518400000).toISOString(),
-    subtaskIds: [],
-  },
-]
+// ============================================================
+// Context
+// ============================================================
 
 interface TaskContextType {
   state: TaskState
-  addTask: (task: Omit<Task, 'id' | 'number' | 'createdAt' | 'updatedAt' | 'comments'>) => void
-  updateTask: (id: string, updates: Partial<Task>) => void
-  deleteTask: (id: string) => void
-  moveTask: (id: string, status: TaskStatus) => void
-  reorderTask: (taskId: string, status: TaskStatus, targetIndex: number) => void
-  addComment: (taskId: string, text: string, author: string) => void
-  deleteComment: (taskId: string, commentId: string) => void
+  addTask: (task: {
+    title: string
+    description: string
+    status: TaskStatus
+    priority: TaskPriority
+    assignee: string
+    createdBy: string
+    tags: string[]
+    parentId?: string
+    subtaskIds: string[]
+  }) => Promise<void>
+  updateTask: (id: string, updates: Partial<Task>) => Promise<void>
+  deleteTask: (id: string) => Promise<void>
+  moveTask: (id: string, status: TaskStatus) => Promise<void>
+  reorderTask: (taskId: string, status: TaskStatus, targetIndex: number) => Promise<void>
+  addComment: (taskId: string, text: string, author: string) => Promise<void>
+  deleteComment: (taskId: string, commentId: string) => Promise<void>
   setSearch: (query: string) => void
   setFilterPriority: (priority: TaskPriority | 'all') => void
   setView: (view: 'board' | 'reports' | 'profile') => void
   toggleSubtasksOnBoard: () => void
-  updateProfile: (updates: Partial<UserProfile>) => void
   getFilteredTasks: (status: TaskStatus) => Task[]
-  addColumn: (title: string, color: string, icon: string, afterColumnId?: string) => void
-  removeColumn: (columnId: string) => void
-  reorderColumns: (columns: Column[]) => void
+  getCommentCount: (taskId: string) => number
+  getComments: (taskId: string) => TaskComment[]
+  addColumn: (title: string, color: string, icon: string, afterColumnId?: string) => Promise<void>
+  removeColumn: (columnId: string) => Promise<void>
+  reorderColumns: (columns: Column[]) => Promise<void>
 }
 
 const TaskContext = createContext<TaskContextType | null>(null)
 
-export function TaskProvider({ children, initialTasks, initialProfile }: { children: ReactNode; initialTasks?: Task[]; initialProfile?: Partial<UserProfile> }) {
-  const saved = initialTasks ? undefined : loadState()
-  const tasks = initialTasks ?? saved?.tasks ?? SAMPLE_TASKS
-  const defaultNextNumber = tasks.length > 0
-    ? Math.max(...tasks.map((t) => t.number ?? 0)) + 1
-    : 1
+// ============================================================
+// Provider
+// ============================================================
+
+const UI_STORAGE_KEY = 'dig-tracker-ui'
+
+function loadUiPrefs(): { showSubtasksOnBoard: boolean } {
+  try {
+    const raw = localStorage.getItem(UI_STORAGE_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return { showSubtasksOnBoard: false }
+}
+
+function saveUiPrefs(prefs: { showSubtasksOnBoard: boolean }) {
+  try {
+    localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(prefs))
+  } catch { /* ignore */ }
+}
+
+export function TaskProvider({ children }: { children: ReactNode }) {
+  const { user, profile: authProfile } = useAuth()
+  const uiPrefs = loadUiPrefs()
+
   const [state, dispatch] = useReducer(taskReducer, {
-    tasks,
-    columns: saved?.columns ?? DEFAULT_COLUMNS,
-    nextTaskNumber: saved?.nextTaskNumber ?? defaultNextNumber,
+    tasks: [],
+    columns: DEFAULT_COLUMNS,
+    commentsByTask: {},
+    boardId: null,
+    loading: true,
+    error: null,
     searchQuery: '',
     filterPriority: 'all',
     currentView: 'board',
-    showSubtasksOnBoard: saved?.showSubtasksOnBoard ?? false,
-    profile: saved?.profile ?? {
-      username: '',
-      email: '',
-      displayName: '',
-      avatarColor: '#6366f1',
-      ...initialProfile,
-    },
+    showSubtasksOnBoard: uiPrefs.showSubtasksOnBoard,
   })
 
+  const boardIdRef = useRef<string | null>(null)
+
+  // Save UI prefs when they change
   useEffect(() => {
-    saveState(state)
-  }, [state])
+    saveUiPrefs({ showSubtasksOnBoard: state.showSubtasksOnBoard })
+  }, [state.showSubtasksOnBoard])
+
+  // ---- Initial data fetch ----
+  useEffect(() => {
+    if (!user) return
+
+    async function init() {
+      dispatch({ type: 'SET_LOADING', payload: true })
+
+      // Find a board the user is a member of
+      let { data: memberships } = await supabase
+        .from('board_members')
+        .select('board_id')
+        .eq('user_id', user!.id)
+        .limit(1)
+
+      let boardId: string
+
+      if (!memberships || memberships.length === 0) {
+        // Create a default board for this user
+        const { data, error } = await supabase.rpc('create_default_board', { p_user_id: user!.id })
+        if (error || !data) {
+          dispatch({ type: 'SET_ERROR', payload: error?.message ?? 'Failed to create board' })
+          return
+        }
+        boardId = data as string
+      } else {
+        boardId = memberships[0].board_id
+      }
+
+      boardIdRef.current = boardId
+
+      // Fetch columns, tasks, comments in parallel
+      const [colRes, taskRes, commentRes] = await Promise.all([
+        supabase.from('columns').select('*').eq('board_id', boardId).order('position'),
+        supabase.from('tasks').select('*').eq('board_id', boardId).order('position'),
+        supabase.from('task_comments').select('*').eq('board_id', boardId).order('created_at'),
+      ])
+
+      if (colRes.error || taskRes.error || commentRes.error) {
+        dispatch({ type: 'SET_ERROR', payload: colRes.error?.message ?? taskRes.error?.message ?? commentRes.error?.message ?? 'Fetch error' })
+        return
+      }
+
+      const columns = (colRes.data ?? []).map((r) => mapColumn(r as Record<string, unknown>))
+      const tasks = (taskRes.data ?? []).map((r) => mapTask(r as Record<string, unknown>))
+      const comments = (commentRes.data ?? []) as TaskComment[]
+
+      dispatch({ type: 'SET_INITIAL_DATA', payload: { boardId, tasks, columns, comments } })
+    }
+
+    init()
+  }, [user])
+
+  // ---- Realtime subscriptions ----
+  useEffect(() => {
+    const boardId = boardIdRef.current
+    if (!boardId) return
+
+    const channel = supabase
+      .channel(`board-${boardId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tasks', filter: `board_id=eq.${boardId}` },
+        (payload) => dispatch({ type: 'REALTIME_TASK_INSERT', payload: mapTask(payload.new as Record<string, unknown>) }))
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tasks', filter: `board_id=eq.${boardId}` },
+        (payload) => dispatch({ type: 'REALTIME_TASK_UPDATE', payload: mapTask(payload.new as Record<string, unknown>) }))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'tasks', filter: `board_id=eq.${boardId}` },
+        (payload) => dispatch({ type: 'REALTIME_TASK_DELETE', payload: { id: (payload.old as Record<string, unknown>).id as string } }))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_comments', filter: `board_id=eq.${boardId}` },
+        (payload) => dispatch({ type: 'REALTIME_COMMENT_INSERT', payload: payload.new as TaskComment }))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'task_comments', filter: `board_id=eq.${boardId}` },
+        (payload) => {
+          const old = payload.old as Record<string, unknown>
+          dispatch({ type: 'REALTIME_COMMENT_DELETE', payload: { id: old.id as string, task_id: old.task_id as string } })
+        })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'columns', filter: `board_id=eq.${boardId}` },
+        (payload) => dispatch({ type: 'REALTIME_COLUMN_INSERT', payload: mapColumn(payload.new as Record<string, unknown>) }))
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'columns', filter: `board_id=eq.${boardId}` },
+        (payload) => dispatch({ type: 'REALTIME_COLUMN_UPDATE', payload: mapColumn(payload.new as Record<string, unknown>) }))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'columns', filter: `board_id=eq.${boardId}` },
+        (payload) => dispatch({ type: 'REALTIME_COLUMN_DELETE', payload: { slug: (payload.old as Record<string, unknown>).slug as string } }))
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [state.boardId])
+
+  // ---- Actions (all async, write to Supabase) ----
 
   const addTask = useCallback(
-    (task: Omit<Task, 'id' | 'number' | 'createdAt' | 'updatedAt' | 'comments'>) =>
-      dispatch({ type: 'ADD_TASK', payload: task }),
-    []
+    async (task: {
+      title: string; description: string; status: TaskStatus; priority: TaskPriority
+      assignee: string; createdBy: string; tags: string[]; parentId?: string; subtaskIds: string[]
+    }) => {
+      const boardId = boardIdRef.current
+      if (!boardId) return
+
+      // Get the next task number atomically
+      const { data: nextNum } = await supabase.rpc('next_task_number', { p_board_id: boardId })
+
+      // Calculate position: put at end of column
+      const tasksInColumn = state.tasks.filter((t) => t.status === task.status)
+      const maxPosition = tasksInColumn.length > 0 ? Math.max(...tasksInColumn.map((t) => t.position)) : 0
+      const position = maxPosition + 1000
+
+      const { error } = await supabase.from('tasks').insert({
+        board_id: boardId,
+        number: nextNum ?? 1,
+        title: task.title,
+        description: task.description,
+        column_slug: task.status,
+        priority: task.priority,
+        position,
+        assignee_name: task.assignee,
+        created_by_name: task.createdBy,
+        created_by_id: user?.id ?? null,
+        assignee_id: null,
+        tags: task.tags,
+        parent_id: task.parentId ?? null,
+        subtask_ids: task.subtaskIds ?? [],
+      })
+
+      if (error) {
+        dispatch({ type: 'SET_ERROR', payload: error.message })
+      }
+    },
+    [state.tasks, user]
   )
+
   const updateTask = useCallback(
-    (id: string, updates: Partial<Task>) =>
-      dispatch({ type: 'UPDATE_TASK', payload: { id, updates } }),
+    async (id: string, updates: Partial<Task>) => {
+      // Map compat fields to DB fields
+      const dbUpdates: Record<string, unknown> = {}
+      if (updates.title !== undefined) dbUpdates.title = updates.title
+      if (updates.description !== undefined) dbUpdates.description = updates.description
+      if (updates.priority !== undefined) dbUpdates.priority = updates.priority
+      if (updates.assignee !== undefined || updates.assignee_name !== undefined)
+        dbUpdates.assignee_name = updates.assignee ?? updates.assignee_name
+      if (updates.tags !== undefined) dbUpdates.tags = updates.tags
+      if (updates.status !== undefined || updates.column_slug !== undefined)
+        dbUpdates.column_slug = updates.status ?? updates.column_slug
+      if (updates.completed_at !== undefined || updates.completedAt !== undefined)
+        dbUpdates.completed_at = updates.completed_at ?? updates.completedAt ?? null
+      if (updates.subtask_ids !== undefined || updates.subtaskIds !== undefined)
+        dbUpdates.subtask_ids = updates.subtask_ids ?? updates.subtaskIds
+
+      const { error } = await supabase.from('tasks').update(dbUpdates).eq('id', id)
+      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+    },
     []
   )
+
   const deleteTask = useCallback(
-    (id: string) => dispatch({ type: 'DELETE_TASK', payload: id }),
+    async (id: string) => {
+      const { error } = await supabase.from('tasks').delete().eq('id', id)
+      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+    },
     []
   )
+
   const moveTask = useCallback(
-    (id: string, status: TaskStatus) =>
-      dispatch({ type: 'MOVE_TASK', payload: { id, status } }),
-    []
+    async (id: string, status: TaskStatus) => {
+      const task = state.tasks.find((t) => t.id === id)
+      const completedAt = status === 'done' ? (task?.completed_at ?? new Date().toISOString()) : null
+
+      const tasksInColumn = state.tasks.filter((t) => t.status === status && t.id !== id)
+      const maxPosition = tasksInColumn.length > 0 ? Math.max(...tasksInColumn.map((t) => t.position)) : 0
+      const position = maxPosition + 1000
+
+      const { error } = await supabase
+        .from('tasks')
+        .update({ column_slug: status, position, completed_at: completedAt })
+        .eq('id', id)
+      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+    },
+    [state.tasks]
   )
+
   const reorderTask = useCallback(
-    (taskId: string, status: TaskStatus, targetIndex: number) =>
-      dispatch({ type: 'REORDER_TASK', payload: { taskId, status, targetIndex } }),
-    []
+    async (taskId: string, status: TaskStatus, targetIndex: number) => {
+      const tasksInColumn = state.tasks
+        .filter((t) => t.status === status && t.id !== taskId)
+        .sort((a, b) => a.position - b.position)
+
+      let newPosition: number
+      const clamped = Math.min(targetIndex, tasksInColumn.length)
+
+      if (tasksInColumn.length === 0) {
+        newPosition = 1000
+      } else if (clamped === 0) {
+        newPosition = tasksInColumn[0].position - 1000
+      } else if (clamped >= tasksInColumn.length) {
+        newPosition = tasksInColumn[tasksInColumn.length - 1].position + 1000
+      } else {
+        newPosition = Math.floor((tasksInColumn[clamped - 1].position + tasksInColumn[clamped].position) / 2)
+      }
+
+      const task = state.tasks.find((t) => t.id === taskId)
+      const completedAt = status === 'done' ? (task?.completed_at ?? new Date().toISOString()) : null
+
+      const { error } = await supabase
+        .from('tasks')
+        .update({ column_slug: status, position: newPosition, completed_at: completedAt })
+        .eq('id', taskId)
+      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+    },
+    [state.tasks]
   )
+
   const addComment = useCallback(
-    (taskId: string, text: string, author: string) =>
-      dispatch({ type: 'ADD_COMMENT', payload: { taskId, text, author } }),
-    []
+    async (taskId: string, text: string, author: string) => {
+      const boardId = boardIdRef.current
+      if (!boardId) return
+      const { error } = await supabase.from('task_comments').insert({
+        task_id: taskId,
+        board_id: boardId,
+        author_id: user?.id ?? null,
+        author_name: author,
+        text,
+      })
+      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+    },
+    [user]
   )
+
   const deleteComment = useCallback(
-    (taskId: string, commentId: string) =>
-      dispatch({ type: 'DELETE_COMMENT', payload: { taskId, commentId } }),
+    async (_taskId: string, commentId: string) => {
+      const { error } = await supabase.from('task_comments').delete().eq('id', commentId)
+      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+    },
     []
   )
+
   const setSearch = useCallback(
     (query: string) => dispatch({ type: 'SET_SEARCH', payload: query }),
     []
   )
   const setFilterPriority = useCallback(
-    (priority: TaskPriority | 'all') =>
-      dispatch({ type: 'SET_FILTER_PRIORITY', payload: priority }),
+    (priority: TaskPriority | 'all') => dispatch({ type: 'SET_FILTER_PRIORITY', payload: priority }),
     []
   )
   const setView = useCallback(
@@ -503,52 +463,151 @@ export function TaskProvider({ children, initialTasks, initialProfile }: { child
     () => dispatch({ type: 'TOGGLE_SUBTASKS_ON_BOARD' }),
     []
   )
-  const updateProfile = useCallback(
-    (updates: Partial<UserProfile>) => dispatch({ type: 'UPDATE_PROFILE', payload: updates }),
-    []
-  )
-  const addColumn = useCallback(
-    (title: string, color: string, icon: string, afterColumnId?: string) =>
-      dispatch({ type: 'ADD_COLUMN', payload: { title, color, icon, afterColumnId } }),
-    []
-  )
-  const removeColumn = useCallback(
-    (columnId: string) => dispatch({ type: 'REMOVE_COLUMN', payload: columnId }),
-    []
-  )
-  const reorderColumns = useCallback(
-    (columns: Column[]) => dispatch({ type: 'REORDER_COLUMNS', payload: columns }),
-    []
-  )
 
   const getFilteredTasks = useCallback(
     (status: TaskStatus): Task[] => {
-      return state.tasks.filter((task) => {
-        if (task.status !== status) return false
-        // Only show subtasks on board when toggle is on
-        if (task.parentId && !state.showSubtasksOnBoard) return false
-        if (state.searchQuery) {
-          const q = state.searchQuery.toLowerCase()
-          const taskKey = formatTaskKey(task.number).toLowerCase()
-          if (
-            !task.title.toLowerCase().includes(q) &&
-            !task.description.toLowerCase().includes(q) &&
-            !taskKey.includes(q)
-          )
+      return state.tasks
+        .filter((task) => {
+          if (task.status !== status) return false
+          if (task.parentId && !state.showSubtasksOnBoard) return false
+          if (state.searchQuery) {
+            const q = state.searchQuery.toLowerCase()
+            const taskKey = formatTaskKey(task.number).toLowerCase()
+            if (
+              !task.title.toLowerCase().includes(q) &&
+              !task.description.toLowerCase().includes(q) &&
+              !taskKey.includes(q)
+            ) return false
+          }
+          if (state.filterPriority !== 'all' && task.priority !== state.filterPriority)
             return false
-        }
-        if (state.filterPriority !== 'all' && task.priority !== state.filterPriority)
-          return false
-        return true
-      })
+          return true
+        })
+        .sort((a, b) => a.position - b.position)
     },
     [state.tasks, state.searchQuery, state.filterPriority, state.showSubtasksOnBoard]
   )
 
+  const getCommentCount = useCallback(
+    (taskId: string): number => (state.commentsByTask[taskId] ?? []).length,
+    [state.commentsByTask]
+  )
+
+  const getComments = useCallback(
+    (taskId: string): TaskComment[] => state.commentsByTask[taskId] ?? [],
+    [state.commentsByTask]
+  )
+
+  function slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+  }
+
+  const addColumn = useCallback(
+    async (title: string, color: string, icon: string, afterColumnId?: string) => {
+      const boardId = boardIdRef.current
+      if (!boardId) return
+
+      const slug = slugify(title)
+      if (!slug || state.columns.some((c) => c.slug === slug)) return
+
+      let position: number
+      if (afterColumnId) {
+        const afterCol = state.columns.find((c) => c.slug === afterColumnId)
+        const afterIdx = state.columns.indexOf(afterCol!)
+        const nextCol = state.columns[afterIdx + 1]
+        position = nextCol
+          ? Math.floor((afterCol!.position + nextCol.position) / 2)
+          : afterCol!.position + 1000
+      } else {
+        // Insert before Done
+        const doneCol = state.columns.find((c) => c.slug === 'done')
+        const doneIdx = state.columns.indexOf(doneCol!)
+        const prevCol = state.columns[doneIdx - 1]
+        position = prevCol && doneCol
+          ? Math.floor((prevCol.position + doneCol.position) / 2)
+          : (doneCol?.position ?? 4000) - 1000
+      }
+
+      const { error } = await supabase.from('columns').insert({
+        board_id: boardId,
+        slug,
+        title: title.trim(),
+        color,
+        icon,
+        position,
+        is_protected: false,
+      })
+      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+    },
+    [state.columns]
+  )
+
+  const removeColumn = useCallback(
+    async (columnId: string) => {
+      if (PROTECTED_COLUMN_IDS.includes(columnId)) return
+      if (state.tasks.some((t) => t.status === columnId)) return
+
+      const col = state.columns.find((c) => c.slug === columnId)
+      if (!col) return
+
+      // Need to delete by board_id + slug since our id field is the slug
+      const boardId = boardIdRef.current
+      if (!boardId) return
+
+      const { error } = await supabase
+        .from('columns')
+        .delete()
+        .eq('board_id', boardId)
+        .eq('slug', columnId)
+      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+    },
+    [state.tasks, state.columns]
+  )
+
+  const reorderColumns = useCallback(
+    async (columns: Column[]) => {
+      const boardId = boardIdRef.current
+      if (!boardId) return
+
+      // Update positions for each column
+      const updates = columns.map((col, i) => ({
+        slug: col.slug,
+        position: i * 1000,
+      }))
+
+      for (const u of updates) {
+        await supabase
+          .from('columns')
+          .update({ position: u.position })
+          .eq('board_id', boardId)
+          .eq('slug', u.slug)
+      }
+    },
+    []
+  )
+
+  // Expose profile as a compat object on state for components that read state.profile
+  const compatProfile = authProfile
+    ? {
+        username: user?.email?.split('@')[0] ?? '',
+        email: user?.email ?? '',
+        displayName: authProfile.display_name,
+        avatarColor: authProfile.avatar_color,
+      }
+    : { username: '', email: '', displayName: '', avatarColor: '#6366f1' }
+
+  const stateWithProfile = { ...state, profile: compatProfile }
+
   return (
     <TaskContext.Provider
       value={{
-        state,
+        state: stateWithProfile as TaskState & { profile: typeof compatProfile },
         addTask,
         updateTask,
         deleteTask,
@@ -560,17 +619,34 @@ export function TaskProvider({ children, initialTasks, initialProfile }: { child
         setFilterPriority,
         setView,
         toggleSubtasksOnBoard,
-        updateProfile,
         getFilteredTasks,
+        getCommentCount,
+        getComments,
         addColumn,
         removeColumn,
         reorderColumns,
       }}
     >
-      {children}
+      {state.loading ? (
+        <div className="app-loading">
+          <div className="loading-spinner" />
+          <p>Loading board...</p>
+        </div>
+      ) : state.error ? (
+        <div className="app-error">
+          <p>Error: {state.error}</p>
+          <button onClick={() => window.location.reload()}>Retry</button>
+        </div>
+      ) : (
+        children
+      )}
     </TaskContext.Provider>
   )
 }
+
+// ============================================================
+// Hook
+// ============================================================
 
 export function useTaskContext(): TaskContextType {
   const context = useContext(TaskContext)

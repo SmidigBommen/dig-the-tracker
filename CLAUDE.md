@@ -8,40 +8,58 @@
 ## Codebase structure
 
 ```
+supabase/
+  migrations/
+    001_initial_schema.sql           # Full Supabase schema: tables, RLS, functions, realtime
 src/
-  App.tsx                          # Root app component, keyboard shortcuts, view routing
-  App.css                          # Global app styles
-  main.tsx                         # React entry point
-  index.css                        # Global CSS reset/variables
+  App.tsx                            # Root app: AuthProvider > AuthGate > TaskProvider > AppContent
+  App.css                            # Global app styles + loading/error states
+  main.tsx                           # React entry point
+  index.css                          # Global CSS reset/variables
+  lib/
+    supabase.ts                      # Supabase client singleton (VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY)
+    migrateLocalData.ts              # One-time localStorage → Supabase migration helper
   types/
-    index.ts                       # Shared types: Task, Column, Priority, ValidationError
+    index.ts                         # Shared types: Task, Column, TaskComment, mapTask(), mapColumn()
   context/
-    TaskContext.tsx                 # Central state: reducer, actions, persistence, validation, context API
+    AuthContext.tsx                   # Auth: session, profile, signIn (magic link), signOut, updateProfile
+    TaskContext.tsx                   # Board state: Supabase CRUD, realtime subscriptions, reducer
+    taskUtils.ts                     # Validation + formatTaskKey (unchanged)
   components/
-    Header.tsx / Header.css        # Top nav bar: tabs, search, filters
+    LoginPage.tsx / LoginPage.css    # Magic link login page
+    InviteHandler.tsx                # Invite link acceptance flow (?invite=<token>)
+    Toast.tsx / Toast.css            # Notification component for errors/success
+    Header.tsx / Header.css          # Top nav: tabs, search, filters, sign-out
     KanbanBoard.tsx / KanbanBoard.css  # Board view: columns, add-column form, task modals
     KanbanColumn.tsx / KanbanColumn.css  # Single column with drag-drop
-    TaskCard.tsx / TaskCard.css    # Individual task card in column
-    TaskModal.tsx / TaskModal.css  # Create task modal
-    TaskDetailModal.tsx / TaskDetailModal.css  # View/edit task details modal
+    TaskCard.tsx / TaskCard.css      # Individual task card in column
+    TaskModal.tsx / TaskModal.css    # Create task modal (async)
+    TaskDetailModal.tsx / TaskDetailModal.css  # View/edit task + comments (async)
     ReportsPage.tsx / ReportsPage.css  # Reports/analytics view
-    ProfilePage.tsx / ProfilePage.css  # User profile settings
+    ProfilePage.tsx / ProfilePage.css  # Profile settings + invite link generation
   test/
-    setup.ts                       # Vitest setup
-    TaskContext.test.tsx            # Context/reducer unit tests
-    validation.test.ts             # Validation function tests
-    components.test.tsx            # Component rendering tests
+    setup.ts                         # Vitest setup + supabase mock
+    supabaseMock.ts                  # In-memory Supabase mock (chainable query builder)
+    TaskContext.test.tsx             # Context/reducer unit tests
+    validation.test.ts              # Validation function tests (unchanged)
+    components.test.tsx             # Component rendering tests
 ```
 
 ## Architecture notes
 
-- **State management:** Single `useReducer` in `TaskContext.tsx` with localStorage persistence
-- **Task numbering:** Each task has a sequential `number` field (1, 2, 3...). Displayed as `DIG-N` via `formatTaskKey()`. Counter stored as `nextTaskNumber` in state and persisted. Migration in `loadState()` handles existing data missing `number` fields.
-- **Deep-linking:** Hash-based URL routing (`#DIG-N`). `KanbanBoard` syncs `selectedTask` with `location.hash` and listens for `hashchange`. `App` switches to board view on mount if hash matches.
+- **Backend:** Supabase (Postgres + Auth + Realtime). Static site on GitHub Pages.
+- **Auth:** Magic link (passwordless email) via `AuthContext`. Session managed with `supabase.auth`.
+- **State management:** `useReducer` in `TaskContext.tsx`. Data fetched from Supabase on mount, kept in sync via realtime subscriptions. All mutations are async (write to Supabase, realtime updates local state).
+- **Comments:** Stored in separate `task_comments` table (not nested in tasks). Accessed via `state.commentsByTask[taskId]` and `getCommentCount(taskId)` / `getComments(taskId)` helpers.
+- **Task numbering:** `DIG-N` format. `next_task_number()` Postgres function for atomic numbering.
+- **Columns:** Stored in `columns` table with `position` field (gapped by 1000). `id` in app = `slug` from DB.
+- **Deep-linking:** Hash-based `#DIG-N`. Invite links use query param `?invite=<token>`.
 - **Views:** Routed via `state.currentView` (`'board' | 'reports' | 'profile'`)
-- **Columns:** Dynamic, stored in state. Protected columns: `backlog`, `done`
-- **Modals:** Use `.modal-overlay` / `.modal-content` CSS pattern from TaskModal
-- **Testing:** Vitest + React Testing Library. Tests use a `TestComponent` that exposes context actions via buttons.
+- **Protected columns:** `backlog`, `done` (cannot be removed)
+- **Invite system:** `board_shares` table with token + expiry. `accept_invite()` RPC. Generated in ProfilePage.
+- **UI-only state:** `searchQuery`, `filterPriority`, `currentView`, `showSubtasksOnBoard` stay local (not in DB).
+- **Testing:** Vitest + React Testing Library. `supabaseMock.ts` provides a chainable in-memory mock. All tests wrap with `AuthProvider` + `TaskProvider`.
+- **Env vars:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (set in `.env.local` or GitHub secrets)
 
 ## Keep this file updated
 

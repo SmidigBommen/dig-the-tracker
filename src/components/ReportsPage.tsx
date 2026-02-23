@@ -4,7 +4,7 @@ import { useTaskContext } from '../context/TaskContext.tsx'
 import './ReportsPage.css'
 
 export default function ReportsPage() {
-  const { state } = useTaskContext()
+  const { state, getCommentCount } = useTaskContext()
   const { tasks, columns } = state
   const [currentTime] = useState(() => Date.now())
 
@@ -59,8 +59,11 @@ export default function ReportsPage() {
     const oneDayAgo = currentTime - 86400000
     const recentlyActive = tasks.filter((t) => new Date(t.updatedAt).getTime() > oneDayAgo)
 
-    // Tasks with most comments
-    const mostCommented = [...topLevel].sort((a, b) => b.comments.length - a.comments.length).slice(0, 5)
+    // Tasks with most comments (using getCommentCount)
+    const mostCommented = [...topLevel]
+      .map((t) => ({ task: t, count: getCommentCount(t.id) }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
 
     // Overdue-like: tasks older than 7 days not done
     const sevenDaysAgo = currentTime - 7 * 86400000
@@ -72,6 +75,12 @@ export default function ReportsPage() {
       task,
       ageDays: Math.floor((currentTime - new Date(task.createdAt).getTime()) / 86400000),
     }))
+
+    // Total comments
+    let totalComments = 0
+    for (const t of tasks) {
+      totalComments += getCommentCount(t.id)
+    }
 
     return {
       totalTasks: topLevel.length,
@@ -87,9 +96,9 @@ export default function ReportsPage() {
       recentlyActive: recentlyActive.length,
       mostCommented,
       agingWithDays,
-      totalComments: tasks.reduce((sum, t) => sum + t.comments.length, 0),
+      totalComments,
     }
-  }, [tasks, columns, currentTime])
+  }, [tasks, columns, currentTime, getCommentCount])
 
   const maxStatusCount = Math.max(...Object.values(stats.statusCounts), 1)
   const maxPriorityCount = Math.max(...Object.values(stats.priorityCounts), 1)
@@ -235,13 +244,13 @@ export default function ReportsPage() {
         <div className="report-card">
           <h3>Most Discussed</h3>
           <div className="discussed-list">
-            {stats.mostCommented.filter(t => t.comments.length > 0).map((task) => (
+            {stats.mostCommented.filter(({ count }) => count > 0).map(({ task, count }) => (
               <div key={task.id} className="discussed-item">
                 <span className="discussed-title">{task.title}</span>
-                <span className="discussed-count">💬 {task.comments.length}</span>
+                <span className="discussed-count">💬 {count}</span>
               </div>
             ))}
-            {stats.mostCommented.filter(t => t.comments.length > 0).length === 0 && (
+            {stats.mostCommented.filter(({ count }) => count > 0).length === 0 && (
               <p className="empty-state">No comments yet</p>
             )}
           </div>

@@ -2,6 +2,7 @@ import { useState, type DragEvent } from 'react'
 import type { Task } from '../types/index.ts'
 import { PRIORITY_CONFIG } from '../types/index.ts'
 import { useTaskContext } from '../context/TaskContext.tsx'
+import { useAuth } from '../context/AuthContext.tsx'
 import { formatTaskKey } from '../context/taskUtils.ts'
 import './TaskCard.css'
 
@@ -12,10 +13,13 @@ interface TaskCardProps {
 }
 
 export default function TaskCard({ task, parentTitle, onOpen }: TaskCardProps) {
-  const { state } = useTaskContext()
+  const { getCommentCount } = useTaskContext()
+  const { profile: authProfile } = useAuth()
   const [isDragging, setIsDragging] = useState(false)
   const priority = PRIORITY_CONFIG[task.priority]
   const timeAgo = getTimeAgo(task.updatedAt)
+  const commentCount = getCommentCount(task.id)
+  const avatarColor = authProfile?.avatar_color || '#6366f1'
 
   function handleDragStart(e: DragEvent<HTMLDivElement>) {
     e.dataTransfer.setData('text/plain', task.id)
@@ -47,9 +51,9 @@ export default function TaskCard({ task, parentTitle, onOpen }: TaskCardProps) {
           {priority.icon} {priority.label}
         </span>
         <div className="task-card-header-right">
-          {task.comments.length > 0 && (
-            <span className="task-comment-count" title={`${task.comments.length} comment(s)`}>
-              💬 {task.comments.length}
+          {commentCount > 0 && (
+            <span className="task-comment-count" title={`${commentCount} comment(s)`}>
+              💬 {commentCount}
             </span>
           )}
           <span className="task-key-badge">{formatTaskKey(task.number)}</span>
@@ -76,7 +80,7 @@ export default function TaskCard({ task, parentTitle, onOpen }: TaskCardProps) {
             <span
               className="task-assignee"
               title={task.assignee}
-              style={{ background: state.profile.avatarColor }}
+              style={{ background: avatarColor }}
             >
               {task.assignee.charAt(0).toUpperCase()}
             </span>

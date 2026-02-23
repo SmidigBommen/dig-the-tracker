@@ -63,9 +63,9 @@ export default function KanbanBoard() {
     }
   }, [selectedTask])
 
-  function handleAddColumn() {
+  async function handleAddColumn() {
     if (!newColTitle.trim()) return
-    addColumn(newColTitle, newColColor, newColIcon, newColPosition || undefined)
+    await addColumn(newColTitle, newColColor, newColIcon, newColPosition || undefined)
     setNewColTitle('')
     setNewColColor(COLOR_SWATCHES[0])
     setNewColIcon('📌')

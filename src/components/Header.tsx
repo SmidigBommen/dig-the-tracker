@@ -1,15 +1,18 @@
 import type { TaskPriority } from '../types/index.ts'
 import { useTaskContext } from '../context/TaskContext.tsx'
+import { useAuth } from '../context/AuthContext.tsx'
 import './Header.css'
 
 export default function Header() {
   const { state, setSearch, setFilterPriority, setView, toggleSubtasksOnBoard } = useTaskContext()
+  const { profile: authProfile, signOut } = useAuth()
 
   const totalTasks = state.tasks.filter(t => !t.parentId).length
   const doneTasks = state.tasks.filter(t => t.status === 'done' && !t.parentId).length
 
-  const { profile } = state
-  const initials = (profile.displayName || profile.username || '')
+  const displayName = authProfile?.display_name || ''
+  const avatarColor = authProfile?.avatar_color || '#6366f1'
+  const initials = (displayName || '')
     .split(' ')
     .map((w) => w.charAt(0).toUpperCase())
     .slice(0, 2)
@@ -90,11 +93,19 @@ export default function Header() {
         )}
 
         <button
+          className="header-sign-out"
+          onClick={signOut}
+          title="Sign out"
+        >
+          Sign out
+        </button>
+
+        <button
           className={`header-avatar ${state.currentView === 'profile' ? 'active' : ''}`}
           onClick={() => setView('profile')}
           title="Profile"
           aria-label="Open profile"
-          style={{ background: profile.avatarColor }}
+          style={{ background: avatarColor }}
         >
           {initials || '?'}
         </button>
