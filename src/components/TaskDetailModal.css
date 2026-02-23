@@ -337,6 +337,24 @@
   margin: 0;
 }
 
+.task-ref-link {
+  color: rgba(99, 102, 241, 0.85);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  background: rgba(99, 102, 241, 0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.task-ref-link:hover {
+  color: rgba(99, 102, 241, 1);
+  background: rgba(99, 102, 241, 0.2);
+  text-decoration: underline;
+}
+
 .no-comments {
   font-size: 0.82rem;
   color: rgba(255, 255, 255, 0.2);

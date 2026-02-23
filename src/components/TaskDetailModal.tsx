@@ -1,10 +1,34 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import type { TaskPriority, TaskStatus, ValidationError } from '../types/index.ts'
 import { PRIORITY_CONFIG } from '../types/index.ts'
 import { useTaskContext } from '../context/TaskContext.tsx'
 import { validateTask, validateComment, formatTaskKey } from '../context/taskUtils.ts'
 import TaskModal from './TaskModal.tsx'
 import './TaskDetailModal.css'
+
+const TASK_REF_PATTERN = /\b(DIG-\d+)\b/gi
+
+function renderLinkedText(text: string): ReactNode[] {
+  const parts: ReactNode[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = TASK_REF_PATTERN.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index))
+    }
+    const ref = match[1].toUpperCase()
+    parts.push(
+      <a key={match.index} className="task-ref-link" href={`#${ref}`}>
+        {ref}
+      </a>
+    )
+    lastIndex = match.index + match[0].length
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex))
+  }
+  return parts
+}
 
 interface TaskDetailModalProps {
   taskId: string
@@ -300,7 +324,7 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
                         ×
                       </button>
                     </div>
-                    <p className="comment-text">{comment.text}</p>
+                    <p className="comment-text">{renderLinkedText(comment.text)}</p>
                   </div>
                 ))}
                 {task.comments.length === 0 && (
