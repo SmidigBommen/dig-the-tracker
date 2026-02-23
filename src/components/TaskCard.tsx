@@ -1,6 +1,7 @@
 import { useState, type DragEvent } from 'react'
 import type { Task } from '../types/index.ts'
 import { PRIORITY_CONFIG } from '../types/index.ts'
+import { useTaskContext } from '../context/TaskContext.tsx'
 import { formatTaskKey } from '../context/taskUtils.ts'
 import './TaskCard.css'
 
@@ -11,6 +12,7 @@ interface TaskCardProps {
 }
 
 export default function TaskCard({ task, parentTitle, onOpen }: TaskCardProps) {
+  const { state } = useTaskContext()
   const [isDragging, setIsDragging] = useState(false)
   const priority = PRIORITY_CONFIG[task.priority]
   const timeAgo = getTimeAgo(task.updatedAt)
@@ -71,7 +73,11 @@ export default function TaskCard({ task, parentTitle, onOpen }: TaskCardProps) {
         </div>
         <div className="task-card-meta">
           {task.assignee && (
-            <span className="task-assignee" title={task.assignee}>
+            <span
+              className="task-assignee"
+              title={task.assignee}
+              style={{ background: state.profile.avatarColor }}
+            >
               {task.assignee.charAt(0).toUpperCase()}
             </span>
           )}
