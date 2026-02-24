@@ -204,13 +204,39 @@ export const mockSupabase = {
   from(table: string) {
     return createChain(table)
   },
-  rpc(fn: string, _params?: Record<string, unknown>) {
+  rpc(fn: string, params?: Record<string, unknown>) {
     if (fn === 'create_default_board') {
       return Promise.resolve({ data: 'test-board', error: null })
     }
     if (fn === 'next_task_number') {
       const num = taskNumberCounter++
       return Promise.resolve({ data: num, error: null })
+    }
+    if (fn === 'create_task') {
+      const p = params ?? {}
+      const num = taskNumberCounter++
+      const row: Record<string, unknown> = {
+        id: crypto.randomUUID(),
+        board_id: p.p_board_id,
+        number: num,
+        title: p.p_title,
+        description: p.p_description ?? '',
+        column_slug: p.p_column_slug ?? 'backlog',
+        priority: p.p_priority ?? 'medium',
+        position: p.p_position ?? 0,
+        assignee_name: p.p_assignee_name ?? '',
+        created_by_name: p.p_created_by_name ?? '',
+        created_by_id: p.p_created_by_id ?? null,
+        assignee_id: p.p_assignee_id ?? null,
+        tags: p.p_tags ?? [],
+        parent_id: p.p_parent_id ?? null,
+        subtask_ids: p.p_subtask_ids ?? [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        completed_at: null,
+      }
+      mockTasks.push(row)
+      return Promise.resolve({ data: row, error: null })
     }
     if (fn === 'accept_invite') {
       return Promise.resolve({ data: 'test-board', error: null })

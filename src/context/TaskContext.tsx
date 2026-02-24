@@ -365,36 +365,25 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       const maxPosition = tasksInColumn.length > 0 ? Math.max(...tasksInColumn.map((t) => t.position)) : 0
       const position = maxPosition + 1000
 
-      // Retry loop: handles concurrent task creation race on number unique constraint
-      const MAX_RETRIES = 3
-      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        const { data: nextNum } = await supabase.rpc('next_task_number', { p_board_id: boardId })
+      const { error } = await supabase.rpc('create_task', {
+        p_board_id: boardId,
+        p_title: task.title,
+        p_description: task.description,
+        p_column_slug: task.status,
+        p_priority: task.priority,
+        p_position: position,
+        p_assignee_name: task.assignee,
+        p_created_by_name: task.createdBy,
+        p_created_by_id: user?.id ?? null,
+        p_assignee_id: null,
+        p_tags: task.tags,
+        p_parent_id: task.parentId ?? null,
+        p_subtask_ids: task.subtaskIds ?? [],
+      })
 
-        const { error } = await supabase.from('tasks').insert({
-          board_id: boardId,
-          number: nextNum ?? 1,
-          title: task.title,
-          description: task.description,
-          column_slug: task.status,
-          priority: task.priority,
-          position,
-          assignee_name: task.assignee,
-          created_by_name: task.createdBy,
-          created_by_id: user?.id ?? null,
-          assignee_id: null,
-          tags: task.tags,
-          parent_id: task.parentId ?? null,
-          subtask_ids: task.subtaskIds ?? [],
-        })
-
-        if (!error) return // success
-        if (error.code === '23505' && attempt < MAX_RETRIES - 1) {
-          console.log('[board] addTask: number conflict, retrying...', attempt + 1)
-          continue
-        }
+      if (error) {
         console.log('[board] addTask error:', error.message)
         dispatch({ type: 'SET_TOAST', payload: error.message })
-        return
       }
     },
     [state.tasks, user]
