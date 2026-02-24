@@ -11,6 +11,7 @@
 supabase/
   migrations/
     001_initial_schema.sql           # Full Supabase schema: tables, RLS, functions, realtime
+    002_idempotent_board_creation.sql # Make create_default_board idempotent (prevents duplicate boards)
 src/
   App.tsx                            # Root app: AuthProvider > AuthGate > TaskProvider > AppContent
   App.css                            # Global app styles + loading/error states
@@ -60,6 +61,21 @@ src/
 - **UI-only state:** `searchQuery`, `filterPriority`, `currentView`, `showSubtasksOnBoard` stay local (not in DB).
 - **Testing:** Vitest + React Testing Library. `supabaseMock.ts` provides a chainable in-memory mock. All tests wrap with `AuthProvider` + `TaskProvider`.
 - **Env vars:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (set in `.env.local` or GitHub secrets)
+
+## Deployment
+
+- **GitHub Pages:** Auto-deploys on push to `master` via `.github/workflows/deploy.yml`
+- **Supabase project:** `sptklawzzgpycosxizuq` (free tier)
+- **GitHub secrets:** `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` configured in repo settings
+- **Auth redirect URLs:** `https://smidigbommen.github.io/dig-the-tracker/` and `http://localhost:5173/dig-the-tracker/` configured in Supabase Auth settings
+- **Live URL:** https://smidigbommen.github.io/dig-the-tracker/
+
+## Dev commands
+
+- `npm run dev` — local dev server (port 5173)
+- `npm run build` — TypeScript check + production build
+- `npm test` — run all 52 tests
+- `npm run test:watch` — tests in watch mode
 
 ## Keep this file updated
 

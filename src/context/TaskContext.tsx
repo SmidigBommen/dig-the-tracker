@@ -16,6 +16,7 @@ interface TaskState {
   boardId: string | null
   loading: boolean
   error: string | null
+  toast: string | null
   searchQuery: string
   filterPriority: TaskPriority | 'all'
   currentView: 'board' | 'reports' | 'profile'
@@ -30,6 +31,7 @@ type TaskAction =
   | { type: 'SET_INITIAL_DATA'; payload: { boardId: string; tasks: Task[]; columns: Column[]; comments: TaskComment[] } }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
+  | { type: 'SET_TOAST'; payload: string | null }
   | { type: 'REALTIME_TASK_INSERT'; payload: Task }
   | { type: 'REALTIME_TASK_UPDATE'; payload: Task }
   | { type: 'REALTIME_TASK_DELETE'; payload: { id: string } }
@@ -65,6 +67,8 @@ function taskReducer(state: TaskState, action: TaskAction): TaskState {
       return { ...state, loading: action.payload }
     case 'SET_ERROR':
       return { ...state, error: action.payload, loading: false }
+    case 'SET_TOAST':
+      return { ...state, toast: action.payload }
 
     // Realtime: tasks
     case 'REALTIME_TASK_INSERT':
@@ -165,6 +169,7 @@ interface TaskContextType {
   getFilteredTasks: (status: TaskStatus) => Task[]
   getCommentCount: (taskId: string) => number
   getComments: (taskId: string) => TaskComment[]
+  clearToast: () => void
   addColumn: (title: string, color: string, icon: string, afterColumnId?: string) => Promise<void>
   removeColumn: (columnId: string) => Promise<void>
   reorderColumns: (columns: Column[]) => Promise<void>
@@ -203,6 +208,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     boardId: null,
     loading: true,
     error: null,
+    toast: null,
     searchQuery: '',
     filterPriority: 'all',
     currentView: 'board',
@@ -210,6 +216,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   })
 
   const boardIdRef = useRef<string | null>(null)
+  const initInFlightRef = useRef(false)
 
   // Save UI prefs when they change
   useEffect(() => {
@@ -221,48 +228,63 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     if (!user) return
 
     async function init() {
-      dispatch({ type: 'SET_LOADING', payload: true })
-
-      // Find a board the user is a member of
-      let { data: memberships } = await supabase
-        .from('board_members')
-        .select('board_id')
-        .eq('user_id', user!.id)
-        .limit(1)
-
-      let boardId: string
-
-      if (!memberships || memberships.length === 0) {
-        // Create a default board for this user
-        const { data, error } = await supabase.rpc('create_default_board', { p_user_id: user!.id })
-        if (error || !data) {
-          dispatch({ type: 'SET_ERROR', payload: error?.message ?? 'Failed to create board' })
-          return
-        }
-        boardId = data as string
-      } else {
-        boardId = memberships[0].board_id
-      }
-
-      boardIdRef.current = boardId
-
-      // Fetch columns, tasks, comments in parallel
-      const [colRes, taskRes, commentRes] = await Promise.all([
-        supabase.from('columns').select('*').eq('board_id', boardId).order('position'),
-        supabase.from('tasks').select('*').eq('board_id', boardId).order('position'),
-        supabase.from('task_comments').select('*').eq('board_id', boardId).order('created_at'),
-      ])
-
-      if (colRes.error || taskRes.error || commentRes.error) {
-        dispatch({ type: 'SET_ERROR', payload: colRes.error?.message ?? taskRes.error?.message ?? commentRes.error?.message ?? 'Fetch error' })
+      if (initInFlightRef.current) {
+        console.log('[board] init: skipping, already in flight')
         return
       }
+      initInFlightRef.current = true
+      console.log('[board] init: starting for user', user!.id)
+      dispatch({ type: 'SET_LOADING', payload: true })
 
-      const columns = (colRes.data ?? []).map((r) => mapColumn(r as Record<string, unknown>))
-      const tasks = (taskRes.data ?? []).map((r) => mapTask(r as Record<string, unknown>))
-      const comments = (commentRes.data ?? []) as TaskComment[]
+      try {
+        // Find all boards the user is a member of
+        const { data: memberships } = await supabase
+          .from('board_members')
+          .select('board_id, role, joined_at')
+          .eq('user_id', user!.id)
+          .order('joined_at', { ascending: true })
 
-      dispatch({ type: 'SET_INITIAL_DATA', payload: { boardId, tasks, columns, comments } })
+        let boardId: string
+
+        if (!memberships || memberships.length === 0) {
+          // Create a default board for this user
+          const { data, error } = await supabase.rpc('create_default_board', { p_user_id: user!.id })
+          if (error || !data) {
+            dispatch({ type: 'SET_ERROR', payload: error?.message ?? 'Failed to create board' })
+            return
+          }
+          boardId = data as string
+          console.log('[board] created default board:', boardId)
+        } else {
+          // Prefer shared board (editor role) over auto-created (owner role), fallback to oldest
+          const shared = memberships.find((m) => m.role === 'editor')
+          boardId = shared ? shared.board_id : memberships[0].board_id
+          console.log('[board] using existing board:', boardId, shared ? '(shared)' : '(owned)')
+        }
+
+        boardIdRef.current = boardId
+
+        // Fetch columns, tasks, comments in parallel
+        const [colRes, taskRes, commentRes] = await Promise.all([
+          supabase.from('columns').select('*').eq('board_id', boardId).order('position'),
+          supabase.from('tasks').select('*').eq('board_id', boardId).order('position'),
+          supabase.from('task_comments').select('*').eq('board_id', boardId).order('created_at'),
+        ])
+
+        if (colRes.error || taskRes.error || commentRes.error) {
+          dispatch({ type: 'SET_ERROR', payload: colRes.error?.message ?? taskRes.error?.message ?? commentRes.error?.message ?? 'Fetch error' })
+          return
+        }
+
+        const columns = (colRes.data ?? []).map((r) => mapColumn(r as Record<string, unknown>))
+        const tasks = (taskRes.data ?? []).map((r) => mapTask(r as Record<string, unknown>))
+        const comments = (commentRes.data ?? []) as TaskComment[]
+
+        console.log('[board] loaded:', { tasks: tasks.length, columns: columns.length, comments: comments.length })
+        dispatch({ type: 'SET_INITIAL_DATA', payload: { boardId, tasks, columns, comments } })
+      } finally {
+        initInFlightRef.current = false
+      }
     }
 
     init()
@@ -294,7 +316,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         (payload) => dispatch({ type: 'REALTIME_COLUMN_UPDATE', payload: mapColumn(payload.new as Record<string, unknown>) }))
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'columns', filter: `board_id=eq.${boardId}` },
         (payload) => dispatch({ type: 'REALTIME_COLUMN_DELETE', payload: { slug: (payload.old as Record<string, unknown>).slug as string } }))
-      .subscribe()
+      .subscribe((status) => {
+        console.log('[realtime] subscription status:', status)
+      })
 
     return () => {
       supabase.removeChannel(channel)
@@ -337,7 +361,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       })
 
       if (error) {
-        dispatch({ type: 'SET_ERROR', payload: error.message })
+        console.log('[board] addTask error:', error.message)
+        dispatch({ type: 'SET_TOAST', payload: error.message })
       }
     },
     [state.tasks, user]
@@ -361,7 +386,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         dbUpdates.subtask_ids = updates.subtask_ids ?? updates.subtaskIds
 
       const { error } = await supabase.from('tasks').update(dbUpdates).eq('id', id)
-      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+      if (error) {
+        console.log('[board] updateTask error:', error.message)
+        dispatch({ type: 'SET_TOAST', payload: error.message })
+      }
     },
     []
   )
@@ -369,7 +397,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const deleteTask = useCallback(
     async (id: string) => {
       const { error } = await supabase.from('tasks').delete().eq('id', id)
-      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+      if (error) {
+        console.log('[board] deleteTask error:', error.message)
+        dispatch({ type: 'SET_TOAST', payload: error.message })
+      }
     },
     []
   )
@@ -387,7 +418,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         .from('tasks')
         .update({ column_slug: status, position, completed_at: completedAt })
         .eq('id', id)
-      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+      if (error) {
+        console.log('[board] moveTask error:', error.message)
+        dispatch({ type: 'SET_TOAST', payload: error.message })
+      }
     },
     [state.tasks]
   )
@@ -418,7 +452,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         .from('tasks')
         .update({ column_slug: status, position: newPosition, completed_at: completedAt })
         .eq('id', taskId)
-      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+      if (error) {
+        console.log('[board] reorderTask error:', error.message)
+        dispatch({ type: 'SET_TOAST', payload: error.message })
+      }
     },
     [state.tasks]
   )
@@ -434,7 +471,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         author_name: author,
         text,
       })
-      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+      if (error) {
+        console.log('[board] addComment error:', error.message)
+        dispatch({ type: 'SET_TOAST', payload: error.message })
+      }
     },
     [user]
   )
@@ -442,7 +482,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const deleteComment = useCallback(
     async (_taskId: string, commentId: string) => {
       const { error } = await supabase.from('task_comments').delete().eq('id', commentId)
-      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+      if (error) {
+        console.log('[board] deleteComment error:', error.message)
+        dispatch({ type: 'SET_TOAST', payload: error.message })
+      }
     },
     []
   )
@@ -461,6 +504,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   )
   const toggleSubtasksOnBoard = useCallback(
     () => dispatch({ type: 'TOGGLE_SUBTASKS_ON_BOARD' }),
+    []
+  )
+  const clearToast = useCallback(
+    () => dispatch({ type: 'SET_TOAST', payload: null }),
     []
   )
 
@@ -543,7 +590,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         position,
         is_protected: false,
       })
-      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+      if (error) {
+        console.log('[board] addColumn error:', error.message)
+        dispatch({ type: 'SET_TOAST', payload: error.message })
+      }
     },
     [state.columns]
   )
@@ -565,7 +615,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         .delete()
         .eq('board_id', boardId)
         .eq('slug', columnId)
-      if (error) dispatch({ type: 'SET_ERROR', payload: error.message })
+      if (error) {
+        console.log('[board] removeColumn error:', error.message)
+        dispatch({ type: 'SET_TOAST', payload: error.message })
+      }
     },
     [state.tasks, state.columns]
   )
@@ -619,6 +672,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         setFilterPriority,
         setView,
         toggleSubtasksOnBoard,
+        clearToast,
         getFilteredTasks,
         getCommentCount,
         getComments,

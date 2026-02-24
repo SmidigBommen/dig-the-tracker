@@ -17,11 +17,14 @@ export default function InviteHandler({ token }: InviteHandlerProps) {
 
     async function accept() {
       setStatus('accepting')
+      console.log('[invite] accepting token:', token.slice(0, 8) + '...')
       const { error } = await supabase.rpc('accept_invite', { p_token: token })
       if (error) {
+        console.log('[invite] error:', error.message)
         setStatus('error')
         setErrorMsg(error.message)
       } else {
+        console.log('[invite] accepted')
         setStatus('success')
         // Clear the invite query param and reload
         const url = new URL(window.location.href)

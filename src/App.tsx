@@ -8,10 +8,11 @@ import ProfilePage from './components/ProfilePage.tsx'
 import TaskModal from './components/TaskModal.tsx'
 import LoginPage from './components/LoginPage.tsx'
 import InviteHandler from './components/InviteHandler.tsx'
+import Toast from './components/Toast.tsx'
 import './App.css'
 
 function AppContent() {
-  const { state, setView } = useTaskContext()
+  const { state, setView, clearToast } = useTaskContext()
   const [showQuickCreate, setShowQuickCreate] = useState(false)
 
   // If URL hash matches #DIG-N on mount, ensure we're on the board view
@@ -73,6 +74,10 @@ function AppContent() {
           onClose={() => setShowQuickCreate(false)}
         />
       )}
+
+      {state.toast && (
+        <Toast message={state.toast} type="error" onClose={clearToast} />
+      )}
     </div>
   )
 }
@@ -94,6 +99,7 @@ function AuthGate() {
   }
 
   if (inviteToken) {
+    console.log('[invite] detected invite token in URL')
     return <InviteHandler token={inviteToken} />
   }
 

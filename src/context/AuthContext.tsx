@@ -39,8 +39,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .insert({ id: userId, display_name: '', avatar_color: '#6366f1' })
         .select()
         .single()
-      if (newProfile) setProfile(newProfile as UserProfile)
+      if (newProfile) {
+        console.log('[auth] profile created for', userId)
+        setProfile(newProfile as UserProfile)
+      }
     } else if (data) {
+      console.log('[auth] profile loaded for', userId)
       setProfile(data as UserProfile)
     }
   }, [])
@@ -55,7 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      console.log('[auth] state change:', event, s?.user?.email ?? 'no user')
       setSession(s)
       if (s?.user) {
         fetchProfile(s.user.id)
@@ -68,7 +73,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchProfile])
 
   const signIn = useCallback(async (email: string) => {
-    const redirectTo = window.location.origin + (import.meta.env.BASE_URL || '/')
+    const redirectTo = window.location.origin + (import.meta.env.BASE_URL || '/') + window.location.search
+    console.log('[auth] signIn: sending magic link, redirectTo=', redirectTo)
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: redirectTo },
@@ -77,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signOut = useCallback(async () => {
+    console.log('[auth] signOut')
     await supabase.auth.signOut()
     setProfile(null)
     setSession(null)

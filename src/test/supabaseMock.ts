@@ -5,7 +5,7 @@ let mockTasks: Record<string, unknown>[] = []
 let mockColumns: Record<string, unknown>[] = []
 let mockComments: Record<string, unknown>[] = []
 let mockBoardMembers: Record<string, unknown>[] = [
-  { board_id: 'test-board', user_id: 'test-user' },
+  { board_id: 'test-board', user_id: 'test-user', role: 'owner', joined_at: '2025-01-01T00:00:00Z' },
 ]
 let mockUserProfiles: Record<string, unknown>[] = [
   { id: 'test-user', display_name: 'Test User', avatar_color: '#6366f1' },
@@ -22,7 +22,7 @@ export function resetMockData() {
     { slug: 'done', board_id: 'test-board', title: 'Done', color: '#10b981', icon: '✅', position: 4000, is_protected: true },
   ]
   mockComments = []
-  mockBoardMembers = [{ board_id: 'test-board', user_id: 'test-user' }]
+  mockBoardMembers = [{ board_id: 'test-board', user_id: 'test-user', role: 'owner', joined_at: '2025-01-01T00:00:00Z' }]
   mockUserProfiles = [{ id: 'test-user', display_name: 'Test User', avatar_color: '#6366f1' }]
   taskNumberCounter = 1
 }
