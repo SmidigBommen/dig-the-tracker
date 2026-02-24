@@ -335,34 +335,41 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       const boardId = boardIdRef.current
       if (!boardId) return
 
-      // Get the next task number atomically
-      const { data: nextNum } = await supabase.rpc('next_task_number', { p_board_id: boardId })
-
       // Calculate position: put at end of column
       const tasksInColumn = state.tasks.filter((t) => t.status === task.status)
       const maxPosition = tasksInColumn.length > 0 ? Math.max(...tasksInColumn.map((t) => t.position)) : 0
       const position = maxPosition + 1000
 
-      const { error } = await supabase.from('tasks').insert({
-        board_id: boardId,
-        number: nextNum ?? 1,
-        title: task.title,
-        description: task.description,
-        column_slug: task.status,
-        priority: task.priority,
-        position,
-        assignee_name: task.assignee,
-        created_by_name: task.createdBy,
-        created_by_id: user?.id ?? null,
-        assignee_id: null,
-        tags: task.tags,
-        parent_id: task.parentId ?? null,
-        subtask_ids: task.subtaskIds ?? [],
-      })
+      // Retry loop: handles concurrent task creation race on number unique constraint
+      const MAX_RETRIES = 3
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        const { data: nextNum } = await supabase.rpc('next_task_number', { p_board_id: boardId })
 
-      if (error) {
+        const { error } = await supabase.from('tasks').insert({
+          board_id: boardId,
+          number: nextNum ?? 1,
+          title: task.title,
+          description: task.description,
+          column_slug: task.status,
+          priority: task.priority,
+          position,
+          assignee_name: task.assignee,
+          created_by_name: task.createdBy,
+          created_by_id: user?.id ?? null,
+          assignee_id: null,
+          tags: task.tags,
+          parent_id: task.parentId ?? null,
+          subtask_ids: task.subtaskIds ?? [],
+        })
+
+        if (!error) return // success
+        if (error.code === '23505' && attempt < MAX_RETRIES - 1) {
+          console.log('[board] addTask: number conflict, retrying...', attempt + 1)
+          continue
+        }
         console.log('[board] addTask error:', error.message)
         dispatch({ type: 'SET_TOAST', payload: error.message })
+        return
       }
     },
     [state.tasks, user]
