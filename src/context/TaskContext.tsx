@@ -9,10 +9,16 @@ import { useAuth } from './AuthContext.tsx'
 // State
 // ============================================================
 
+interface MemberProfile {
+  display_name: string
+  avatar_color: string
+}
+
 interface TaskState {
   tasks: Task[]
   columns: Column[]
   commentsByTask: Record<string, TaskComment[]>
+  memberProfiles: Record<string, MemberProfile>
   boardId: string | null
   loading: boolean
   error: string | null
@@ -28,7 +34,7 @@ interface TaskState {
 // ============================================================
 
 type TaskAction =
-  | { type: 'SET_INITIAL_DATA'; payload: { boardId: string; tasks: Task[]; columns: Column[]; comments: TaskComment[] } }
+  | { type: 'SET_INITIAL_DATA'; payload: { boardId: string; tasks: Task[]; columns: Column[]; comments: TaskComment[]; memberProfiles: Record<string, MemberProfile> } }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
   | { type: 'SET_TOAST'; payload: string | null }
@@ -59,6 +65,7 @@ function taskReducer(state: TaskState, action: TaskAction): TaskState {
         tasks: action.payload.tasks,
         columns: action.payload.columns.length > 0 ? action.payload.columns : DEFAULT_COLUMNS,
         commentsByTask,
+        memberProfiles: action.payload.memberProfiles,
         loading: false,
         error: null,
       }
@@ -205,6 +212,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     tasks: [],
     columns: DEFAULT_COLUMNS,
     commentsByTask: {},
+    memberProfiles: {},
     boardId: null,
     loading: true,
     error: null,
@@ -264,11 +272,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
         boardIdRef.current = boardId
 
-        // Fetch columns, tasks, comments in parallel
-        const [colRes, taskRes, commentRes] = await Promise.all([
+        // Fetch columns, tasks, comments, and board member IDs in parallel
+        const [colRes, taskRes, commentRes, membersRes] = await Promise.all([
           supabase.from('columns').select('*').eq('board_id', boardId).order('position'),
           supabase.from('tasks').select('*').eq('board_id', boardId).order('position'),
           supabase.from('task_comments').select('*').eq('board_id', boardId).order('created_at'),
+          supabase.from('board_members').select('user_id').eq('board_id', boardId),
         ])
 
         if (colRes.error || taskRes.error || commentRes.error) {
@@ -276,12 +285,28 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           return
         }
 
+        // Fetch member profiles
+        const memberProfiles: Record<string, MemberProfile> = {}
+        const memberIds = (membersRes.data ?? []).map((m) => (m as Record<string, unknown>).user_id as string)
+        if (memberIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('user_profiles')
+            .select('id, display_name, avatar_color')
+            .in('id', memberIds)
+          for (const p of (profiles ?? []) as Array<Record<string, unknown>>) {
+            memberProfiles[p.id as string] = {
+              display_name: (p.display_name as string) ?? '',
+              avatar_color: (p.avatar_color as string) ?? '#6366f1',
+            }
+          }
+        }
+
         const columns = (colRes.data ?? []).map((r) => mapColumn(r as Record<string, unknown>))
         const tasks = (taskRes.data ?? []).map((r) => mapTask(r as Record<string, unknown>))
         const comments = (commentRes.data ?? []) as TaskComment[]
 
-        console.log('[board] loaded:', { tasks: tasks.length, columns: columns.length, comments: comments.length })
-        dispatch({ type: 'SET_INITIAL_DATA', payload: { boardId, tasks, columns, comments } })
+        console.log('[board] loaded:', { tasks: tasks.length, columns: columns.length, comments: comments.length, members: Object.keys(memberProfiles).length })
+        dispatch({ type: 'SET_INITIAL_DATA', payload: { boardId, tasks, columns, comments, memberProfiles } })
       } finally {
         initInFlightRef.current = false
       }

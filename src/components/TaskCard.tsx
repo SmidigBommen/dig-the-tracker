@@ -13,13 +13,14 @@ interface TaskCardProps {
 }
 
 export default function TaskCard({ task, parentTitle, onOpen }: TaskCardProps) {
-  const { getCommentCount } = useTaskContext()
+  const { getCommentCount, state } = useTaskContext()
   const { profile: authProfile } = useAuth()
   const [isDragging, setIsDragging] = useState(false)
   const priority = PRIORITY_CONFIG[task.priority]
   const timeAgo = getTimeAgo(task.updatedAt)
   const commentCount = getCommentCount(task.id)
-  const avatarColor = authProfile?.avatar_color || '#6366f1'
+  const creatorId = task.created_by_id
+  const avatarColor = (creatorId && state.memberProfiles[creatorId]?.avatar_color) || authProfile?.avatar_color || '#6366f1'
 
   function handleDragStart(e: DragEvent<HTMLDivElement>) {
     e.dataTransfer.setData('text/plain', task.id)

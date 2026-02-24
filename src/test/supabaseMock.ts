@@ -65,6 +65,7 @@ function setStore(table: string, data: Record<string, unknown>[]) {
  */
 function createChain(table: string) {
   const filters: Array<{ field: string; value: unknown }> = []
+  const inFilters: Array<{ field: string; values: unknown[] }> = []
   let orderField: string | null = null
   let limitCount: number | null = null
   let isSingle = false
@@ -79,6 +80,9 @@ function createChain(table: string) {
     let result = data
     for (const { field, value } of filters) {
       result = result.filter((r) => r[field] === value)
+    }
+    for (const { field, values } of inFilters) {
+      result = result.filter((r) => values.includes(r[field]))
     }
     if (orderField) {
       result = [...result].sort((a, b) => (a[orderField!] as number) - (b[orderField!] as number))
@@ -146,6 +150,10 @@ function createChain(table: string) {
     },
     eq(field: string, value: unknown) {
       filters.push({ field, value })
+      return chain
+    },
+    in(field: string, values: unknown[]) {
+      inFilters.push({ field, values })
       return chain
     },
     order(field: string) {
