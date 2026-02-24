@@ -12,6 +12,7 @@ supabase/
   migrations/
     001_initial_schema.sql           # Full Supabase schema: tables, RLS, functions, realtime
     002_idempotent_board_creation.sql # Make create_default_board idempotent (prevents duplicate boards)
+    003_create_task_function.sql      # Atomic create_task() — number generation + insert in one transaction
 src/
   App.tsx                            # Root app: AuthProvider > AuthGate > TaskProvider > AppContent
   App.css                            # Global app styles + loading/error states
@@ -52,7 +53,7 @@ src/
 - **Auth:** Magic link (passwordless email) via `AuthContext`. Session managed with `supabase.auth`.
 - **State management:** `useReducer` in `TaskContext.tsx`. Data fetched from Supabase on mount, kept in sync via realtime subscriptions. All mutations are async (write to Supabase, realtime updates local state).
 - **Comments:** Stored in separate `task_comments` table (not nested in tasks). Accessed via `state.commentsByTask[taskId]` and `getCommentCount(taskId)` / `getComments(taskId)` helpers.
-- **Task numbering:** `DIG-N` format. `next_task_number()` Postgres function for atomic numbering.
+- **Task creation:** Single `create_task()` RPC — atomically generates `DIG-N` number and inserts the row in one transaction/round trip. Replaces the old 2-step `next_task_number` + insert flow.
 - **Columns:** Stored in `columns` table with `position` field (gapped by 1000). `id` in app = `slug` from DB.
 - **Deep-linking:** Hash-based `#DIG-N`. Invite links use query param `?invite=<token>`.
 - **Views:** Routed via `state.currentView` (`'board' | 'reports' | 'profile'`)
@@ -74,7 +75,7 @@ src/
 
 - `npm run dev` — local dev server (port 5173)
 - `npm run build` — TypeScript check + production build
-- `npm test` — run all 52 tests
+- `npm test` — run all 55 tests
 - `npm run test:watch` — tests in watch mode
 
 ## Keep this file updated
