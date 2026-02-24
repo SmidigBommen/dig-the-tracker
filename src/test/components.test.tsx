@@ -7,6 +7,7 @@ import { setMockTasks } from './supabaseMock.ts'
 import KanbanBoard from '../components/KanbanBoard.tsx'
 import Header from '../components/Header.tsx'
 import ReportsPage from '../components/ReportsPage.tsx'
+import { renderLinkedText } from '../components/TaskDetailModal.tsx'
 
 function createTestTask(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
@@ -341,5 +342,33 @@ describe('ReportsPage', () => {
     renderWithProvider(<ReportsPage />, [createTestTask()])
     await waitForLoad()
     expect(screen.getByText('Priority Distribution')).toBeInTheDocument()
+  })
+})
+
+describe('renderLinkedText', () => {
+  it('links DIG-N references in text', () => {
+    const { container } = render(<p>{renderLinkedText('See DIG-1 for details')}</p>)
+    const link = container.querySelector('a.task-ref-link')
+    expect(link).toBeTruthy()
+    expect(link!.textContent).toBe('DIG-1')
+    expect(link!.getAttribute('href')).toBe('#DIG-1')
+  })
+
+  it('links DIG-N references consistently on repeated calls', () => {
+    // This catches the stale global regex lastIndex bug:
+    // a module-level /g regex remembers lastIndex between exec() calls
+    const { container: c1 } = render(<p>{renderLinkedText('See DIG-5 here')}</p>)
+    const { container: c2 } = render(<p>{renderLinkedText('See DIG-5 here')}</p>)
+
+    expect(c1.querySelector('a.task-ref-link')?.textContent).toBe('DIG-5')
+    expect(c2.querySelector('a.task-ref-link')?.textContent).toBe('DIG-5')
+  })
+
+  it('links multiple DIG-N references in one text', () => {
+    const { container } = render(<p>{renderLinkedText('DIG-1 blocks DIG-2')}</p>)
+    const links = container.querySelectorAll('a.task-ref-link')
+    expect(links).toHaveLength(2)
+    expect(links[0].textContent).toBe('DIG-1')
+    expect(links[1].textContent).toBe('DIG-2')
   })
 })

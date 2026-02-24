@@ -7,13 +7,12 @@ import { validateTask, validateComment, formatTaskKey } from '../context/taskUti
 import TaskModal from './TaskModal.tsx'
 import './TaskDetailModal.css'
 
-const TASK_REF_PATTERN = /\b(DIG-\d+)\b/gi
-
-function renderLinkedText(text: string): ReactNode[] {
+export function renderLinkedText(text: string): ReactNode[] {
+  const pattern = /\b(DIG-\d+)\b/gi
   const parts: ReactNode[] = []
   let lastIndex = 0
   let match: RegExpExecArray | null
-  while ((match = TASK_REF_PATTERN.exec(text)) !== null) {
+  while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) {
       parts.push(text.slice(lastIndex, match.index))
     }
