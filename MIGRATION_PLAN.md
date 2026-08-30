@@ -1,6 +1,6 @@
-# Migration Plan — Supabase → Local Postgres
+# Supabase to local PostgreSQL migration record
 
-Status: **Implemented and verified in the working tree. Build, lint, unit, boundary, migration, and real-PostgreSQL concurrency tests pass. Disposable Podman/PostgreSQL testing works locally and the equivalent PostgreSQL-backed test is wired into CI.**
+Status: **Implemented and verified. Build, lint, unit, boundary, migration, and PostgreSQL concurrency tests pass. Local tests use a disposable Podman container, and CI runs the same database-backed test.**
 
 ## Locked constraints
 
@@ -15,9 +15,9 @@ Status: **Implemented and verified in the working tree. Build, lint, unit, bound
 
 See `ARCHITECTURE_OPTIONS.md` for the framework, database, migration, authorization, authentication, synchronization, package, and orchestration alternatives.
 
-## Current dependency surface
+## Former Supabase dependency surface
 
-The current Supabase dependency surface includes:
+Before the migration, Supabase supplied:
 
 - PostgreSQL tables for profiles, boards, memberships, invites, columns, tasks, and comments.
 - Magic-link auth and browser sessions currently supplied by Supabase Auth.
@@ -27,13 +27,13 @@ The current Supabase dependency surface includes:
 - Supabase-specific RLS policies and `auth.uid()`.
 - The chainable Supabase test mock.
 
-Round one replaces the database and domain operations but deliberately removes the authentication, membership, invite, and realtime collaboration features. It preserves stable actor and board identifiers so those capabilities can be redesigned later without rewriting task and comment ownership.
+The migration replaced the database and domain operations. It removed authentication, membership, invitations, and live collaboration. Stable actor and board identifiers remain, so those features can return later without rewriting task and comment ownership.
 
-The browser must no longer know database table names or issue database-shaped queries. It will call domain-oriented HTTP operations through a typed client.
+The browser no longer knows table names or sends database-shaped queries. It calls domain operations through a typed HTTP client.
 
 ---
 
-## Phase 0 — Confirm architecture and preserve behavioral baseline
+## Phase 0: confirm the architecture and preserve behavior
 
 1. Record the selected HTTP, database-access, and migration choices.
 2. Create a migration branch from GitHub `master` at `16dbaee`.
@@ -41,9 +41,9 @@ The browser must no longer know database table names or issue database-shaped qu
 4. Inventory every existing Supabase read, mutation, RPC, auth call, and subscription.
 5. Preserve any existing database dump if one is already available. Legacy data recovery is optional and must not block the replacement.
 
-**Checkpoint:** approved remaining architecture decisions, clean migration branch, baseline results, and complete operation inventory.
+**Checkpoint.** Approved architecture decisions, a clean migration branch, baseline results, and a complete operation inventory.
 
-## Phase 1 — PostgreSQL container and portable schema
+## Phase 1: add PostgreSQL and a portable schema
 
 1. Add a local Compose file with a version-pinned PostgreSQL image, named volume, health check, and localhost-only host binding when required.
 2. Add a real incremental migration mechanism; do not rely only on container initialization scripts.
@@ -52,9 +52,9 @@ The browser must no longer know database table names or issue database-shaped qu
 5. Seed one stable workspace and its default columns.
 6. Keep actor IDs on task and comment ownership fields and board IDs on domain records, but omit memberships, invite shares, and RLS policies from round one.
 
-**Checkpoint:** one command resets, migrates, and seeds the database; persistent data survives container recreation.
+**Checkpoint.** One command resets, migrates, and seeds the database. Persistent data survives container recreation.
 
-## Phase 2 — Transactional domain operations
+## Phase 2: move domain operations into transactions
 
 Move invariants currently calculated in React or Supabase RPCs behind application services and database transactions:
 
@@ -65,9 +65,9 @@ Move invariants currently calculated in React or Supabase RPCs behind applicatio
 5. Assign task and comment actor IDs on the server; never trust actor or board IDs from browser input.
 6. Map database rows to plain domain objects inside repository adapters.
 
-**Checkpoint:** real-Postgres tests prove unique sequential issue numbers, deterministic ordering, fixed server-side actor/workspace scoping, and rollback on failure.
+**Checkpoint.** Tests against PostgreSQL prove unique sequential issue numbers, deterministic ordering, fixed server-side actor and workspace scope, and rollback on failure.
 
-## Phase 3 — Custom API and local actor
+## Phase 3: add the API and local actor
 
 Implement a modular monolith with explicit endpoints:
 
@@ -95,9 +95,9 @@ Rules:
 - Request DTOs do not accept trusted actor IDs, user IDs, or board IDs.
 - `/api/bootstrap` returns the local actor, current workspace, columns, tasks, and comments in one typed response.
 
-**Checkpoint:** route tests and real-database tests cover success, invalid input, server-side actor/workspace assignment, rejected identity overrides, and loopback-safe configuration.
+**Checkpoint.** Route and database tests cover successful requests, invalid input, server-side actor and workspace assignment, rejected identity overrides, and loopback-safe configuration.
 
-## Phase 4 — Frontend cutover
+## Phase 4: switch the frontend
 
 1. Add a small typed API client exposing domain operations such as `bootstrap`, `createTask`, and `updateProfile`.
 2. Remove the login page, auth gate, sign-out action, invite handler, invite UI, and email identity UI; replace `AuthContext` with the local actor returned by bootstrap.
@@ -107,18 +107,18 @@ Rules:
 6. Replace the Supabase chain mock with HTTP-boundary mocks.
 7. Remove `@supabase/supabase-js` as soon as the frontend compiles against the custom API. There is no backend feature flag.
 
-**Checkpoint:** ordinary CRUD, subtasks, comments, `DIG-N` links, custom columns, local profile preferences, reports, and search work using only the local API and PostgreSQL.
+**Checkpoint.** CRUD, subtasks, comments, `DIG-N` links, custom columns, local profile preferences, reports, and search work through the local API and PostgreSQL.
 
-## Phase 5 — Refresh behavior and deferred collaboration
+## Phase 5: refresh behavior without live collaboration
 
 1. Update frontend state from successful mutation responses.
 2. Perform a complete bootstrap resync when the window regains focus and after recoverable errors.
 3. Do not add a change publisher, polling loop, SSE, WebSockets, PostgreSQL notifications, or Redis in round one.
 4. Treat multi-client collaboration as a future feature that must be designed together with authentication and authorization.
 
-**Checkpoint:** one local client remains consistent after mutations, focus changes, API restarts, and recoverable errors.
+**Checkpoint.** One local client remains consistent after mutations, focus changes, API restarts, and recoverable errors.
 
-## Phase 6 — Remove Supabase and verify the local replacement
+## Phase 6: remove Supabase and verify the replacement
 
 1. Delete `src/lib/supabase.ts`, `src/test/supabaseMock.ts`, and every Supabase import.
 2. Remove Supabase environment variables, package dependencies, CI settings, and documentation.
@@ -128,9 +128,9 @@ Rules:
 6. Run clean install, build, lint, unit, API, database-integration, concurrency, and smoke tests with Supabase unreachable. `npm run test:db` owns a disposable Podman database locally; `npm run test:db:running` targets CI's PostgreSQL service.
 7. Document and test local backup and restore commands.
 
-**Checkpoint:** one documented command starts the local application, all tests pass, and no runtime or test path depends on Supabase.
+**Checkpoint.** One documented command starts the local application, all tests pass, and no runtime or test path depends on Supabase.
 
-## Phase 7 — Optional self-hosted deployment
+## Phase 7: optional self-hosted deployment
 
 Only after local dogfooding:
 
@@ -159,4 +159,4 @@ Only after local dogfooding:
 - Persistent data survives container recreation.
 - Backup and restore are documented and tested locally.
 
-The initial architecture choices are confirmed and the migration is implemented. Public exposure and multi-user features remain explicitly out of scope.
+The migration is complete. Public exposure and multi-user features remain out of scope.

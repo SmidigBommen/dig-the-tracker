@@ -1,10 +1,10 @@
-# Dig — Local Issue Tracker
+# Dig: local issue tracker
 
 Dig is a local, single-user kanban issue tracker built with React, TypeScript, a small Node HTTP API, and PostgreSQL 16.
 
-The first local release deliberately has no signup, login, session, membership, invite, or realtime collaboration functionality. It uses one seeded local actor and one server-configured workspace. Do not expose it to a LAN or the internet.
+This release has no signup, login, sessions, memberships, invitations, or live collaboration. It uses one seeded local actor and one server-configured workspace. Do not expose it to a LAN or the internet.
 
-## Features
+## What it does
 
 - Customizable kanban columns and drag-and-drop task ordering
 - Tasks with priorities, assignees, tags, and sequential `DIG-N` numbers
@@ -14,15 +14,15 @@ The first local release deliberately has no signup, login, session, membership, 
 - Local display name and avatar color preferences
 - PostgreSQL persistence with transactional numbering and ordering
 
-## Start with Podman
+## Run the full application
 
-The complete application is exposed only on loopback:
+Start the application on loopback:
 
 ```sh
 ./scripts/compose -f podman-compose.yml up --build
 ```
 
-Open http://127.0.0.1:8080. The application and PostgreSQL ports bind only to host loopback; the containers also share an internal network.
+Open http://127.0.0.1:8080. The application and PostgreSQL ports bind to host loopback. The containers share a private network.
 
 To stop the application without deleting its database volume:
 
@@ -67,7 +67,7 @@ Open http://127.0.0.1:5173. Copy `.env.example` to `.env.local` only when overri
 | `npm run db:backup` | Write `dig-backup.dump` in PostgreSQL custom format |
 | `npm run db:restore` | Replace local database contents from `dig-backup.dump` |
 
-`db:reset` and `db:restore` are destructive and should be invoked only when replacing the local database is intended.
+`db:reset` and `db:restore` replace local database contents. Use them only when that is what you intend.
 
 ## Architecture
 
@@ -80,27 +80,27 @@ React reducer/context
           -> PostgreSQL 16
 ```
 
-The server, not the browser, supplies the actor and workspace identifiers. Task numbering, task positioning, column positioning, and cascade deletion are database transactions. Successful mutations update client state; a complete bootstrap refresh runs when the window regains focus.
+The server supplies actor and workspace identifiers. The browser cannot choose them. Database transactions handle task numbering, task and column positions, and cascade deletion. Successful mutations update client state. The client fetches a fresh bootstrap payload when the window regains focus.
 
-Schema changes live in `db/migrations`. The small migration runner records checksums in a ledger, holds a PostgreSQL advisory lock, and applies each migration in a transaction. The API and built frontend share one production container.
+Schema changes live in `db/migrations`. The migration runner records checksums in a ledger, holds a PostgreSQL advisory lock, and applies each migration in a transaction. The API and built frontend share one production container.
 
-The Compose wrapper works around the installed provider's Python-version mismatch and directs Podman through its service socket when the normal rootless runtime directory is unavailable. Kubernetes is intentionally not part of the local stack: it would add a control plane while retaining the same container-runtime dependency.
+The Compose wrapper works around the installed provider's Python version mismatch. It also directs Podman through its service socket when the usual rootless runtime directory is unavailable. This local stack does not use Kubernetes because it would add a control plane without removing the container runtime dependency.
 
 ## Risk controls
 
-The current no-signup design is a local product mode, not anonymous authentication. It is bounded by these controls:
+The absence of signup does not make this an anonymously accessible application. Local use depends on these controls:
 
-- the API and database publish only on `127.0.0.1`, browser origins are allowlisted, and non-loopback API binding requires an explicit container-only override;
-- the server supplies the actor and workspace, so request bodies cannot select trusted identity or board scope;
-- actor and workspace identifiers remain in the domain model, preserving a seam for future authentication without carrying Supabase Auth forward;
-- PostgreSQL transactions serialize issue numbering and ordering, with real-database concurrency coverage locally and in CI;
-- migrations are checksummed and locked, and the persistent database has explicit backup and restore commands;
-- public or shared-network deployment remains blocked until authentication, authorization, membership isolation, and negative security tests are implemented.
+- The API and database publish only on `127.0.0.1`. Browser origins are allowlisted. Non-loopback API binding requires an explicit container-only override.
+- The server supplies the actor and workspace, so request bodies cannot select a trusted identity or board.
+- Actor and workspace identifiers remain in the domain model. Future authentication can use them without carrying Supabase Auth forward.
+- PostgreSQL transactions serialize issue numbering and ordering. Local and CI tests cover concurrent writes against a real database.
+- The migration runner validates checksums and takes a lock. Backup and restore commands cover the persistent database.
+- Public or shared-network deployment remains blocked until the application has authentication, authorization, membership isolation, and negative security tests.
 
-The full decision and risk record is in `decisions-to-make.md` and `RISK_REGISTER.md`.
+See [the decision record](decisions-to-make.md) and [risk register](RISK_REGISTER.md) for the full rationale.
 
 ## Security boundary
 
-The API refuses non-loopback binding unless `ALLOW_CONTAINER_BIND=true`; the container uses that explicit override only while publishing port 8080 to `127.0.0.1`. Browser origins are allowlisted and request bodies are bounded.
+The API refuses non-loopback binding unless `ALLOW_CONTAINER_BIND=true`. The container sets that override while publishing port 8080 only to `127.0.0.1`. The API allowlists browser origins and limits request body size.
 
 Authentication, authorization, memberships, invites, multi-user synchronization, and public deployment are future features. They must be implemented and security-tested before changing the loopback-only exposure.

@@ -1,6 +1,6 @@
-# Risk Register — Local Single-User Approach
+# Risk register for local single-user use
 
-Status: **Accepted for local use. Shared-network and public deployment are explicitly out of scope.**
+Status: **Accepted for local use. Shared-network and public deployment are out of scope.**
 
 | Risk | Current mitigation | Verification or future gate |
 |---|---|---|
@@ -11,9 +11,9 @@ Status: **Accepted for local use. Shared-network and public deployment are expli
 | Migration drift or two processes migrating together | Ledger, SHA-256 checksums, advisory lock, and per-migration transactions | Unit tests cover parsing; real-database tests apply migrations before repository tests |
 | Container tooling differs by host Python/runtime setup | Repository wrappers isolate the Compose provider and Podman service socket; DB tests use a disposable named container and `tmpfs` | Run `npm run test:db`; retain Compose rather than adding Kubernetes until orchestration requirements materially change |
 | Persistent local data is lost or corrupted | Named PostgreSQL volume plus explicit custom-format backup/restore commands | Complete a restore drill before relying on the data; keep an off-host copy for important data |
-| Another tab displays stale state without realtime | Mutation responses update local state and focus triggers full bootstrap resync | Add polling or SSE only together with real multi-client requirements and reconnect/resync tests |
+| Another tab displays stale state without live updates | Mutation responses update local state and focus triggers full bootstrap resync | Add polling or SSE only with a concrete multi-client requirement and reconnect/resync tests |
 | A future feature accidentally makes the app public | Documentation and configuration treat public exposure as a release gate, not a runtime toggle | Security review must include rate limits, CSRF/session policy, TLS/proxy configuration, authorization tests, backup/restore, and dependency scanning |
 
 ## Reintroducing identity later
 
-Signup should not return as an isolated screen. Treat it as one vertical feature containing identity verification, session lifecycle, actor linking, membership authorization, onboarding/recovery, abuse controls, audit behavior, and negative integration tests. The existing actor context is the insertion point; the domain API and PostgreSQL repository should not depend directly on the chosen identity provider.
+Do not restore signup as an isolated screen. It needs identity verification, session handling, actor linking, membership checks, onboarding and recovery, abuse controls, audit rules, and negative integration tests. Connect those parts through the existing actor context. The domain API and PostgreSQL repository should not depend on a specific identity provider.

@@ -1,6 +1,6 @@
-# Decisions to Make — Local Postgres Migration
+# Local PostgreSQL decisions
 
-The initial choices are confirmed and implemented. The full comparison and rationale are in `ARCHITECTURE_OPTIONS.md`.
+These choices are implemented. See [the architecture record](ARCHITECTURE_OPTIONS.md) for the alternatives and rationale.
 
 ## Locked constraints
 
@@ -16,9 +16,9 @@ The initial choices are confirmed and implemented. The full comparison and ratio
 
 ### Options
 
-- **Fastify:** built-in validation model, hooks, plugin boundaries, and injection testing.
-- **Express 5:** familiar and unopinionated, but requires more decisions around validation, typing, errors, and tests.
-- **Hono:** small Web-Standards API with runtime portability, although Node uses an adapter.
+- **Fastify.** Built-in validation, hooks, plugin boundaries, and injection testing.
+- **Express 5.** Familiar and unopinionated, but requires separate choices for validation, typing, errors, and tests.
+- **Hono.** A small Web Standards API with runtime portability. Node requires an adapter.
 
 ### Implemented choice
 
@@ -35,14 +35,14 @@ Use Node's built-in HTTP server, confined to `api/server.ts`. The application se
 
 ### Options
 
-- **Raw `pg`:** transparent parameterized SQL and minimal abstraction, with manual row typing and mapping.
-- **Kysely + `pg`:** type-safe SQL-like queries, with an additional query-builder and schema-type layer.
-- **Drizzle:** integrated typed schema, query, and migration tooling, with greater toolkit coupling.
-- **Prisma:** comprehensive generated client and tooling, but heavier than this project appears to need.
+- **Raw `pg`.** Parameterized SQL with little abstraction, plus manual row types and mapping.
+- **Kysely with `pg`.** Typed SQL-like queries, plus a query builder and schema type layer.
+- **Drizzle.** Typed schema, query, and migration tools in one package, which ties more of the project to that toolkit.
+- **Prisma.** A generated client and broad tooling, but more machinery than this project needs.
 
-### Lean recommendation
+### Implemented choice
 
-**Raw `pg`**, with SQL isolated in repository modules and explicit row-to-domain mappers. Reassess Kysely only if query typing becomes a recurring defect source.
+Use **raw `pg`**. Keep SQL in repository modules and map rows to domain objects explicitly. Reassess Kysely only if query typing causes repeated defects.
 
 ### Decision
 
@@ -55,10 +55,10 @@ Use Node's built-in HTTP server, confined to `api/server.ts`. The application se
 
 ### Options
 
-- **Small SQL runner:** numbered portable SQL files with a ledger, checksums, advisory lock, transactions, and failure handling maintained by us.
-- **dbmate or comparable SQL-first tool:** keeps migrations as SQL while outsourcing bookkeeping to a mature external tool.
-- **node-pg-migrate:** stays within Node tooling but introduces its migration API and conventions.
-- **ORM-owned migrations:** appropriate only if the matching ORM is selected for database access.
+- **Small SQL runner.** Numbered SQL files, with a ledger, checksums, an advisory lock, transactions, and failure handling maintained in this repository.
+- **dbmate or a similar SQL-first tool.** Keep migrations as SQL and delegate bookkeeping to an external tool.
+- **node-pg-migrate.** Stay in the Node toolchain but adopt its migration API and conventions.
+- **ORM-owned migrations.** Use only with the matching ORM.
 
 Container initialization scripts alone are not sufficient because they only run against an empty volume.
 
@@ -85,15 +85,15 @@ The server selects the configured workspace and local actor. Browser requests do
 
 ### Options
 
-- **Mutation responses plus refetch-on-focus:** no collaboration infrastructure; another tab may be stale until focused.
-- **Polling plus refetch-on-focus:** simple convergence, with periodic background requests.
-- **Server-Sent Events:** near-realtime one-way delivery with browser reconnection; writes continue over HTTP.
-- **WebSockets:** full duplex, but require more protocol, heartbeat, reconnection, and backpressure handling than this application currently needs.
-- **PostgreSQL `LISTEN/NOTIFY`:** useful when multiple API instances or external database writers exist, but unnecessary for one API process.
+- **Mutation responses plus refresh-on-focus.** Requires no collaboration infrastructure. A background tab can remain stale until it receives focus.
+- **Polling plus refresh-on-focus.** Converges between tabs through periodic background requests.
+- **Server-Sent Events.** Sends one-way updates with browser-managed reconnection. Writes continue over HTTP.
+- **WebSockets.** Supports two-way messages but requires a protocol, heartbeats, reconnection, and backpressure handling that this application does not need.
+- **PostgreSQL `LISTEN/NOTIFY`.** Useful with several API instances or external database writers, but unnecessary for one API process.
 
-### Lean recommendation
+### Implemented choice
 
-Use **mutation responses plus a complete refetch on focus**. Add polling or SSE only when multi-client collaboration becomes an actual requirement.
+Use **mutation responses plus a complete refresh on focus**. Add polling or SSE only when the product needs multiple active clients.
 
 ### Decision
 
@@ -110,7 +110,7 @@ Use **mutation responses plus a complete refetch on focus**. Add polling or SSE 
 
 There is no signup, login, logout, email identity, session table, session cookie, membership role, or invite flow in the initial local release. Keep a stable actor ID and actor context in the domain so a future authentication provider can be added without rewriting task and comment ownership.
 
-## Implemented smallest viable stack
+## Implemented stack
 
 The current implementation is:
 
@@ -130,4 +130,4 @@ Synchronization: mutation responses and refetch-on-focus
 Tests: HTTP-boundary mocks + real-Postgres integration tests
 ```
 
-This deliberately excludes an ORM, GraphQL, tRPC, Redis, WebSockets, PostgreSQL notifications, microservices, and a Supabase compatibility layer until a demonstrated need justifies them.
+This excludes an ORM, GraphQL, tRPC, Redis, WebSockets, PostgreSQL notifications, microservices, and a Supabase compatibility layer. Add one only when a concrete requirement justifies it.

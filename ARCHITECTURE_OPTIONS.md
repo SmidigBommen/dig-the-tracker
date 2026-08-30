@@ -1,6 +1,6 @@
-# Architecture Options — Local Dig Tracker
+# Architecture options for local Dig
 
-Status: **Initial architecture is implemented. This document retains the considered alternatives and rationale.**
+Status: **Implemented. This document records the alternatives and the reasons for the selected design.**
 
 ## Constraints already decided
 
@@ -12,9 +12,9 @@ Status: **Initial architecture is implemented. This document retains the conside
 - The first local release is single-user and has no signup, login, session, membership, invite, or per-user authorization flow.
 - Authentication and public or shared-network exposure are deferred to a separate future design.
 
-## What “loosely coupled” means here
+## What "loosely coupled" means here
 
-Use a few meaningful boundaries, not an abstraction around every function:
+Keep HTTP, application logic, and database access separate. Do not wrap every function in an interface.
 
 ```text
 React UI
@@ -39,7 +39,7 @@ Framework request/reply objects stop at the HTTP adapter. SQL stays in the Postg
 | Microservices | Independent scaling and deployment | Networking, tracing, retries, eventual consistency, more containers | Too complex for this project |
 | Database API/PostgREST clone | Less route code initially | Recreates the coupling we are removing and exposes persistence concepts to the UI | Reject |
 
-Initial modules: `workspace`, `tasks`, `comments`, and `columns`. They share one process and database but expose application-service functions rather than importing one another’s SQL. Authentication, membership, invites, and realtime delivery are future modules, not round-one placeholders.
+The initial modules are `workspace`, `tasks`, `comments`, and `columns`. They share one process and database. Modules call application-service functions instead of importing one another's SQL. Authentication, membership, invitations, and live updates are not present in this release.
 
 ---
 
@@ -54,7 +54,7 @@ Initial modules: `workspace`, `tasks`, `comments`, and `columns`. They share one
 
 Fastify explicitly emphasizes plugin boundaries, validation, and testability in its [technical principles](https://fastify.dev/docs/latest/Reference/Principles/). Express deliberately leaves structure, database access, and authentication to the application, per its [official FAQ](https://expressjs.com/en/starter/faq/). Hono runs on Node through an adapter and documents Node WebSocket integration in its [Node guide](https://hono.dev/docs/getting-started/nodejs).
 
-**Decision:** use Node's built-in HTTP server for round one, confined to `api/server.ts`. Application services and repositories do not import HTTP types, so Fastify remains a straightforward future adapter replacement if its validation and injection tooling become valuable.
+**Decision.** Use Node's built-in HTTP server, confined to `api/server.ts`. Application services and repositories do not import HTTP types. Fastify can replace the adapter later if its validation and injection testing justify another dependency.
 
 ---
 
@@ -82,7 +82,7 @@ Use resource and command endpoints for actual product operations. Do not expose 
 
 `node-postgres` supports parameterized queries, which must be used instead of string concatenation; see its [query documentation](https://node-postgres.com/features/queries). Kysely describes itself as a type-safe SQL query builder in its [introduction](https://www.kysely.dev/docs/intro). Drizzle intentionally combines typed schema, SQL-like querying, and optional tooling, as described in its [overview](https://orm.drizzle.team/docs/overview).
 
-**Provisional recommendation:** `pg`, with SQL isolated in repository modules and explicit row-to-domain mappers. Reassess Kysely only if query typing becomes a recurring defect source.
+**Implemented choice.** Use `pg`, keep SQL in repository modules, and map rows to domain objects explicitly. Reassess Kysely only if query typing causes repeated defects.
 
 ---
 
@@ -97,13 +97,13 @@ Use resource and command endpoints for actual product operations. Do not expose 
 
 Do not use only `/docker-entrypoint-initdb.d`; it runs only for an empty volume and is not an incremental migration system.
 
-**Implemented decision:** use the small runner in `api/migrate.ts`. It owns a migration ledger with SHA-256 checksums, holds a PostgreSQL advisory lock, and applies each migration transactionally. Parser behavior is unit-tested and migration execution is part of the disposable PostgreSQL and CI test paths. This avoids introducing an unavailable migration image while retaining portable SQL.
+**Implemented decision.** The runner in `api/migrate.ts` owns a migration ledger with SHA-256 checksums, holds a PostgreSQL advisory lock, and applies each migration in a transaction. Unit tests cover its parser. Disposable PostgreSQL and CI tests run the migrations. This keeps the SQL portable and avoids another migration image.
 
 ---
 
 ## 6. Initial authorization and exposure
 
-**Decision:** round one has one server-configured workspace and one seeded local actor. There is no per-user authorization or board membership model in the runtime. The API selects the actor and workspace server-side and never trusts browser-supplied `user_id`, actor ID, or `board_id` values.
+**Decision.** The application has one server-configured workspace and one seeded local actor. It has no per-user authorization or board membership model. The API selects the actor and workspace and rejects browser-supplied `user_id`, actor ID, and `board_id` values as trusted inputs.
 
 This is safe only while the application is local. The API must bind to loopback, PostgreSQL must remain on a private container network or loopback binding, and browser origins must be explicit. The application must not support public or shared-network exposure until an authentication and authorization design is selected and tested.
 
@@ -113,7 +113,7 @@ Keep stable actor and board identifiers in the domain schema so future authentic
 
 ## 7. Round-one identity
 
-**Decision:** no signup, login, logout, email identity, or browser session exists in the first local release. Database setup creates one stable local actor and one workspace. `/api/bootstrap` returns that actor, and the profile UI may update its display name and avatar color as local preferences.
+**Decision.** This release has no signup, login, logout, email identity, or browser session. Database setup creates one stable local actor and one workspace. `/api/bootstrap` returns that actor. The profile UI can update its display name and avatar color.
 
 Application services still receive an actor context, but the HTTP adapter always supplies the server-configured local actor. This preserves a narrow seam for a future authentication provider without implementing or pretending to provide authentication now.
 
@@ -173,9 +173,9 @@ The repository's `scripts/compose` launcher isolates the external provider and w
 
 ---
 
-## Smallest viable architecture
+## Current architecture
 
-If we optimize for current needs, the leanest coherent stack is:
+The implemented stack is:
 
 ```text
 React + existing reducer/context
@@ -191,10 +191,10 @@ Initial synchronization: mutation responses + focus resync
 Tests: HTTP boundary mocks + real PostgreSQL integration tests
 ```
 
-It intentionally excludes an ORM, GraphQL/tRPC, Redis, WebSockets, PostgreSQL notifications, microservices, and a Supabase compatibility layer. Each can be introduced later behind an existing boundary if a measured need appears.
+It excludes an ORM, GraphQL, tRPC, Redis, WebSockets, PostgreSQL notifications, microservices, and a Supabase compatibility layer. Add one only when a concrete requirement warrants it.
 
 ## Confirmed implementation choices
 
-The working checklist is maintained in `decisions-to-make.md`.
+The completed checklist is in [the decision record](decisions-to-make.md).
 
-The implemented choices are **Node HTTP adapter + raw `pg` + checksummed SQL migration runner + one local actor + one server-configured workspace + loopback-only API + mutation responses/focus resync**.
+The implementation uses a Node HTTP adapter, raw `pg`, a checksummed SQL migration runner, one local actor, one server-configured workspace, a loopback-only API, mutation responses, and refresh-on-focus.

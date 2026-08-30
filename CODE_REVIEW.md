@@ -1,114 +1,131 @@
-# Code Review — dig-the-tracker
+# Code review of the former Supabase implementation
 
-> Historical review of the pre-migration Supabase implementation. The local PostgreSQL migration removes or supersedes many findings below; use current tests and architecture documents for the active system.
+> This is a historical review of the Supabase implementation. The PostgreSQL migration removed or superseded many of these findings. Use the current tests and architecture documents when assessing the active system.
 
-Reviewed commit: current `master`. Stack: React 19 + TypeScript + Vite + Supabase.
+Reviewed revision: the pre-migration `master` branch. Stack: React 19, TypeScript, Vite, and Supabase.
 
-Scope: security, correctness, types, maintainability, performance, testing, a11y, DX.
+Scope: security, correctness, types, maintainability, performance, tests, accessibility, and developer experience.
 
 ---
 
-## P0 — Fix before the next deploy
+## P0: fix before the next deploy
 
 ### 1. Add `.env.example`
-- **Where:** repo root (missing).
-- **Why:** Fresh clones have no signal about required env vars. `src/lib/supabase.ts` silently depends on `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`; without a template, onboarding is guess-and-check and misconfigurations surface as confusing runtime errors.
-- **Fix:** commit a placeholder file with both keys and a one-line comment.
+
+- **Location.** Repository root. The file was missing.
+- **Problem.** Fresh clones did not list the required environment variables. `src/lib/supabase.ts` depended on `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, so a missing value produced an unclear runtime error.
+- **Fix.** Commit a template with both keys and a one-line comment.
 
 ### 2. Invite tokens can't be revoked
-- **Where:** `supabase/migrations/001_initial_schema.sql` (`board_shares`) + `accept_invite()` RPC.
-- **Why:** A leaked link is valid for the full 7-day window. There is no kill switch — you cannot invalidate a specific token, only wait for expiry. For a shared-board product this is the highest real-world security risk.
-- **Fix:** add a `revoked_at timestamptz` column, filter it out in `accept_invite`, and expose a "revoke link" action in `ProfilePage`.
+
+- **Location.** `supabase/migrations/001_initial_schema.sql`, in `board_shares` and the `accept_invite()` RPC.
+- **Problem.** A leaked link remained valid for seven days. The owner could not invalidate one token before it expired. This was the most serious security risk in the shared-board design.
+- **Fix.** Add a `revoked_at timestamptz` column, reject revoked tokens in `accept_invite`, and add a "revoke link" action to `ProfilePage`.
 
 ### 3. Optimistic position collisions on rapid task creation
-- **Where:** `src/context/TaskContext.tsx` `addTask` (position computed client-side from stale `state.tasks`).
-- **Why:** Two quick creates in the same column can be assigned the same `position` before realtime syncs. Ordering after that point becomes non-deterministic and drag-drop uses position as the ordering key.
-- **Fix:** compute and return `position` inside the existing `create_task` RPC so the increment is atomic server-side; drop the client math.
+
+- **Location.** `addTask` in `src/context/TaskContext.tsx`, which calculated position from stale client state.
+- **Problem.** Two quick creates in one column could receive the same `position` before a live update arrived. Ordering then became nondeterministic because drag and drop used that value as its key.
+- **Fix.** Calculate and return `position` inside the existing `create_task` RPC so the server changes it atomically. Remove the client calculation.
 
 ### 4. Error handling stops at `console.log` + toast
-- **Where:** every mutation in `TaskContext.tsx` (`addTask`, `updateTask`, `deleteTask`, `moveTask`, `reorderTask`, `reorderColumns`).
-- **Why:** Failed writes (lost membership, RLS denial, offline) leave the UI in a "success-looking" state. There are no optimistic updates to roll back, but there is also no retry or clear failure affordance for the user — the toast disappears and the write is just gone.
-- **Fix:** standardize on a `mutate()` wrapper that surfaces a persistent error state + retry for the affected row, and refetches the board on repeated failures.
+
+- **Location.** Every mutation in `TaskContext.tsx`: `addTask`, `updateTask`, `deleteTask`, `moveTask`, `reorderTask`, and `reorderColumns`.
+- **Problem.** A failed write, such as a lost membership, RLS denial, or dropped connection, left the UI looking successful. The toast disappeared, with no retry action or lasting error state.
+- **Fix.** Use a common `mutate()` wrapper that keeps the error visible, offers a retry for the affected row, and refetches the board after repeated failures.
 
 ---
 
-## P1 — Do this sprint
+## P1: do this sprint
 
 ### 5. Realtime channel cleanup is fragile
-- **Where:** `src/context/TaskContext.tsx`, the `useEffect` keyed on `state.boardId`.
-- **Why:** Channel is created inside the effect but also referenced via `boardIdRef`. When boardId changes, the old channel is removed in cleanup, but any in-flight `.on()` callbacks can still dispatch into a stale reducer. Low probability today (single board), high blast radius once multi-board switching lands.
-- **Fix:** store the channel in a ref, `removeChannel` before creating a new one, and guard dispatches with a "current board" check.
+
+- **Location.** The `useEffect` keyed on `state.boardId` in `src/context/TaskContext.tsx`.
+- **Problem.** The effect created the channel but also referred to it through `boardIdRef`. When the board changed, cleanup removed the old channel, but an in-flight `.on()` callback could still dispatch into a stale reducer. A single board made this unlikely, but board switching would have increased the impact.
+- **Fix.** Store the channel in a ref, call `removeChannel` before creating another, and check the current board before dispatching.
 
 ### 6. Subtask delete is a client-side loop
-- **Where:** `src/components/TaskDetailModal.tsx` delete handler (~lines 111–115).
-- **Why:** Deleting a parent iterates through children with individual DELETEs, then deletes the parent. Any mid-loop failure leaves orphaned subtasks pointing at a missing `parent_id`.
-- **Fix:** add a `delete_task_cascade(task_id)` Supabase function and call it once.
+
+- **Location.** The delete handler in `src/components/TaskDetailModal.tsx`, around lines 111 to 115.
+- **Problem.** Deleting a parent sent one request per child and then deleted the parent. A failure midway could leave orphaned subtasks.
+- **Fix.** Add a `delete_task_cascade(task_id)` Supabase function and call it once.
 
 ### 7. `state as unknown as {...}` casts
-- **Where:** `src/components/ProfilePage.tsx` (`commentsByTask`), `TaskContext.tsx` provider value (`profile` grafted onto state).
-- **Why:** Defeats the point of strict TS — schema drifts go unnoticed until runtime. Both fields actually exist; they're just absent from the type.
-- **Fix:** add `commentsByTask` and `profile` to the `TaskState` interface. Delete the casts.
+
+- **Location.** `commentsByTask` in `src/components/ProfilePage.tsx` and the `profile` value added to state in `TaskContext.tsx`.
+- **Problem.** These casts bypassed strict TypeScript checks. Both fields existed at runtime but were missing from the type.
+- **Fix.** Add `commentsByTask` and `profile` to `TaskState`, then delete the casts.
 
 ### 8. Pervasive `as Record<string, unknown>` on Supabase rows
-- **Where:** `TaskContext.tsx` initial fetch + realtime handlers (mapTask / mapColumn call sites).
-- **Why:** Every row coming out of Supabase is being laundered through `Record<string, unknown>`. A column rename in the DB passes type-check but fails at runtime.
-- **Fix:** generate typed rows with `supabase gen types typescript`, commit to `src/types/db.ts`, type the query responses directly.
+
+- **Location.** The initial fetch and live-update handlers in `TaskContext.tsx`, at the `mapTask` and `mapColumn` call sites.
+- **Problem.** Casting every Supabase row to `Record<string, unknown>` hid schema drift. A renamed database column passed type checking and failed at runtime.
+- **Fix.** Generate row types with `supabase gen types typescript`, commit them to `src/types/db.ts`, and type query responses directly.
 
 ### 9. Task card is a `div` with `role="button"`
-- **Where:** `src/components/TaskCard.tsx`.
-- **Why:** Screen readers announce it as a button but keyboard activation, focus ring, and `Enter`/`Space` semantics aren't free — they have to be wired manually and currently aren't consistent.
-- **Fix:** either make it a real `<button>` wrapping the content, or add `tabindex="0"` + `onKeyDown` for Enter/Space.
+
+- **Location.** `src/components/TaskCard.tsx`.
+- **Problem.** Screen readers announced the card as a button, but it lacked consistent keyboard activation and focus behavior.
+- **Fix.** Use a real `<button>`, or add `tabindex="0"` and an `onKeyDown` handler for Enter and Space.
 
 ### 10. Drag-drop is mouse-only
-- **Where:** `KanbanColumn.tsx` / `TaskCard.tsx`.
-- **Why:** Keyboard users cannot reorder or move tasks between columns except through the status dropdown in the detail modal. This is an accessibility blocker for a kanban app.
-- **Fix:** add keyboard shortcuts on a focused card (e.g. `⌘/Ctrl + ←/→` to change column, `↑/↓` to reorder). Doesn't need to replace the mouse path.
 
-### 11. Supabase mock can't simulate failures or realtime
-- **Where:** `src/test/supabaseMock.ts`.
-- **Why:** `rpc()` is hardcoded to succeed; `channel()` is a no-op. Every test runs the happy path — the exact cases most likely to have bugs (RLS denial, realtime races, invite expiry) aren't exercised.
-- **Fix:** make the mock configurable per-test (injectable rpc responses, a way to fire realtime events).
+- **Location.** `KanbanColumn.tsx` and `TaskCard.tsx`.
+- **Problem.** Keyboard users could move tasks only through the status dropdown in the detail modal. They could not reorder cards from the board.
+- **Fix.** Add keyboard commands to a focused card, such as Command or Control with the arrow keys. Keep the existing mouse controls.
+
+### 11. Supabase mock can't simulate failures or live updates
+
+- **Location.** `src/test/supabaseMock.ts`.
+- **Problem.** `rpc()` always succeeded and `channel()` did nothing. Tests could not cover RLS denials, live-update races, or expired invitations.
+- **Fix.** Let each test provide RPC responses and fire live-update events.
 
 ---
 
-## P2 — Worth doing, not urgent
+## P2: worth doing, not urgent
 
 ### 12. `TaskContext.tsx` is 733 lines
-- **Why:** Reducer, initial fetch, realtime wiring, and ~10 CRUD actions all in one file. Review and test surface is large; circular concerns (e.g., position math in both `addTask` and `moveTask`) go unnoticed.
-- **Fix:** split into `taskReducer.ts`, `useTaskInit.ts`, `useTaskRealtime.ts`, `useTaskActions.ts`. No behavior change — pure carve-up.
+
+- **Problem.** The reducer, initial fetch, live-update wiring, and about ten CRUD actions all lived in one file. That made review and testing harder. It also hid repeated logic, including position calculations in both `addTask` and `moveTask`.
+- **Fix.** Split it into `taskReducer.ts`, `useTaskInit.ts`, `useTaskRealtime.ts`, and `useTaskActions.ts` without changing behavior.
 
 ### 13. Magic numbers + duplicated position math
-- **Where:** `TaskContext.tsx` (`+ 1000`, `/ 2`), `TaskCard.tsx` (`.slice(0, 80)`), slugify inlined in `addColumn`.
-- **Fix:** `const POSITION_STEP = 1000`; extract `calculatePosition(tasksInColumn, targetIndex)` and `slugify()` into `taskUtils.ts`.
+
+- **Location.** Position calculations in `TaskContext.tsx`, title truncation in `TaskCard.tsx`, and the inline slug function in `addColumn`.
+- **Fix.** Define `POSITION_STEP`, then move `calculatePosition()` and `slugify()` into `taskUtils.ts`.
 
 ### 14. Re-render cost on large boards
-- **Where:** `KanbanBoard.tsx` hash-listener effect depends on `state.tasks`; `TaskCard` is unmemoized.
-- **Why:** Every task edit re-renders every card and re-attaches the hashchange listener. Imperceptible at ~50 tasks, painful at 500.
-- **Fix:** `React.memo(TaskCard)` with a stable `onClick` from a ref or `useCallback`; move the hashchange effect to depend only on the lookup map.
+
+- **Location.** The hash-listener effect in `KanbanBoard.tsx` depended on `state.tasks`, and `TaskCard` was not memoized.
+- **Problem.** Every task edit rendered every card and reattached the hash-change listener. The cost was negligible around 50 tasks and noticeable around 500.
+- **Fix.** Wrap `TaskCard` in `React.memo`, give it a stable `onClick`, and make the hash-change effect depend only on the lookup map.
 
 ### 15. `TaskStatus = string`
-- **Where:** `src/types/index.ts`.
-- **Why:** Removes any help the type system could give around reserved statuses (`backlog`, `done` are protected columns per CLAUDE.md).
-- **Fix:** `type TaskStatus = 'backlog' | 'done' | (string & {})` to preserve both literal autocomplete and custom-column flexibility.
+
+- **Location.** `src/types/index.ts`.
+- **Problem.** The type system could not distinguish reserved statuses such as `backlog` and `done`.
+- **Fix.** Use `type TaskStatus = 'backlog' | 'done' | (string & {})` to keep literal completion while allowing custom columns.
 
 ### 16. Modal focus is not trapped
-- **Where:** `TaskModal.tsx`, `TaskDetailModal.tsx`, `InviteHandler.tsx`.
-- **Why:** Tabbing past the last field sends focus behind the modal. Standard a11y pattern is a focus trap + restore focus on close.
-- **Fix:** add a small focus-trap utility (or `focus-trap-react` if deps are fine).
+
+- **Location.** `TaskModal.tsx`, `TaskDetailModal.tsx`, and `InviteHandler.tsx`.
+- **Problem.** Tabbing past the last field moved focus behind the modal.
+- **Fix.** Trap focus inside the modal and restore it when the modal closes.
 
 ### 17. Test coverage gaps
-- **Missing:** `AuthContext` flows, `InviteHandler`, realtime sync behavior, drag-drop, subtask delete, error-path coverage on mutations.
-- **Fix:** once #11 lands, add one integration test per missing flow.
+
+- **Missing coverage.** `AuthContext`, `InviteHandler`, live updates, drag and drop, subtask deletion, and mutation failures.
+- **Fix.** After improving the mock in item 11, add one integration test for each missing flow.
 
 ---
 
-## P3 — Nice to have
+## P3: optional improvements
 
 - Add `lint` / `typecheck` / `format` npm scripts and run them in CI (today only `build` and `test` run).
 - Add Husky + lint-staged to block broken commits.
 - Expand README with Supabase setup steps, how to run migrations, and auth redirect configuration.
-- Document the schema (ER diagram or `supabase/SCHEMA.md`) — currently only readable via SQL.
-- Pagination / virtualization on the board view — not a problem under ~1k tasks, but worth planning.
+- Document the schema with an ER diagram or `supabase/SCHEMA.md`. At the time of review, SQL was the only documentation.
+- Add pagination or virtualization if boards approach 1,000 tasks. Smaller boards did not need it.
 - Consider Playwright for smoke tests on the login → create task → invite flow.
 
 ---
@@ -118,16 +135,14 @@ Scope: security, correctness, types, maintainability, performance, testing, a11y
 - No `dangerouslySetInnerHTML`, no XSS vectors in current rendering paths.
 - No hardcoded secrets; anon key usage is correct for a browser app.
 - RLS policies look sound: `is_board_member()` gates every sensitive table; `security definer` RPCs check membership.
-- `build` already runs `tsc -b` before Vite — type errors can't slip into a deploy.
+- `build` already ran `tsc -b` before Vite, so type errors could not slip into a deploy.
 - GitHub Actions workflow is clean (uses `npm ci`, secrets injected correctly).
 
 ---
 
 ## Suggested order of attack
 
-1. **Day 1:** #1 (`.env.example`), #7 (type casts), #3 (position RPC), #8 (generated DB types) — all low-risk, high-signal.
-2. **Day 2–3:** #2 (invite revocation), #4 (error handling), #6 (cascade delete RPC) — touches both schema and client.
-3. **Week 2:** #5 (realtime cleanup), #9–10 (a11y), #11 (mock upgrade) → unblocks #17 (tests).
-4. **Background:** #12 (split context), #13 (constants), #14 (memoization) as opportunistic cleanup.
-
-Want me to start with the P0 block, or a specific item?
+1. **Day 1.** Add `.env.example`, remove unsafe type casts, move position assignment into the RPC, and generate database types. These changes were low risk and made later work easier to verify.
+2. **Days 2 and 3.** Add invite revocation, improve error handling, and make cascade deletion atomic. These changes touched both the schema and client.
+3. **Week 2.** Fix live-update cleanup and keyboard access, then improve the mock so error-path tests could be added.
+4. **As time allowed.** Split the context, extract constants, and reduce unnecessary renders.
