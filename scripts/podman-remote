@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+server_runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+socket="$server_runtime_dir/podman/podman.sock"
+
+if [ -S "$socket" ]; then
+  client_runtime_dir=$(mktemp -d "${TMPDIR:-/tmp}/dig-podman-client.XXXXXX")
+  trap 'rm -rf "$client_runtime_dir"' EXIT HUP INT TERM
+  XDG_RUNTIME_DIR="$client_runtime_dir" podman --remote --url "unix://$socket" "$@"
+  exit $?
+fi
+
+exec podman "$@"

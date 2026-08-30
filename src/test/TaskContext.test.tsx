@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { AuthProvider } from '../context/AuthContext.tsx'
 import { TaskProvider, useTaskContext } from '../context/TaskContext.tsx'
-import { setMockTasks } from './supabaseMock.ts'
+import { setMockTasks } from './apiMock.ts'
 import type { Task } from '../types/index.ts'
 
 function createTestTask(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
@@ -112,11 +111,9 @@ function TestComponent() {
 function renderWithProvider(initialTasks: Record<string, unknown>[] = [createTestTask()]) {
   setMockTasks(initialTasks)
   return render(
-    <AuthProvider>
-      <TaskProvider>
-        <TestComponent />
-      </TaskProvider>
-    </AuthProvider>
+    <TaskProvider>
+      <TestComponent />
+    </TaskProvider>
   )
 }
 

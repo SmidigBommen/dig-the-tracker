@@ -1,17 +1,15 @@
 import type { TaskPriority } from '../types/index.ts'
 import { useTaskContext } from '../context/TaskContext.tsx'
-import { useAuth } from '../context/AuthContext.tsx'
 import './Header.css'
 
 export default function Header() {
   const { state, setSearch, setFilterPriority, setView, toggleSubtasksOnBoard } = useTaskContext()
-  const { profile: authProfile, signOut } = useAuth()
 
   const totalTasks = state.tasks.filter(t => !t.parentId).length
   const doneTasks = state.tasks.filter(t => t.status === 'done' && !t.parentId).length
 
-  const displayName = authProfile?.display_name || ''
-  const avatarColor = authProfile?.avatar_color || '#6366f1'
+  const displayName = state.actor?.display_name || ''
+  const avatarColor = state.actor?.avatar_color || '#6366f1'
   const initials = (displayName || '')
     .split(' ')
     .map((w) => w.charAt(0).toUpperCase())
@@ -91,14 +89,6 @@ export default function Header() {
             </select>
           </>
         )}
-
-        <button
-          className="header-sign-out"
-          onClick={signOut}
-          title="Sign out"
-        >
-          Sign out
-        </button>
 
         <button
           className={`header-avatar ${state.currentView === 'profile' ? 'active' : ''}`}

@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { AuthProvider } from '../context/AuthContext.tsx'
 import { TaskProvider } from '../context/TaskContext.tsx'
-import { setMockTasks } from './supabaseMock.ts'
+import { setMockTasks } from './apiMock.ts'
 import KanbanBoard from '../components/KanbanBoard.tsx'
 import Header from '../components/Header.tsx'
 import ReportsPage from '../components/ReportsPage.tsx'
@@ -37,11 +36,9 @@ function createTestTask(overrides: Partial<Record<string, unknown>> = {}): Recor
 function renderWithProvider(component: React.ReactNode, initialTasks?: Record<string, unknown>[]) {
   setMockTasks(initialTasks ?? [])
   return render(
-    <AuthProvider>
-      <TaskProvider>
-        {component}
-      </TaskProvider>
-    </AuthProvider>
+    <TaskProvider>
+      {component}
+    </TaskProvider>
   )
 }
 
@@ -49,7 +46,7 @@ function renderWithProvider(component: React.ReactNode, initialTasks?: Record<st
 async function waitForLoad() {
   await waitFor(() => {
     // KanbanBoard renders columns when loaded — wait for at least one
-    expect(screen.queryByText('Loading board...')).not.toBeInTheDocument()
+    expect(screen.queryByText('Loading local workspace...')).not.toBeInTheDocument()
   }, { timeout: 3000 })
 }
 

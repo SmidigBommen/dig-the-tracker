@@ -2,7 +2,6 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import type { TaskPriority, TaskStatus, ValidationError } from '../types/index.ts'
 import { PRIORITY_CONFIG } from '../types/index.ts'
 import { useTaskContext } from '../context/TaskContext.tsx'
-import { useAuth } from '../context/AuthContext.tsx'
 import { validateTask, validateComment, formatTaskKey } from '../context/taskUtils.ts'
 import TaskModal from './TaskModal.tsx'
 import './TaskDetailModal.css'
@@ -37,9 +36,8 @@ interface TaskDetailModalProps {
 
 export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProps) {
   const { state, updateTask, deleteTask, addComment, deleteComment, moveTask, getComments } = useTaskContext()
-  const { profile: authProfile } = useAuth()
   const task = state.tasks.find((t) => t.id === taskId)
-  const currentUser = authProfile?.display_name || ''
+  const currentUser = state.actor?.display_name || ''
 
   const comments = getComments(taskId)
 
@@ -74,7 +72,7 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
       return
     }
     setIsSaving(true)
-    await updateTask(task!.id, {
+    const updated = await updateTask(task!.id, {
       title: editTitle.trim(),
       description: editDescription.trim(),
       priority: editPriority,
@@ -82,7 +80,7 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
       tags: editTags.split(',').map((t) => t.trim()).filter(Boolean),
     })
     setIsSaving(false)
-    setIsEditing(false)
+    if (updated) setIsEditing(false)
   }
 
   async function handleAddComment(e: FormEvent) {
@@ -97,9 +95,11 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
       return
     }
     setIsPostingComment(true)
-    await addComment(task!.id, commentText.trim(), author)
-    setCommentText('')
-    setCommentErrors([])
+    const added = await addComment(task!.id, commentText.trim(), author)
+    if (added) {
+      setCommentText('')
+      setCommentErrors([])
+    }
     setIsPostingComment(false)
   }
 
@@ -108,11 +108,7 @@ export default function TaskDetailModal({ taskId, onClose }: TaskDetailModalProp
       setConfirmDelete(true)
       return
     }
-    for (const st of subtasks) {
-      await deleteTask(st.id)
-    }
-    await deleteTask(task!.id)
-    onClose()
+    if (await deleteTask(task!.id)) onClose()
   }
 
   function getEditError(field: string) {

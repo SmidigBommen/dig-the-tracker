@@ -1,0 +1,37 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
+podman="$script_dir/podman-remote"
+container_name=dig-test-postgres
+port="${DIG_TEST_DB_PORT:-55432}"
+image="${DIG_TEST_POSTGRES_IMAGE:-docker.io/library/postgres:16-alpine}"
+database_url="postgres://dig:dig-test@127.0.0.1:$port/dig"
+
+cleanup() {
+  "$podman" rm --force "$container_name" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+
+cleanup
+"$podman" run --detach --name "$container_name" \
+  --tmpfs /var/lib/postgresql/data:rw \
+  --publish "127.0.0.1:$port:5432" \
+  --env POSTGRES_DB=dig \
+  --env POSTGRES_USER=dig \
+  --env POSTGRES_PASSWORD=dig-test \
+  "$image" >/dev/null
+
+attempt=0
+until "$podman" exec "$container_name" pg_isready -U dig -d dig >/dev/null 2>&1; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 60 ]; then
+    "$podman" logs "$container_name" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+cd "$project_dir"
+DATABASE_URL="$database_url" npm run test:db:running

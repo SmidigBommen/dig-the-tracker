@@ -1,5 +1,7 @@
 # Code Review — dig-the-tracker
 
+> Historical review of the pre-migration Supabase implementation. The local PostgreSQL migration removes or supersedes many findings below; use current tests and architecture documents for the active system.
+
 Reviewed commit: current `master`. Stack: React 19 + TypeScript + Vite + Supabase.
 
 Scope: security, correctness, types, maintainability, performance, testing, a11y, DX.

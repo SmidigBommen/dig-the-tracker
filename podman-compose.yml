@@ -1,7 +1,52 @@
 services:
-  dig-tracker:
+  db:
+    image: docker.io/library/postgres@sha256:60b180625695e90b6e450405d5f0bcb74bc8c52c65d1cd11aeb3da46cac06dd8
+    environment:
+      POSTGRES_DB: dig
+      POSTGRES_USER: dig
+      POSTGRES_PASSWORD: dig-local-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dig -d dig"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - dig-postgres:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks: [dig-private]
+
+  migrate:
+    image: localhost/dig-tracker:local
     build:
       context: .
       dockerfile: Containerfile
+    environment:
+      DATABASE_URL: postgres://dig:dig-local-only@db:5432/dig?sslmode=disable
+    command: ["node", "api-dist/migrate.js", "up"]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [dig-private]
+
+  dig-tracker:
+    image: localhost/dig-tracker:local
+    build:
+      context: .
+      dockerfile: Containerfile
+    environment:
+      DATABASE_URL: postgres://dig:dig-local-only@db:5432/dig
+      ALLOWED_ORIGINS: http://127.0.0.1:8080,http://localhost:8080
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [dig-private]
+
+networks:
+  dig-private:
+    internal: true
+
+volumes:
+  dig-postgres:

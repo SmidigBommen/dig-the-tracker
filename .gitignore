@@ -9,8 +9,10 @@ lerna-debug.log*
 
 node_modules
 dist
+api-dist
 dist-ssr
 *.local
+dig-backup.dump
 .env*.local
 .env-tmp
 

@@ -22,7 +22,7 @@ export default defineConfig([
     rules: {
       'react-refresh/only-export-components': [
         'error',
-        { allowExportNames: ['useTaskContext'] },
+        { allowExportNames: ['useTaskContext', 'renderLinkedText'] },
       ],
     },
   },

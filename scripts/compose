@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+if /usr/bin/python3 -c 'import podman_compose' >/dev/null 2>&1; then
+  exec /usr/bin/python3 -m podman_compose --podman-path "$script_dir/podman-remote" "$@"
+fi
+
+for site_dir in "$HOME"/.local/lib/python*/site-packages; do
+  if [ -f "$site_dir/podman_compose.py" ]; then
+    export PYTHONPATH="$site_dir${PYTHONPATH:+:$PYTHONPATH}"
+    exec /usr/bin/python3 -m podman_compose --podman-path "$script_dir/podman-remote" "$@"
+  fi
+done
+
+echo "podman-compose is not installed for an available Python runtime" >&2
+exit 1

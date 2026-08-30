@@ -1,343 +1,162 @@
 # Migration Plan — Supabase → Local Postgres
 
-Status: **Draft for review.** No code changes yet.
+Status: **Implemented and verified in the working tree. Build, lint, unit, boundary, migration, and real-PostgreSQL concurrency tests pass. Disposable Podman/PostgreSQL testing works locally and the equivalent PostgreSQL-backed test is wired into CI.**
 
-**Decisions locked in (2026-04-18):**
-- **Architecture:** Option B — drop Supabase, custom backend + local Postgres.
-- **Runtime:** Node 22 + Fastify + `pg` + `ws`.
-- **Host:** user's own Ubuntu cloud server (deferred — Scope-1 doesn't deploy yet).
-- **Packaging:** podman-compose.
-- **Auth round 1:** **R1-A — display-name login, HttpOnly cookie, no email, no password.**
-- **Scope:** **Scope-1 — local dev only.** Prod stays on Supabase until a future decision. Phase 7 (deploy) and Phase 8 (prod cutover) are out of scope for this pass.
-- **Timeline:** none. Keep it simple.
+## Locked constraints
 
-**Effective plan:** Phases 0 → 6. Target ~6–8 working days.
+- Supabase is offline and unavailable. It cannot be used for runtime, development, tests, fallback, or rollback.
+- Replace it completely with a custom backend and local PostgreSQL.
+- Run PostgreSQL through a container/pod-based local setup using Podman.
+- Prefer a simple modular monolith with explicit, loosely coupled boundaries.
+- Do not recreate Supabase, PostgREST, or its chainable client API.
+- Restore a fully functional single-user local application before considering authentication, collaboration, or public deployment.
+- Round one has one seeded local actor and one server-configured workspace, with no signup, login, session, membership, invite, or per-user authorization flow.
+- The API is loopback-only and PostgreSQL remains private until a future authentication and authorization design is implemented.
 
----
+See `ARCHITECTURE_OPTIONS.md` for the framework, database, migration, authorization, authentication, synchronization, package, and orchestration alternatives.
 
-## 1. What we actually depend on today
+## Current dependency surface
 
-Before choosing a target, map the Supabase surface area actually in use. Going off the current code:
+The current Supabase dependency surface includes:
 
-| Supabase feature | Where it's used | Replaceability |
-|---|---|---|
-| **Postgres database** | all migrations in `supabase/migrations/` | Easy — it's vanilla Postgres with one exception (see RLS). |
-| **Auth (magic link)** | `AuthContext.tsx` — `signInWithOtp`, `getSession`, `onAuthStateChange`, `signOut` | Hard — needs email delivery + JWT issuance + session mgmt. |
-| **`auth.users` schema + `auth.uid()`** | all FK columns, `is_board_member()`, `accept_invite()`, every RLS policy | Hard — these are GoTrue's schema. Must be stood up or replaced. |
-| **PostgREST query API** | `TaskContext.tsx` — `.from().select/insert/update/delete().eq().order().single()` (~12 call sites) | Medium — either run PostgREST, or write a thin REST layer. |
-| **RPC (stored procs)** | `create_task`, `create_default_board`, `accept_invite`, `next_task_number` | Easy — same SQL, called via any Postgres client. |
-| **Realtime** | `TaskContext.tsx` — `supabase.channel().on('postgres_changes').subscribe()` for `tasks`, `task_comments`, `columns`, `board_members` | Hard — needs logical replication + a WebSocket server. |
-| **Row Level Security** | all tables; `is_board_member()` uses `auth.uid()` | Depends — RLS itself is just Postgres, but `auth.uid()` comes from Supabase's JWT → GUC plumbing. |
+- PostgreSQL tables for profiles, boards, memberships, invites, columns, tasks, and comments.
+- Magic-link auth and browser sessions currently supplied by Supabase Auth.
+- PostgREST reads and mutations used throughout `AuthContext` and `TaskContext`.
+- Stored operations for default-board creation, issue numbering, task creation, and invite acceptance.
+- Realtime updates for tasks, comments, columns, and memberships.
+- Supabase-specific RLS policies and `auth.uid()`.
+- The chainable Supabase test mock.
 
-**Deployment reality:** today it's a static SPA on GitHub Pages talking directly to Supabase. Dropping Supabase ends that arrangement — **something has to run server-side.** That is the biggest shift in this migration, not the database swap.
+Round one replaces the database and domain operations but deliberately removes the authentication, membership, invite, and realtime collaboration features. It preserves stable actor and board identifiers so those capabilities can be redesigned later without rewriting task and comment ownership.
 
-**Files that will change (or be rewritten):**
-- `src/lib/supabase.ts` — client entry, replace or re-implement
-- `src/context/AuthContext.tsx` — sign-in flow, session mgmt
-- `src/context/TaskContext.tsx` — CRUD + realtime
-- `src/components/InviteHandler.tsx` — RPC call
-- `src/lib/migrateLocalData.ts` — one-time helper, easy
-- `src/test/supabaseMock.ts` — rewrite against new client
-- `supabase/migrations/*.sql` — port, strip Supabase-specifics
-- `package.json` — drop `@supabase/supabase-js`, add new deps
-- `.github/workflows/deploy.yml` — deploy target changes if we need a server
+The browser must no longer know database table names or issue database-shaped queries. It will call domain-oriented HTTP operations through a typed client.
 
 ---
 
-## 2. Target architectures — three realistic options
+## Phase 0 — Confirm architecture and preserve behavioral baseline
 
-### Option A — Self-host full Supabase stack (Postgres + GoTrue + PostgREST + Realtime)
+1. Record the selected HTTP, database-access, and migration choices.
+2. Create a migration branch from GitHub `master` at `16dbaee`.
+3. Install the synchronized dependencies and record current build, lint, and test results as behavioral evidence only.
+4. Inventory every existing Supabase read, mutation, RPC, auth call, and subscription.
+5. Preserve any existing database dump if one is already available. Legacy data recovery is optional and must not block the replacement.
 
-Run the open-source Supabase components via `supabase start` (Docker Compose) or a hand-rolled compose. Client keeps using `@supabase/supabase-js`.
+**Checkpoint:** approved remaining architecture decisions, clean migration branch, baseline results, and complete operation inventory.
 
-- **Effort:** S. Nearly zero code change.
-- **What changes:** env vars point at `http://localhost:54321`; prod points at your own server.
-- **Pros:** All features keep working (realtime, RLS, magic link). Fastest path.
-- **Cons:** Not actually "off Supabase" — same stack, different host. You own ops now (backups, upgrades, TLS, SMTP). Realtime server is Elixir; another runtime to babysit.
-- **Best if:** the motivation is *data residency / cost / vendor lock-in*, not *simplification*.
+## Phase 1 — PostgreSQL container and portable schema
 
-### Option B — Postgres only + thin custom backend (Node/Bun + `pg` + WebSocket)
+1. Add a local Compose file with a version-pinned PostgreSQL image, named volume, health check, and localhost-only host binding when required.
+2. Add a real incremental migration mechanism; do not rely only on container initialization scripts.
+3. Port the useful round-one domain schema into portable migrations.
+4. Add a local actors table with one stable seeded actor; do not add a sessions table.
+5. Seed one stable workspace and its default columns.
+6. Keep actor IDs on task and comment ownership fields and board IDs on domain records, but omit memberships, invite shares, and RLS policies from round one.
 
-Run local Postgres. Write a minimal backend (Express/Fastify/Hono) that: (1) issues sessions, (2) exposes CRUD + RPC endpoints the client already uses, (3) broadcasts realtime events via WebSocket, (4) enforces auth/membership in middleware (RLS becomes optional belt-and-braces).
+**Checkpoint:** one command resets, migrates, and seeds the database; persistent data survives container recreation.
 
-- **Effort:** L. Roughly 1–2 weeks of solid work.
-- **What changes:** supabase-js → custom client wrapper with same shape (or a fetch-based client). AuthContext rewritten around cookie/JWT sessions. Realtime re-implemented on top of WS (Postgres `LISTEN/NOTIFY` is the natural fit).
-- **Pros:** Full control. No Supabase-specific schema (`auth.users`, `auth.uid()`). Smaller surface area to reason about.
-- **Cons:** You own auth security (that's the scary part). Rebuilding realtime from scratch is the most error-prone piece. Testing story is now "did we port the mock correctly?"
-- **Best if:** the motivation is *simplification / dropping the dependency entirely*.
+## Phase 2 — Transactional domain operations
 
-### Option C — Postgres + PostgREST + an auth library (e.g. Lucia/Better-Auth)
+Move invariants currently calculated in React or Supabase RPCs behind application services and database transactions:
 
-Run Postgres + PostgREST for data, use a purpose-built auth library (Lucia, Better-Auth, Auth.js) instead of GoTrue. Realtime stays custom (LISTEN/NOTIFY + WS) or gets dropped temporarily.
+1. Create and identify the configured local workspace deterministically.
+2. Store `next_task_number` on the board and increment it while locking that row. Do not use `max(number) + 1`.
+3. Calculate task and column positions on the server; normalize positions when no numeric gap remains.
+4. Delete task/subtask trees atomically.
+5. Assign task and comment actor IDs on the server; never trust actor or board IDs from browser input.
+6. Map database rows to plain domain objects inside repository adapters.
 
-- **Effort:** M.
-- **Pros:** PostgREST keeps most of the `.from().select()` shape working. Auth libraries are nicer to integrate than GoTrue.
-- **Cons:** Still three things to run. RLS policies need reworking because `auth.uid()` won't exist — policies need to read a different GUC or be replaced by app-layer checks.
-- **Best if:** you want to keep the declarative RLS + query model but ditch Supabase-auth specifically.
+**Checkpoint:** real-Postgres tests prove unique sequential issue numbers, deterministic ordering, fixed server-side actor/workspace scoping, and rollback on failure.
 
-### Decision: Option B ✅
+## Phase 3 — Custom API and local actor
 
-Dropping Supabase entirely. Phases below assume this.
+Implement a modular monolith with explicit endpoints:
 
----
+```text
+GET    /api/bootstrap
+PATCH  /api/profile
+POST   /api/tasks
+PATCH  /api/tasks/:id
+DELETE /api/tasks/:id
+POST   /api/tasks/:id/comments
+DELETE /api/tasks/:taskId/comments/:commentId
+POST   /api/columns
+PUT    /api/columns/order
+DELETE /api/columns/:slug
+GET    /api/healthz
+```
 
-## 3. Phased plan (Option B, podman-compose, Ubuntu host)
+Rules:
 
-**Proposed stack:**
-- **DB:** `postgres:16` container.
-- **API:** Node 22 (LTS) + **Fastify** + `pg` + `ws`. Chosen over Bun+Hono because the repo already uses `node:22-alpine` in `Containerfile`, and Ubuntu + Node is the lowest-friction path. Everything is TypeScript.
-- **Web:** existing nginx container, unchanged except it proxies `/api` and `/ws` to the API container.
-- **Reverse proxy (prod):** Caddy — one-line TLS via Let's Encrypt.
-- **Layout:**
-  ```
-  ./api/           ← new Node backend (own package.json)
-  ./db/migrations/ ← ported SQL, no auth.* references
-  ./src/           ← existing frontend (unchanged structure)
-  compose.yml      ← db + api + web + caddy (prod)
-  compose.dev.yml  ← db + api only; Vite dev server runs on host
-  ```
+- Route adapters validate transport input and call framework-independent application services.
+- SQL exists only in repository adapters and is always parameterized.
+- The API binds to loopback and accepts only explicit local browser origins.
+- PostgreSQL is reachable only through the private container network or a loopback binding.
+- The HTTP adapter supplies the stable local actor and configured workspace to application services.
+- Request DTOs do not accept trusted actor IDs, user IDs, or board IDs.
+- `/api/bootstrap` returns the local actor, current workspace, columns, tasks, and comments in one typed response.
 
-Each phase ends in a runnable, testable checkpoint.
+**Checkpoint:** route tests and real-database tests cover success, invalid input, server-side actor/workspace assignment, rejected identity overrides, and loopback-safe configuration.
 
-### Phase 0 — Baseline & safety net (½ day)
-1. Commit `CODE_REVIEW.md` and `MIGRATION_PLAN.md`.
-2. Add a feature flag `VITE_BACKEND=supabase|local` so both clients coexist during the build-out.
-3. Export current prod data via `pg_dump` of the Supabase DB (rollback + eventual import material).
-4. Tag current commit as `pre-local-migration`.
+## Phase 4 — Frontend cutover
 
-### Phase 1 — Postgres pod + ported schema (1 day)
-1. Add `compose.dev.yml` with a `db` service (`postgres:16-alpine`, named volume, exposed on `127.0.0.1:5432`).
-2. Create `db/migrations/` by porting `supabase/migrations/*.sql`:
-   - Drop `references auth.users(id)` → `references public.users(id)`.
-   - Create `public.users(id uuid pk default gen_random_uuid(), email text unique, display_name text, created_at)`.
-   - Replace `auth.uid()` with `current_setting('app.user_id', true)::uuid`.
-   - Keep all RLS policies verbatim otherwise.
-3. Add `db/seed.sql` — a couple of dev users + a sample board.
-4. Add npm scripts at repo root: `db:up` (podman-compose up -d db), `db:down`, `db:psql`, `db:reset` (drop volume + re-up + run migrations + seed), `db:migrate`.
+1. Add a small typed API client exposing domain operations such as `bootstrap`, `createTask`, and `updateProfile`.
+2. Remove the login page, auth gate, sign-out action, invite handler, invite UI, and email identity UI; replace `AuthContext` with the local actor returned by bootstrap.
+3. Rewrite `TaskContext`, the remaining profile functionality, and local-data import to use the typed client.
+4. Preserve the existing reducer and UI behavior where it remains useful.
+5. Replace Supabase row casts with explicit API DTOs and domain mappers.
+6. Replace the Supabase chain mock with HTTP-boundary mocks.
+7. Remove `@supabase/supabase-js` as soon as the frontend compiles against the custom API. There is no backend feature flag.
 
-**Checkpoint:** `npm run db:reset && npm run db:psql`. Confirm: `SET app.user_id='…dev-uid…'; SELECT * FROM tasks;` shows only that user's board.
+**Checkpoint:** ordinary CRUD, subtasks, comments, `DIG-N` links, custom columns, local profile preferences, reports, and search work using only the local API and PostgreSQL.
 
-### Phase 2 — API scaffold, stub auth (1–2 days)
-1. Scaffold `./api/` with Fastify + TS, own `Dockerfile` (uses `node:22-alpine` like the existing Containerfile).
-2. Wire `pg` pool. Add middleware: on each request, set `app.user_id` GUC on the connection for the duration of the handler (wrap queries in a transaction that `SET LOCAL`s).
-3. Implement endpoints mirroring current calls (list in §1). Shape responses like PostgREST so the client adapter stays thin.
-4. Auth is stubbed — a `GET /auth/dev-login?name=…` that sets a cookie; all requests trust the cookie.
-5. Add service to `compose.dev.yml`.
+## Phase 5 — Refresh behavior and deferred collaboration
 
-**Checkpoint:** `curl` flow hits every endpoint as two different dev users; RLS blocks cross-board reads.
+1. Update frontend state from successful mutation responses.
+2. Perform a complete bootstrap resync when the window regains focus and after recoverable errors.
+3. Do not add a change publisher, polling loop, SSE, WebSockets, PostgreSQL notifications, or Redis in round one.
+4. Treat multi-client collaboration as a future feature that must be designed together with authentication and authorization.
 
-### Phase 3 — Client adapter + cutover of local dev (1 day)
-1. Create `src/lib/backend.ts` — a thin chainable client whose shape mimics supabase-js (`backend.from('tasks').select().eq(…)`) but calls our REST endpoints. Realtime and auth namespaces are stubs initially.
-2. Re-export `supabase` from `src/lib/supabase.ts` as either the real supabase-js or our backend based on `VITE_BACKEND`. This keeps `TaskContext.tsx` near-untouched.
-3. Disable realtime subscription when `VITE_BACKEND=local` — fall back to a 30s poll on the board.
+**Checkpoint:** one local client remains consistent after mutations, focus changes, API restarts, and recoverable errors.
 
-**Checkpoint:** `VITE_BACKEND=local npm run dev` — app loads, CRUD works, no realtime.
+## Phase 6 — Remove Supabase and verify the local replacement
 
-### Phase 4 — Minimal auth (½–1 day with round-1 scope; see §6 proposal)
-Round 1 is deliberately the smallest viable thing. Details are the one open question — see §6.
+1. Delete `src/lib/supabase.ts`, `src/test/supabaseMock.ts`, and every Supabase import.
+2. Remove Supabase environment variables, package dependencies, CI settings, and documentation.
+3. Move the useful schema into `db/migrations` and remove the `supabase/` directory after parity is verified.
+4. Update `CLAUDE.md`, `README.md`, container instructions, and architecture notes.
+5. Add repository-wide checks proving there is no active Supabase dependency.
+6. Run clean install, build, lint, unit, API, database-integration, concurrency, and smoke tests with Supabase unreachable. `npm run test:db` owns a disposable Podman database locally; `npm run test:db:running` targets CI's PostgreSQL service.
+7. Document and test local backup and restore commands.
 
-After this phase:
-1. `AuthContext.tsx` calls our `/auth/*` endpoints (shape unchanged from the component's POV).
-2. Session cookie → GUC propagation is production-ish, not dev-login.
-3. `supabaseMock.ts` replaced by `backendMock.ts` against the same client shape, OR switched to MSW (recommend MSW once backend is stable).
+**Checkpoint:** one documented command starts the local application, all tests pass, and no runtime or test path depends on Supabase.
 
-**Checkpoint:** real sign-in works; unauthenticated requests 401; RLS-denied requests 403.
+## Phase 7 — Optional self-hosted deployment
 
-### Phase 5 — Realtime via LISTEN/NOTIFY (2–3 days, highest risk)
-1. Postgres triggers on `tasks`, `task_comments`, `columns`, `board_members` that `NOTIFY board_{id}` with `{op, table, id}` (IDs only — avoids the 8KB NOTIFY payload limit).
-2. API keeps one dedicated `LISTEN` connection. On notification, refetches the row and broadcasts to subscribed WebSocket clients filtered by `board_id`.
-3. On WS connect, verify session + board membership before subscribing.
-4. Client `backend.channel()` shape mirrors supabase-js; reducer wiring unchanged.
-5. Keep the 30s poll from Phase 3 as a belt-and-braces fallback, behind a flag.
+Only after local dogfooding:
 
-**Checkpoint:** two browser tabs on two accounts see each other's edits within ~1s; killing the API and restarting it recovers the subscription within 5s.
-
-### Phase 6 — Invite system + cleanup (1 day)
-1. Port `accept_invite` RPC to the new schema.
-2. Add `revoked_at` column (addresses CODE_REVIEW P0-2).
-3. Make sure new-user provisioning creates a `user_profiles` row (port the existing trigger).
-4. Remove `VITE_BACKEND` flag if prod migration isn't happening this pass; otherwise keep it for cutover.
-
-### Phase 7 — Ubuntu deploy via podman (1–2 days)
-1. Prod `compose.yml`: `db` (with a real volume + daily `pg_dump` sidecar), `api`, `web` (nginx for the built SPA), `caddy` (TLS + reverse proxy).
-2. Point Caddyfile at your domain. Caddy handles Let's Encrypt automatically.
-3. Systemd unit that `podman-compose up -d` on boot — `systemctl enable --now dig-tracker.service`.
-4. CI: existing GitHub Actions workflow builds images and pushes to a registry (ghcr.io); a deploy step SSHes to the Ubuntu box and `podman pull && podman-compose up -d`.
-5. Backups: `pg_dump` sidecar → rclone to object storage, daily. Test restore monthly.
-6. CORS: tighten to your domain only (today's `*` origin becomes unsafe once cookies are involved).
-
-**Checkpoint:** staging URL serves the app end-to-end over HTTPS.
-
-### Phase 8 — Prod cutover & Supabase retirement (½ day; only if migrating prod data)
-1. Maintenance window: put Supabase frontend in read-only.
-2. `pg_dump --data-only --schema=public` from Supabase → transform → `psql` into new DB. The transform maps `auth.users.id` → `public.users.id` (same UUIDs are fine) and adds missing profile rows for any user without one.
-3. Flip DNS / env.
-4. Keep Supabase project alive in read-only mode for 2 weeks as rollback.
-5. Delete `supabase/` folder, drop `@supabase/supabase-js`, remove `VITE_BACKEND` flag.
-
-**Rough total (Phases 0–7, local-dev-complete + prod-ready but not migrated):** 8–11 working days. Phase 8 adds ½–1 day if/when you decide to migrate prod data.
+1. Select and implement an authentication, authorization, membership, and onboarding design before any shared-network or public exposure.
+2. Add security tests for anonymous access, identity handling, and cross-board denial.
+3. Containerize the API and web application.
+4. Keep PostgreSQL on a private network and persistent host storage.
+5. Choose a reverse proxy and configure TLS, security headers, and request limits.
+6. Add Quadlet/systemd lifecycle management for the Ubuntu host.
+7. Add daily encrypted off-host backups and complete a restore drill before launch.
+8. Import legacy data only if a usable dump exists; otherwise start fresh.
 
 ---
 
-## 4. Risk analysis
+## Definition of done for the local replacement
 
-Ordered by overall severity (likelihood × impact).
+- One documented command starts PostgreSQL and the API.
+- One documented command resets, migrates, and seeds the database.
+- The frontend works without Supabase credentials or network access.
+- No production or test dependency references Supabase.
+- The selected single-user product behavior is preserved, including task-reference links in comments and local profile preferences.
+- Signup, login, logout, sessions, memberships, invites, and realtime collaboration are absent from round one.
+- The server, not the browser, selects the local actor and workspace.
+- Concurrent issue numbering uses real-Postgres tests.
+- The API is loopback-only and PostgreSQL is not publicly reachable.
+- Persistent data survives container recreation.
+- Backup and restore are documented and tested locally.
 
-### R1 — Auth is where security incidents live. **High** (reduced from Critical since round-1 scope is small).
-Reduced auth still has attack surface: cookie flags, CSRF, session-fixation, cross-board access via forged GUC. But with no password hashing, no email flow, and no token refresh in round 1, the surface is a fraction of a full impl.
-
-**Mitigations:**
-- HttpOnly + Secure + SameSite=Lax cookies from day one, even in dev (use `localhost` TLS via mkcert).
-- Rate-limit `/auth/*` endpoints.
-- `SET LOCAL app.user_id = …` inside a transaction per request — never a session-level `SET` (leaks across pool connections).
-- Integration test: every endpoint hit unauthenticated returns 401; every endpoint with a forged `app.user_id` still honors RLS.
-- Ugrade to a real auth library (Lucia / Better-Auth) in round 2, before inviting users outside your team.
-
-### R2 — Realtime drift between tabs. **High.**
-A hand-rolled LISTEN/NOTIFY → WebSocket fan-out has subtle failure modes: backend restart drops subscriptions, NOTIFY payload has an 8KB limit, reconnection logic on the client matters. Users will notice missing updates before you do.
-
-**Mitigations:**
-- Keep a periodic refetch as safety net (30s).
-- Emit only row IDs via NOTIFY; backend refetches the row. Avoids the 8KB issue.
-- Client reconnect-with-resync on WS close.
-- Ship realtime behind a flag; tolerate a week of "refresh to see updates" if needed.
-
-### R3 — Self-managed Ubuntu box. **High.**
-Your own server means you own: TLS cert renewal, kernel patches, podman upgrades, disk full, Postgres backups. Failure modes are silent until they bite.
-
-**Mitigations:**
-- Caddy handles TLS renewal (automatic, no cron).
-- Postgres in a container but on a dedicated named volume — `pg_dump` sidecar running daily, piped to rclone → object storage (e.g. Backblaze B2 at pennies/month).
-- `watchtower` or a simple `unattended-upgrades` config for the host.
-- `systemctl enable podman-auto-update.timer` for container updates.
-- Uptime monitor (UptimeRobot free tier) pinging `/healthz`.
-- Document a 10-minute "rebuild the box" runbook in the repo — if nothing else, it forces you to confirm backups actually restore.
-
-### R4 — RLS stops working silently. **High.**
-RLS depends on `auth.uid()`. If the backend forgets to set `app.user_id` on one code path, RLS still "passes" (because the GUC is null, and a NULL-based policy may pass or deny inconsistently). Worst case: a forgotten middleware on one endpoint lets any user read any row.
-
-**Mitigations:**
-- Default the GUC to a sentinel that fails every policy (`'00000000-0000-0000-0000-000000000000'::uuid`) when unauthenticated.
-- Integration test: hit every endpoint unauthenticated; all must return 401/empty.
-- Keep belt-and-braces checks in route handlers — don't rely on RLS alone.
-
-### R5 — Data migration from Supabase. **Medium.**
-`auth.users` rows must map to `public.users`. Existing sessions/JWTs become invalid. Users with active sessions get logged out during cutover. Task numbers, FKs, timestamps must preserve exactly.
-
-**Mitigations:**
-- Dry-run against staging with a real dump.
-- Write migration SQL that's idempotent and resumable.
-- Announce the cutover window; keep it short (target < 15 min).
-- All users re-sign-in after cutover — expected.
-
-### R6 — Scope creep in the backend layer. **Medium.**
-Every PostgREST feature we used without thinking (`.select('a, b, nested(*)')`, ordering, filters) is now code we write. Easy to under-estimate.
-
-**Mitigations:**
-- Inventory every `.from(...)` call before starting Phase 2 (I can produce this list on request).
-- Resist adding features; stick to what's used today.
-- Don't rebuild PostgREST. Just expose exactly the queries the app makes.
-
-### R7 — Test suite regression. **Medium.**
-The mock emulates supabase-js. Rewriting it risks tests passing when the real thing fails — or vice versa.
-
-**Mitigations:**
-- Add integration tests hitting a real local Postgres *before* swapping the mock — so we have a second signal.
-- Consider switching mocks to MSW (HTTP-level) — matches the new reality more faithfully.
-
-### R8 — Magic-link UX loss (if 4a chosen). **Medium.**
-Dropping magic link means password resets, forgot-password flows, new registration UX.
-
-**Mitigations:**
-- Accept the UX hit as a temporary state; ship magic link in a follow-up.
-- Or use 4c which usually has magic link built-in.
-
-### R9 — Email deliverability (if 4b chosen). **Low–Medium.**
-DNS records, SPF/DKIM, provider onboarding all take time. Emails land in spam.
-
-**Mitigations:**
-- Use a transactional provider from day one (Resend or Postmark — fastest onboarding).
-- Set up DKIM/SPF before Phase 4.
-
-### R10 — Cost increase on small user base. **Low.**
-Supabase free tier is generous. A VPS + managed Postgres + WS server is ~$20–40/mo minimum.
-
-**Mitigations:**
-- Use Fly.io's free tier or Hetzner CX11 (~€4/mo) + Fly Postgres.
-- Be honest that "self-hosted" isn't free.
-
-### R11 — Dev environment friction. **Low.**
-"Just run the app" becomes "start Postgres, run migrations, start backend, start frontend."
-
-**Mitigations:**
-- A single `docker compose up` for DB + backend.
-- One `npm run dev:all` that does everything with `concurrently`.
-
----
-
-## 5. Features to disable (temporarily)
-
-Ordered by when they return:
-
-| Feature | Disabled in phase | Returns in phase | Fallback |
-|---|---|---|---|
-| Realtime board sync | Phase 3 | Phase 5 | 30s auto-refetch or manual refresh button |
-| Magic link email | Phase 4 | Phase 4 (if 4b) or never (if 4a) | Dev-only login stub; password flow (4a) |
-| Invite links | Phase 3 | Phase 6 | Manual board member add via admin script |
-| Prod deployment | Phase 3 | Phase 7 | Dev/staging only during Phases 3–6 |
-| Comment realtime badges | Phase 3 | Phase 5 | Refetch on tab focus |
-
-During the dev-only period (Phases 1–6) the prod Supabase site keeps serving real users — you're building the replacement in parallel, not mid-flight.
-
----
-
-## 6. Decided vs. still open
-
-### Decided
-| # | Decision | Answer |
-|---|---|---|
-| 1 | Architecture | **Option B** — drop Supabase |
-| 2 | Backend runtime | **Node 22 + Fastify + pg + ws** (proposal, matches existing `node:22-alpine` Containerfile) |
-| 3 | Host | Your Ubuntu cloud server |
-| 4 | Packaging | **podman-compose** — extends existing `Containerfile` / `podman-compose.yml` |
-
-### Round-1 auth proposal (please confirm)
-
-You said "reduce auth needs for the first round." Options in order of minimality:
-
-- **Auth-R1-A — Display-name login, no email verification.** User types a name, backend creates or looks up a `public.users` row, issues an HttpOnly session cookie. Zero email, zero password, zero external deps. Trust is 100% "you're on the link, you're in." Suitable for a small private team behind the login.
-- **Auth-R1-B — Email + password, local only.** Standard bcrypt-based auth. Email is just an identifier, no verification email sent. One extra form field, argon2/bcrypt, that's it.
-- **Auth-R1-C — Shared secret / passphrase for the whole board.** Single password env-var; anyone with it can sign in with any display name. Simplest for a "family board" use case.
-
-All three map to the same cookie + GUC plumbing, so round 2 (proper magic link or library-backed auth) is a drop-in replacement.
-
-**❓ Decision needed:** A, B, or C?
-
-### Prod migration scope
-
-**❓ Decision needed:** which of these are we building toward?
-
-- **Scope-1 — Local dev only.** Phases 0–6. Prod stays on Supabase forever (or until a future decision). Lowest risk. ~6–8 days.
-- **Scope-2 — Self-hosted deploy, fresh data.** Phases 0–7. Stand up the Ubuntu pod, don't migrate existing Supabase data — start clean. Suitable if current data is disposable. ~8–10 days.
-- **Scope-3 — Self-hosted deploy, migrate existing data.** Phases 0–8. The full thing. ~9–11 days. Cutover window + rollback plan required.
-
-### Timeline
-
-**❓ Decision needed:** Any hard deadline? If not, recommend shipping **Scope-1** first, using it locally for a week, *then* deciding on Scope-2 or -3.
-
----
-
-## 7. Recommendation
-
-Given "reduced auth, own Ubuntu box, pod-based":
-
-1. **Start with Scope-1 + Auth-R1-A.** Gets you a running local pod in ~a week; all features that matter for development work; zero external deps (no SMTP, no auth library).
-2. **Dogfood it for a week.** You'll discover the real rough edges of your own backend before anyone else does.
-3. **Decide on Scope-2 vs. Scope-3** based on whether prod data is worth migrating.
-4. **Round-2 auth happens when you want to invite people outside your trust boundary** — not before.
-
-Do not cut over prod on the first pass. A week-old bug quietly corrupting multi-user data is far more expensive than a delayed migration.
-
----
-
-*Decisions locked. Phases 0 → 6 are in scope. Starting with Phase 0.*
+The initial architecture choices are confirmed and the migration is implemented. Public exposure and multi-user features remain explicitly out of scope.

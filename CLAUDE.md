@@ -2,82 +2,67 @@
 
 ## Git
 
-- The remote is `git@github.com:SmidigBommen/dig-the-tracker.git` and the default branch is `master` (not `main`).
-- Always verify the remote is configured (`git remote -v`) before assuming branch names. If no remote is set, check with the user rather than relying on auto-detection.
+- Remote: `git@github.com:SmidigBommen/dig-the-tracker.git`
+- Default branch: `master`
 
-## Codebase structure
+## Current architecture
 
-```
-supabase/
-  migrations/
-    001_initial_schema.sql           # Full Supabase schema: tables, RLS, functions, realtime
-    002_idempotent_board_creation.sql # Make create_default_board idempotent (prevents duplicate boards)
-    003_create_task_function.sql      # Atomic create_task() — number generation + insert in one transaction
+- Local single-user modular monolith; Supabase is completely removed.
+- React 19 + TypeScript + Vite frontend.
+- Node built-in HTTP route adapter, isolated in `api/server.ts`.
+- Application validation in `api/service.ts`; parameterized PostgreSQL access in `api/repository.ts`.
+- PostgreSQL 16, managed with Podman Compose and versioned checksummed SQL migrations.
+- One seeded actor and one configured workspace. No authentication, sessions, memberships, invites, RLS, or realtime collaboration.
+- API defaults to loopback. The container binds internally only with an explicit override and publishes to host loopback.
+- Mutation responses update the reducer; focus triggers a complete `/api/bootstrap` resync.
+
+## Structure
+
+```text
+api/
+  config.ts             # loopback/exposure and local actor/workspace configuration
+  db.ts                 # pg pool and transaction helper
+  migrate.ts            # migration ledger, checksums, advisory lock, transactions
+  errors.ts             # transport-safe application errors
+  repository.ts         # parameterized SQL and transactional invariants
+  service.ts            # input validation and application operations
+  server.ts             # Node HTTP routes, origin checks, static serving
+  service.test.ts       # local identity/exposure boundary tests
+db/migrations/
+  202608300001_initial.sql # portable schema and deterministic seed
 src/
-  App.tsx                            # Root app: AuthProvider > AuthGate > TaskProvider > AppContent
-  App.css                            # Global app styles + loading/error states
-  main.tsx                           # React entry point
-  index.css                          # Global CSS reset/variables
-  lib/
-    supabase.ts                      # Supabase client singleton (VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY)
-    migrateLocalData.ts              # One-time localStorage → Supabase migration helper
-  types/
-    index.ts                         # Shared types: Task, Column, TaskComment, mapTask(), mapColumn()
-  context/
-    AuthContext.tsx                   # Auth: session, profile, signIn (magic link), signOut, updateProfile
-    TaskContext.tsx                   # Board state: Supabase CRUD, realtime subscriptions, reducer
-    taskUtils.ts                     # Validation + formatTaskKey (unchanged)
-  components/
-    LoginPage.tsx / LoginPage.css    # Magic link login page
-    InviteHandler.tsx                # Invite link acceptance flow (?invite=<token>)
-    Toast.tsx / Toast.css            # Notification component for errors/success
-    Header.tsx / Header.css          # Top nav: tabs, search, filters, sign-out
-    KanbanBoard.tsx / KanbanBoard.css  # Board view: columns, add-column form, task modals
-    KanbanColumn.tsx / KanbanColumn.css  # Single column with drag-drop
-    TaskCard.tsx / TaskCard.css      # Individual task card in column
-    TaskModal.tsx / TaskModal.css    # Create task modal (async)
-    TaskDetailModal.tsx / TaskDetailModal.css  # View/edit task + comments (async)
-    ReportsPage.tsx / ReportsPage.css  # Reports/analytics view
-    ProfilePage.tsx / ProfilePage.css  # Profile settings + invite link generation
-  test/
-    setup.ts                         # Vitest setup + supabase mock
-    supabaseMock.ts                  # In-memory Supabase mock (chainable query builder)
-    TaskContext.test.tsx             # Context/reducer unit tests
-    validation.test.ts              # Validation function tests (unchanged)
-    components.test.tsx             # Component rendering tests
+  App.tsx               # TaskProvider and board/report/profile views
+  lib/api.ts            # typed domain-oriented fetch client and DTO mapper
+  context/TaskContext.tsx # reducer, bootstrap, mutations, focus resync
+  components/           # kanban, tasks, reports, and local profile UI
+  test/apiMock.ts       # HTTP-client boundary mock
+Containerfile           # builds API + frontend; runs as non-root Node user
+podman-compose.yml      # private PostgreSQL, migration job, loopback app
+scripts/                # Compose compatibility and disposable DB-test harnesses
 ```
 
-## Architecture notes
+## Domain invariants
 
-- **Backend:** Supabase (Postgres + Auth + Realtime). Static site on GitHub Pages.
-- **Auth:** Magic link (passwordless email) via `AuthContext`. Session managed with `supabase.auth`.
-- **State management:** `useReducer` in `TaskContext.tsx`. Data fetched from Supabase on mount, kept in sync via realtime subscriptions. All mutations are async (write to Supabase, realtime updates local state).
-- **Comments:** Stored in separate `task_comments` table (not nested in tasks). Accessed via `state.commentsByTask[taskId]` and `getCommentCount(taskId)` / `getComments(taskId)` helpers.
-- **Task creation:** Single `create_task()` RPC — atomically generates `DIG-N` number and inserts the row in one transaction/round trip. Replaces the old 2-step `next_task_number` + insert flow.
-- **Columns:** Stored in `columns` table with `position` field (gapped by 1000). `id` in app = `slug` from DB.
-- **Deep-linking:** Hash-based `#DIG-N`. Invite links use query param `?invite=<token>`.
-- **Views:** Routed via `state.currentView` (`'board' | 'reports' | 'profile'`)
-- **Protected columns:** `backlog`, `done` (cannot be removed)
-- **Invite system:** `board_shares` table with token + expiry. `accept_invite()` RPC. Generated in ProfilePage.
-- **UI-only state:** `searchQuery`, `filterPriority`, `currentView`, `showSubtasksOnBoard` stay local (not in DB).
-- **Testing:** Vitest + React Testing Library. `supabaseMock.ts` provides a chainable in-memory mock. All tests wrap with `AuthProvider` + `TaskProvider`.
-- **Env vars:** `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (set in `.env.local` or GitHub secrets)
+- The server assigns actor and workspace IDs; request DTOs never accept trusted identity or board scope.
+- A board row stores `next_task_number`; creation locks and increments it transactionally.
+- Task and column positions are calculated server-side and normalized when gaps are exhausted.
+- Parent task deletion cascades through subtasks and comments in one transaction.
+- Protected columns cannot be deleted; non-protected columns must be empty.
+- Task references use hash links such as `#DIG-5`.
 
-## Deployment
+## Commands
 
-- **GitHub Pages:** Auto-deploys on push to `master` via `.github/workflows/deploy.yml`
-- **Supabase project:** `sptklawzzgpycosxizuq` (free tier)
-- **GitHub secrets:** `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` configured in repo settings
-- **Auth redirect URLs:** `https://smidigbommen.github.io/dig-the-tracker/` and `http://localhost:5173/dig-the-tracker/` configured in Supabase Auth settings
-- **Live URL:** https://smidigbommen.github.io/dig-the-tracker/
+- `npm run build` — frontend and API type-check/build
+- `npm test` — all Vitest suites
+- `npm run test:db` — disposable real-PostgreSQL migration/concurrency test
+- `npm run test:db:running` — the same test against a running DB, used by CI
+- `npm run lint` — ESLint
+- `npm run db:up` / `npm run db:migrate` — local database startup
+- `npm run dev:api` and `npm run dev` — API and frontend development processes
+- `./scripts/compose -f podman-compose.yml up --build` — complete local application on `127.0.0.1:8080`
 
-## Dev commands
+## Future boundary
 
-- `npm run dev` — local dev server (port 5173)
-- `npm run build` — TypeScript check + production build
-- `npm test` — run all 55 tests
-- `npm run test:watch` — tests in watch mode
+Do not expose the current application to a LAN or public network. Authentication, authorization, memberships, onboarding, invitations, and collaboration must be designed and tested as a separate feature before exposure changes.
 
-## Keep this file updated
-
-When adding/removing/renaming files or changing architecture, update this structure.
+Keep this file synchronized with architecture and file-layout changes.

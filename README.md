@@ -1,104 +1,106 @@
-# Dig — Issue Tracker
+# Dig — Local Issue Tracker
 
-A multi-user kanban-style issue tracker built with React, TypeScript, and Supabase.
+Dig is a local, single-user kanban issue tracker built with React, TypeScript, a small Node HTTP API, and PostgreSQL 16.
 
-**Live demo:** https://smidigbommen.github.io/dig-the-tracker/
+The first local release deliberately has no signup, login, session, membership, invite, or realtime collaboration functionality. It uses one seeded local actor and one server-configured workspace. Do not expose it to a LAN or the internet.
 
 ## Features
 
-- Kanban board with customizable columns (Backlog, To Do, In Progress, Review, Done + custom)
-- Drag-and-drop reordering of cards within and across columns
-- Task creation with title, description, priority, assignee, and tags
-- Subtask support with progress tracking
-- Comments on tasks with auto-linked task references (DIG-N)
-- Search by text or task ID, filter by priority
-- Deep-linking to tasks via `#DIG-N` in the URL
-- Reports view with task statistics
-- Multi-user with magic link (passwordless) authentication
-- Realtime sync across users via Supabase
-- Invite teammates with shareable invite links
-- User profile settings with display name and avatar color
+- Customizable kanban columns and drag-and-drop task ordering
+- Tasks with priorities, assignees, tags, and sequential `DIG-N` numbers
+- Subtasks with progress tracking and transactional cascade deletion
+- Comments with automatically linked `DIG-N` references
+- Search, priority filtering, deep links, and reports
+- Local display name and avatar color preferences
+- PostgreSQL persistence with transactional numbering and ordering
 
-## Usage
+## Start with Podman
 
-### Creating a task
+The complete application is exposed only on loopback:
 
-1. Click **+ Add Task** on any column
-2. Fill in the title (required), description, priority, assignee, and tags
-3. Click **Create Task** — the task appears in the column with an auto-assigned DIG-N number
+```sh
+./scripts/compose -f podman-compose.yml up --build
+```
 
-### Editing a task
+Open http://127.0.0.1:8080. The application and PostgreSQL ports bind only to host loopback; the containers also share an internal network.
 
-1. Click any task card to open the detail view
-2. Click **Edit** in the top-right corner
-3. Update title, description, priority, assignee, or tags
-4. Click **Save Changes**
+To stop the application without deleting its database volume:
 
-### Moving tasks
+```sh
+npm run db:down
+```
 
-- **Drag and drop** a task card between columns, or up and down within the same column to reorder
-- Or open a task and change the **Status** dropdown in the detail view
+## Local development
 
-### Subtasks
-
-1. Open a task and click **+ Add Subtask**
-2. Fill in the subtask details and submit
-3. Subtasks appear with a progress bar showing completion (click the checkbox to toggle done)
-
-### Comments
-
-1. Open a task and scroll to the **Comments** section
-2. Type your comment and click **Submit**
-3. Task references like `DIG-5` are auto-linked
-
-### Search and filter
-
-- Use the **search bar** in the header to find tasks by title, description, or DIG-N number
-- Use the **priority filter** dropdown to show only tasks of a specific priority
-
-### Inviting teammates
-
-1. Go to **Profile** (tab in the header)
-2. Click **Generate Invite Link**
-3. Share the link — teammates click it to join your board
-
-## Getting Started
+Start PostgreSQL and apply migrations:
 
 ```sh
 npm install
+npm run db:up
+npm run db:migrate
+```
+
+Run the API and Vite frontend in separate terminals:
+
+```sh
+npm run dev:api
 npm run dev
 ```
 
-Open http://localhost:5173 to view the app.
+Open http://127.0.0.1:5173. Copy `.env.example` to `.env.local` only when overriding the defaults.
 
-## Scripts
+## Commands
 
-| Script | Description |
+| Command | Purpose |
 |---|---|
-| `npm run dev` | Start dev server |
-| `npm run build` | Type-check and build for production |
-| `npm run preview` | Preview production build locally |
-| `npm test` | Run tests |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run lint` | Lint with ESLint |
-| `npm run container:build` | Build container image with Podman |
-| `npm run container:run` | Run container on port 8080 |
+| `npm run dev` | Run the Vite frontend with `/api` proxying to port 3001 |
+| `npm run dev:api` | Compile and run the loopback-only local API |
+| `npm run build` | Type-check and build the frontend and API |
+| `npm test` | Run frontend, context, validation, and service-boundary tests |
+| `npm run test:db` | Create a disposable Podman PostgreSQL instance, migrate it, and run concurrency tests |
+| `npm run test:db:running` | Migrate and test an existing PostgreSQL service (used by CI) |
+| `npm run lint` | Lint frontend and API code |
+| `npm run db:up` | Start PostgreSQL |
+| `npm run db:migrate` | Apply pending checksummed SQL migrations |
+| `npm run db:reset` | Roll back and reapply all SQL migrations |
+| `npm run db:down` | Stop local services without deleting the volume |
+| `npm run db:backup` | Write `dig-backup.dump` in PostgreSQL custom format |
+| `npm run db:restore` | Replace local database contents from `dig-backup.dump` |
 
-## Container Deployment
+`db:reset` and `db:restore` are destructive and should be invoked only when replacing the local database is intended.
 
-Build and run with Podman:
+## Architecture
 
-```sh
-podman-compose up --build
+```text
+React reducer/context
+  -> typed fetch client
+    -> Node HTTP route adapter
+      -> application service validation
+        -> parameterized pg repository
+          -> PostgreSQL 16
 ```
 
-The app will be available at http://localhost:8080.
+The server, not the browser, supplies the actor and workspace identifiers. Task numbering, task positioning, column positioning, and cascade deletion are database transactions. Successful mutations update client state; a complete bootstrap refresh runs when the window regains focus.
 
-## Tech Stack
+Schema changes live in `db/migrations`. The small migration runner records checksums in a ledger, holds a PostgreSQL advisory lock, and applies each migration in a transaction. The API and built frontend share one production container.
 
-- React 19
-- TypeScript
-- Vite
-- Supabase (Postgres, Auth, Realtime)
-- Vitest + Testing Library
-- Nginx (production container)
+The Compose wrapper works around the installed provider's Python-version mismatch and directs Podman through its service socket when the normal rootless runtime directory is unavailable. Kubernetes is intentionally not part of the local stack: it would add a control plane while retaining the same container-runtime dependency.
+
+## Risk controls
+
+The current no-signup design is a local product mode, not anonymous authentication. It is bounded by these controls:
+
+- the API and database publish only on `127.0.0.1`, browser origins are allowlisted, and non-loopback API binding requires an explicit container-only override;
+- the server supplies the actor and workspace, so request bodies cannot select trusted identity or board scope;
+- actor and workspace identifiers remain in the domain model, preserving a seam for future authentication without carrying Supabase Auth forward;
+- PostgreSQL transactions serialize issue numbering and ordering, with real-database concurrency coverage locally and in CI;
+- migrations are checksummed and locked, and the persistent database has explicit backup and restore commands;
+- public or shared-network deployment remains blocked until authentication, authorization, membership isolation, and negative security tests are implemented.
+
+The full decision and risk record is in `decisions-to-make.md` and `RISK_REGISTER.md`.
+
+## Security boundary
+
+The API refuses non-loopback binding unless `ALLOW_CONTAINER_BIND=true`; the container uses that explicit override only while publishing port 8080 to `127.0.0.1`. Browser origins are allowlisted and request bodies are bounded.
+
+Authentication, authorization, memberships, invites, multi-user synchronization, and public deployment are future features. They must be implemented and security-tested before changing the loopback-only exposure.

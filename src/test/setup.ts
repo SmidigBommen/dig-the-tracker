@@ -1,14 +1,14 @@
 import '@testing-library/jest-dom/vitest'
 import { afterEach, vi } from 'vitest'
-import { mockSupabase, resetMockData } from './supabaseMock.ts'
+import { mockApi, resetMockData } from './apiMock.ts'
 
-// Mock the supabase module
-vi.mock('../lib/supabase', () => ({
-  supabase: mockSupabase,
-}))
+vi.mock('../lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/api.ts')>()
+  return { ...actual, api: mockApi }
+})
 
 afterEach(() => {
   // Clear hash between tests so hash-based routing doesn't leak
-  window.location.hash = ''
+  if (typeof window !== 'undefined') window.location.hash = ''
   resetMockData()
 })

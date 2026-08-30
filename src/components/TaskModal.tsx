@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import type { TaskStatus, TaskPriority, ValidationError } from '../types/index.ts'
 import { useTaskContext } from '../context/TaskContext.tsx'
-import { useAuth } from '../context/AuthContext.tsx'
 import { validateTask } from '../context/taskUtils.ts'
 import './TaskModal.css'
 
@@ -12,9 +11,8 @@ interface TaskModalProps {
 }
 
 export default function TaskModal({ defaultStatus, parentId, onClose }: TaskModalProps) {
-  const { addTask } = useTaskContext()
-  const { profile: authProfile } = useAuth()
-  const currentUser = authProfile?.display_name || ''
+  const { addTask, state } = useTaskContext()
+  const currentUser = state.actor?.display_name || ''
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -36,7 +34,7 @@ export default function TaskModal({ defaultStatus, parentId, onClose }: TaskModa
       .map((t) => t.trim())
       .filter(Boolean)
     setIsSubmitting(true)
-    await addTask({
+    const created = await addTask({
       title: title.trim(),
       description: description.trim(),
       status: defaultStatus,
@@ -48,7 +46,7 @@ export default function TaskModal({ defaultStatus, parentId, onClose }: TaskModa
       subtaskIds: [],
     })
     setIsSubmitting(false)
-    onClose()
+    if (created) onClose()
   }
 
   function getFieldError(field: string): string | undefined {

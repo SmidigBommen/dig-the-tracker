@@ -65,7 +65,8 @@ export default function KanbanBoard() {
 
   async function handleAddColumn() {
     if (!newColTitle.trim()) return
-    await addColumn(newColTitle, newColColor, newColIcon, newColPosition || undefined)
+    const added = await addColumn(newColTitle, newColColor, newColIcon, newColPosition || undefined)
+    if (!added) return
     setNewColTitle('')
     setNewColColor(COLOR_SWATCHES[0])
     setNewColIcon('📌')

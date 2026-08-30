@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: dig
+          POSTGRES_USER: dig
+          POSTGRES_PASSWORD: dig-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dig -d dig"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run test:db:running
+        env:
+          DATABASE_URL: postgres://dig:dig-test@127.0.0.1:5432/dig
+      - run: npm run build

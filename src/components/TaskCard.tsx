@@ -2,7 +2,6 @@ import { useState, type DragEvent } from 'react'
 import type { Task } from '../types/index.ts'
 import { PRIORITY_CONFIG } from '../types/index.ts'
 import { useTaskContext } from '../context/TaskContext.tsx'
-import { useAuth } from '../context/AuthContext.tsx'
 import { formatTaskKey } from '../context/taskUtils.ts'
 import './TaskCard.css'
 
@@ -14,13 +13,12 @@ interface TaskCardProps {
 
 export default function TaskCard({ task, parentTitle, onOpen }: TaskCardProps) {
   const { getCommentCount, state } = useTaskContext()
-  const { profile: authProfile } = useAuth()
   const [isDragging, setIsDragging] = useState(false)
   const priority = PRIORITY_CONFIG[task.priority]
   const timeAgo = getTimeAgo(task.updatedAt)
   const commentCount = getCommentCount(task.id)
   const creatorId = task.created_by_id
-  const avatarColor = (creatorId && state.memberProfiles[creatorId]?.avatar_color) || authProfile?.avatar_color || '#6366f1'
+  const avatarColor = (creatorId && state.memberProfiles[creatorId]?.avatar_color) || state.actor?.avatar_color || '#6366f1'
 
   function handleDragStart(e: DragEvent<HTMLDivElement>) {
     e.dataTransfer.setData('text/plain', task.id)
