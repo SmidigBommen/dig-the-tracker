@@ -37,16 +37,24 @@ services:
     environment:
       DATABASE_URL: postgres://dig:dig-local-only@db:5432/dig
       ALLOWED_ORIGINS: http://127.0.0.1:8080,http://localhost:8080
+      COOKIE_SECURE: "false"
+      SESSION_SECRET: ${SESSION_SECRET:-local-compose-session-secret-change-me-now}
+      OIDC_ISSUER: ${OIDC_ISSUER:?Set OIDC_ISSUER in .env}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?Set OIDC_CLIENT_ID in .env}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://127.0.0.1:8080/api/auth/callback}
+      INSTALLATION_ADMIN_SUBJECTS: ${INSTALLATION_ADMIN_SUBJECTS:?Set INSTALLATION_ADMIN_SUBJECTS in .env}
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
       migrate:
         condition: service_completed_successfully
-    networks: [dig-private]
+    networks: [dig-private, dig-egress]
 
 networks:
   dig-private:
     internal: true
+  dig-egress: {}
 
 volumes:
   dig-postgres:

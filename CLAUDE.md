@@ -4,67 +4,68 @@
 
 - Remote: `git@github.com:SmidigBommen/dig-the-tracker.git`
 - Default branch: `master`
+- Preserve unrelated working-tree changes. This repository may be dirty.
 
-## Current architecture
+## Current implementation
 
-- Local single-user modular monolith; Supabase is completely removed.
-- React 19 + TypeScript + Vite frontend.
-- Node built-in HTTP route adapter, isolated in `api/server.ts`.
-- Application validation in `api/service.ts`; parameterized PostgreSQL access in `api/repository.ts`.
-- PostgreSQL 16, managed with Podman Compose and versioned checksummed SQL migrations.
-- One seeded actor and one configured workspace. No authentication, sessions, memberships, invitations, RLS, or live collaboration.
-- API defaults to loopback. The container binds internally only with an explicit override and publishes to host loopback.
-- Mutation responses update the reducer; focus triggers a complete `/api/bootstrap` resync.
+- Slice 1 of the small-team MVP is implemented.
+- The running React entry is `src/team/TeamApp.tsx`; it handles sign-in, first-Space creation, Space selection, the empty default Board, reload, and sign-out.
+- The Node HTTP Adapter is `api/server.ts`.
+- `IdentityModule` owns OpenID Connect correlation and PostgreSQL sessions.
+- `SpaceModule` owns Space reads, idempotent creation, first membership, and request authorization.
+- `BoardModule` implements the empty overview read and transaction-time access recheck. Its change and follow entries remain later-slice placeholders.
+- PostgreSQL 16 uses checksummed migrations. New team tables live in the `team` schema.
+- The old public-schema Task prototype and browser files remain for replacement in Slice 3, but the runtime entry does not import them.
+- The repository Compose path remains loopback-only. Public deployment is blocked.
 
 ## Structure
 
 ```text
+ARCHITECTURE.md
+CONTEXT.md
 api/
-  config.ts             # loopback/exposure and local actor/workspace configuration
-  db.ts                 # pg pool and transaction helper
-  migrate.ts            # migration ledger, checksums, advisory lock, transactions
-  errors.ts             # transport-safe application errors
-  repository.ts         # parameterized SQL and transactional invariants
-  service.ts            # input validation and application operations
-  server.ts             # Node HTTP routes, origin checks, static serving
-  service.test.ts       # local identity/exposure boundary tests
+  adapters/oidc/       OpenID Connect port, production Adapter, test Adapter
+  modules/identity/    IdentityModule Interface and Implementation
+  modules/space/       SpaceModule Interface and Implementation
+  modules/board/       BoardModule overview and access recheck
+  config.ts            runtime and OpenID Connect configuration
+  server.ts            HTTP, cookie, CSRF, JSON, health, static-file Adapter
+  migrate.ts           checksummed migration runner
 db/migrations/
-  202608300001_initial.sql # portable schema and deterministic seed
+  202608300001_initial.sql         retained prototype schema
+  202609040001_team_slice_one.sql  team identity, Space, and Board schema
 src/
-  App.tsx               # TaskProvider and board/report/profile views
-  lib/api.ts            # typed domain-oriented fetch client and DTO mapper
-  context/TaskContext.tsx # reducer, bootstrap, mutations, focus resync
-  components/           # kanban, tasks, reports, and local profile UI
-  test/apiMock.ts       # HTTP-client boundary mock
-Containerfile           # builds API + frontend; runs as non-root Node user
-podman-compose.yml      # private PostgreSQL, migration job, loopback app
-scripts/                # Compose compatibility and disposable DB-test harnesses
+  team/TeamApp.tsx      running Slice 1 browser Module
+  team/team-api.ts      owned HTTP Adapter
+  context/, components/, lib/api.ts  retained prototype, not running
+docs/design/            confirmed product and Module design
+docs/implementation/    delivered-slice notes
 ```
 
-## Domain invariants
+## Module rules
 
-- The server assigns actor and workspace IDs; request DTOs never accept trusted identity or board scope.
-- A board row stores `next_task_number`; creation locks and increments it transactionally.
-- Task and column positions are calculated server-side and normalized when gaps are exhausted.
-- Parent task deletion cascades through subtasks and comments in one transaction.
-- Protected columns cannot be deleted; non-protected columns must be empty.
-- Task references use hash links such as `#DIG-5`.
+- Test behavior through `IdentityModule`, `SpaceModule`, and `BoardModule`; do not expose a repository Interface to mock PostgreSQL.
+- OpenID Connect is a true-external port with production and mock Adapters.
+- Browser input cannot construct or inspect `AuthenticatedIdentity` or `AuthorizedSpace`.
+- An authorized Space is evidence to recheck inside the Board transaction, not a lasting bearer permission.
+- Human names, Space keys, and Column names never own relationships.
+- Each Space has one unnamed Board, one Intake Column, and one Completion Column.
+- New Active Columns require a positive WIP limit. Exceeding it warns and allows movement once Task changes arrive.
+- Expected Module failures use typed result values. HTTP status codes and PostgreSQL errors do not cross Module Seams.
 
 ## Commands
 
 | Command | Purpose |
 |---|---|
-| `npm run build` | Type-check and build the frontend and API |
-| `npm test` | Run all Vitest suites |
-| `npm run test:db` | Run migration and concurrency tests against a disposable PostgreSQL container |
-| `npm run test:db:running` | Run the same test against an existing database; CI uses this command |
+| `npm run build` | Type-check and build browser and server |
+| `npm test` | Run regular Vitest suites |
+| `npm run test:db` | Run migrations and integration tests in disposable PostgreSQL |
+| `npm run test:db:running` | Run database tests against an existing PostgreSQL instance |
 | `npm run lint` | Run ESLint |
-| `npm run db:up` and `npm run db:migrate` | Start and migrate the local database |
-| `npm run dev:api` and `npm run dev` | Start the API and frontend development processes |
-| `./scripts/compose -f podman-compose.yml up --build` | Run the full application on `127.0.0.1:8080` |
+| `npm run db:up` and `npm run db:migrate` | Start and migrate local PostgreSQL |
+| `npm run dev:api` and `npm run dev` | Start the server and Vite development processes |
+| `./scripts/compose -f podman-compose.yml up --build` | Run the configured app at `127.0.0.1:8080` |
 
-## Future boundary
+## Next slice
 
-Do not expose the current application to a LAN or public network. Authentication, authorization, memberships, onboarding, invitations, and collaboration must be designed and tested as a separate feature before exposure changes.
-
-Keep this file synchronized with architecture and file-layout changes.
+Slice 2 adds invitations, membership and role changes, Space archive and restore, administrative audit, permission-triggered session effects, and revocation-race tests. Follow [the vertical-slice plan](docs/design/vertical-slice-plan.md). Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.

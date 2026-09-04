@@ -1,19 +1,19 @@
-# Risk register for local single-user use
+# Risk register for Slice 1
 
-Status: **Accepted for local use. Shared-network and public deployment are out of scope.**
+Status: accepted for loopback development. Public deployment remains blocked until the team-release gates pass.
 
-| Risk | Current mitigation | Verification or future gate |
+| Risk | Current control | Remaining gate |
 |---|---|---|
-| No signup/login means every caller is the local actor | API and database bind to host loopback; origins are allowlisted; non-loopback API binding is rejected unless the container override is explicit | Before any shared exposure, add authentication, server-side sessions, authorization, membership isolation, and anonymous/cross-workspace denial tests |
-| A browser spoofs identity or workspace scope | HTTP inputs do not accept trusted actor or board IDs; the server injects configured IDs | Service-boundary tests cover fixed identity and safe binding configuration |
-| Removing Supabase Auth makes a future provider expensive | Stable actor IDs and actor context remain behind the HTTP/service boundary; task and comment ownership is preserved | Future auth resolves a verified principal to an actor before services run; no frontend-supplied identity becomes trusted |
-| Concurrent writes duplicate issue numbers or positions | Board-row locking and database transactions serialize allocation | Verified locally: `npm run test:db` creates eight tasks concurrently against real PostgreSQL; CI repeats the test |
-| Migration drift or two processes migrating together | Ledger, SHA-256 checksums, advisory lock, and per-migration transactions | Unit tests cover parsing; real-database tests apply migrations before repository tests |
-| Container tooling differs by host Python/runtime setup | Repository wrappers isolate the Compose provider and Podman service socket; DB tests use a disposable named container and `tmpfs` | Run `npm run test:db`; retain Compose rather than adding Kubernetes until orchestration requirements materially change |
-| Persistent local data is lost or corrupted | Named PostgreSQL volume plus explicit custom-format backup/restore commands | Complete a restore drill before relying on the data; keep an off-host copy for important data |
-| Another tab displays stale state without live updates | Mutation responses update local state and focus triggers full bootstrap resync | Add polling or SSE only with a concrete multi-client requirement and reconnect/resync tests |
-| A future feature accidentally makes the app public | Documentation and configuration treat public exposure as a release gate, not a runtime toggle | Security review must include rate limits, CSRF/session policy, TLS/proxy configuration, authorization tests, backup/restore, and dependency scanning |
+| A caller forges identity | The server maps a verified OpenID Connect issuer and subject to an internal identity. The browser receives only an opaque server-session secret. | Test the configured production provider before deployment. Add operational sign-in rate limits. |
+| OpenID Connect callback substitution or replay | Sign-in attempts use single-use state, nonce, PKCE, a hashed browser secret, and ten-minute expiry. The production Adapter verifies issuer, audience, expiry, signature, subject, and nonce. | Add provider-specific failure fixtures and alerting for repeated failures. |
+| A stolen or stale session remains useful | Dig stores only a session-secret hash. Sessions expire after five idle days or 30 absolute days. Sign-out revokes the row. | Slice 2 adds rotation or revocation after permission changes and loss of all access. |
+| A cross-site request changes data | The HTTP Adapter allowlists Origins. Every authenticated change also requires an HMAC-derived CSRF token tied to the session. Cookies are HttpOnly and SameSite. | Keep production cookies Secure behind HTTPS and add proxy-configuration checks. |
+| A caller selects another Space | Routes resolve membership through `SpaceModule`; browser identifiers cannot construct `AuthorizedSpace`. `BoardModule` rechecks access inside its transaction. | Slice 2 adds concurrent Member-removal and Space-archive races across the full lifecycle. |
+| Two requests create the same Space or repeat a change | PostgreSQL reserves Space keys permanently. An identity/request advisory lock and stored receipt make Space creation idempotent. | Apply the same request contract to later Space and Board commands. |
+| A cross-Space database relationship is inserted | Board Columns carry `space_id`; a composite foreign key requires their Board to belong to the same Space. Stable IDs own relationships. | Extend composite constraints to every Space-owned table in later slices. |
+| Provider downtime locks out active Members | Session resolution never contacts the provider, so existing valid sessions continue. | Operators need provider health visibility; new sign-ins still wait for recovery by design. |
+| Migration drift or concurrent migration corrupts setup | The runner records SHA-256 checksums, holds a PostgreSQL advisory lock, and applies migrations transactionally. | Finish startup readiness and incompatible-change procedures before release. |
+| Dependency vulnerabilities reach production | Dependencies are locked and the image uses `npm ci`. | Resolve or explicitly accept production audit findings before the release slice. |
+| The unfinished MVP is exposed publicly | Repository Compose publishes only on loopback, and documentation marks public deployment blocked. | Complete invitations, membership lifecycle, Task authorization, rate limits, supported-browser checks, backup restore, and every team-release gate. |
 
-## Reintroducing identity later
-
-Do not restore signup as an isolated screen. It needs identity verification, session handling, actor linking, membership checks, onboarding and recovery, abuse controls, audit rules, and negative integration tests. Connect those parts through the existing actor context. The domain API and PostgreSQL repository should not depend on a specific identity provider.
+The retained public-schema Task prototype is not reachable through the running HTTP Adapter. Remove its tables and files in Slice 3 after equivalent `BoardModule` behavior tests pass.

@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:db": "./scripts/test-db",
-    "test:db:running": "npm run build:api && node api-dist/migrate.js up && DIG_DATABASE_TESTS=1 vitest run api/repository.integration.test.ts",
+    "test:db:running": "npm run build:api && node api-dist/migrate.js up && DIG_DATABASE_TESTS=1 vitest run api/repository.integration.test.ts api/modules/slice-one.integration.test.ts",
     "test:watch": "vitest",
     "container:build": "podman build -t dig-tracker -f Containerfile .",
     "container:run": "podman run --rm -p 127.0.0.1:8080:8080 dig-tracker",
@@ -26,10 +26,10 @@
     "db:down": "./scripts/compose -f podman-compose.yml down"
   },
   "dependencies": {
+    "jose": "^6.2.11",
     "pg": "^8.20.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "uuid": "^13.0.0"
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -40,7 +40,6 @@
     "@types/pg": "^8.20.0",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
-    "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^5.1.1",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
