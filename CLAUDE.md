@@ -8,11 +8,11 @@
 
 ## Current implementation
 
-- Slice 1 of the small-team MVP is implemented.
-- The running React entry is `src/team/TeamApp.tsx`; it handles sign-in, first-Space creation, Space selection, the empty default Board, reload, and sign-out.
+- Slices 1 and 2 of the small-team MVP are implemented.
+- The running React entry is `src/team/TeamApp.tsx`; it handles sign-in, invitations, Space selection, membership administration, Space lifecycle, the empty default Board, reload, and sign-out.
 - The Node HTTP Adapter is `api/server.ts`.
 - `IdentityModule` owns OpenID Connect correlation and PostgreSQL sessions.
-- `SpaceModule` owns Space reads, idempotent creation, first membership, and request authorization.
+- `SpaceModule` owns Space reads, invitations, membership, roles, lifecycle, audit, idempotent changes, access invalidation, and request authorization.
 - `BoardModule` implements the empty overview read and transaction-time access recheck. Its change and follow entries remain later-slice placeholders.
 - PostgreSQL 16 uses checksummed migrations. New team tables live in the `team` schema.
 - The old public-schema Task prototype and browser files remain for replacement in Slice 3, but the runtime entry does not import them.
@@ -34,6 +34,7 @@ api/
 db/migrations/
   202608300001_initial.sql         retained prototype schema
   202609040001_team_slice_one.sql  team identity, Space, and Board schema
+  202609040002_space_membership.sql invitations, audit, and Space lifecycle
 src/
   team/TeamApp.tsx      running Slice 1 browser Module
   team/team-api.ts      owned HTTP Adapter
@@ -68,4 +69,4 @@ docs/implementation/    delivered-slice notes
 
 ## Next slice
 
-Slice 2 adds invitations, membership and role changes, Space archive and restore, administrative audit, permission-triggered session effects, and revocation-race tests. Follow [the vertical-slice plan](docs/design/vertical-slice-plan.md). Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.
+Slice 3 adds Task capture, editing, assignment, tags, archive and restore, bounded pages, and the browser `BoardSession`. Follow [the vertical-slice plan](docs/design/vertical-slice-plan.md). Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.

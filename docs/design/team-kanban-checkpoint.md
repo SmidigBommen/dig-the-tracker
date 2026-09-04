@@ -1,6 +1,6 @@
 # Small-team kanban design checkpoint
 
-Status: shared understanding confirmed by the user on 2026-09-04 after Q102. Slice 1 is implemented; later slices remain planned.
+Status: shared understanding confirmed by the user on 2026-09-04 after Q102. Slices 1 and 2 are implemented; later slices remain planned.
 
 ## Product direction
 
@@ -132,21 +132,23 @@ The first team release excludes sprints, Scrum roles, story points, roadmaps, de
 
 [Codebase Module design](codebase-module-design.md) records the selected three-entry `BoardModule` Interface, alternatives considered, Module arrangement, Seam discipline, performance contract, and testing strategy.
 
-[Identity and Space Module design](identity-space-module-design.md) selects separate upstream Modules, opaque request capabilities, and the private transactional recheck. [BoardModule Interface contract](board-interface-contract.md) freezes the command, query, update, warning, and fault baseline. [Team MVP vertical-slice plan](vertical-slice-plan.md) defines the implementation sequence and proof required for each slice. Implementation remains paused.
+[Identity and Space Module design](identity-space-module-design.md) selects separate upstream Modules, opaque request capabilities, and the private transactional recheck. [BoardModule Interface contract](board-interface-contract.md) freezes the command, query, update, warning, and fault baseline. [Team MVP vertical-slice plan](vertical-slice-plan.md) defines the implementation sequence and proof required for each slice. Implementation advances only through user-authorized vertical slices.
 
 ## Current repository gap
 
-The running browser and HTTP path now have OpenID Connect authentication, PostgreSQL sessions, multiple Spaces, first-administrator membership, explicit authorization, and the empty default Board. [Slice 1 implementation notes](../implementation/slice-01-authenticated-space-shell.md) record the exact delivered behavior.
+The running browser and HTTP path now have OpenID Connect authentication, PostgreSQL sessions, multiple Spaces, explicit authorization, the empty default Board, safe invitations, membership administration, administrative audit, and Space lifecycle management. [Slice 1 implementation notes](../implementation/slice-01-authenticated-space-shell.md) and [Slice 2 implementation notes](../implementation/slice-02-safe-team-membership.md) record the exact delivered behavior.
 
-The retained prototype Task files still use free-text assignees, a four-level Priority field, recursive Subtasks, and a literal `done` slug. They are no longer the running browser path and remain only until Slice 3 replaces their behavior and tests. Invitations, full membership administration, Task behavior, live updates, transition history, Outcomes, revisions, and archive behavior are not implemented yet.
+The retained prototype Task files still use free-text assignees, a four-level Priority field, recursive Subtasks, and a literal `done` slug. They are no longer the running browser path and remain only until Slice 3 replaces their behavior and tests. Team-path Task behavior, live updates, transition history, Outcomes, and Task revisions and archive behavior are not implemented yet.
 
-The repository was already heavily modified before this interview. Preserve those changes and do not start implementation until the user confirms shared understanding and authorizes the next action.
+The repository was already heavily modified before this interview. Preserve unrelated existing changes while implementing only the vertical slice the user has authorized.
 
 README, `ARCHITECTURE.md`, the risk register, and operating instructions continue to describe current behavior until code changes make each target claim true. Update them with implemented vertical slices, never ahead of the code.
 
 ## Next step
 
-Slice 1 is complete. The next planned action is Slice 2: invitations, membership and role changes, Space lifecycle, administrative audit, and concurrency tests for revocation against Board access.
+Slices 1 and 2 are complete. The running path now includes safe invitations, membership and role changes, permission-triggered session effects, administrative audit, opaque administrative paging, Space archive and restore, and concurrency tests for revocation against Board access. [Slice 2 implementation notes](../implementation/slice-02-safe-team-membership.md) record the delivered behavior.
+
+The next planned action is Slice 3: Task capture, editing, assignment, tags, bounded pages, archive and restore, and the browser `BoardSession`.
 
 ## Team-release gates
 

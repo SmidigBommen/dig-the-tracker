@@ -50,6 +50,17 @@ button {
   letter-spacing: -0.045em;
 }
 
+.lifecycle-badge {
+  display: inline-block;
+  margin: 0;
+  border: 1px solid #693a38;
+  border-radius: 999px;
+  padding: 0.3rem 0.55rem;
+  background: #2d1918;
+  color: #ffaaa3;
+  font-size: 0.78rem;
+}
+
 .welcome-copy,
 .create-space-panel > p,
 .empty-panel p,
@@ -87,7 +98,8 @@ button {
 }
 
 .primary-button,
-.quiet-button {
+.quiet-button,
+.danger-button {
   border: 0;
   border-radius: 0.7rem;
   padding: 0.75rem 1rem;
@@ -108,6 +120,12 @@ button {
   border: 1px solid #343a3f;
   background: transparent;
   color: #dce0e3;
+}
+
+.danger-button {
+  border: 1px solid #693a38;
+  background: #2d1918;
+  color: #ffaaa3;
 }
 
 button:disabled {
@@ -185,12 +203,169 @@ button:disabled {
   padding: clamp(1rem, 4vw, 2.5rem);
 }
 
+.management-page {
+  width: min(100%, 64rem);
+  margin: 0 auto;
+  padding: clamp(1rem, 4vw, 2.5rem);
+}
+
+.management-heading,
+.member-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.management-heading h1 {
+  margin: 0.35rem 0 1.5rem;
+}
+
+.management-panel {
+  overflow: hidden;
+  border: 1px solid #282d31;
+  border-radius: 0.9rem;
+  background: rgba(20, 23, 26, 0.94);
+}
+
+.space-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding: 1rem;
+  border: 1px solid #282d31;
+  border-radius: 0.9rem;
+  background: rgba(20, 23, 26, 0.94);
+}
+
+.space-settings form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(10rem, 1fr)) auto;
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.space-settings label {
+  display: grid;
+  gap: 0.4rem;
+  color: #dde1e4;
+  font-weight: 650;
+}
+
+.space-settings input {
+  min-height: 2.75rem;
+  border: 1px solid #363d42;
+  border-radius: 0.65rem;
+  background: #101316;
+  color: #fff;
+  padding: 0.65rem 0.8rem;
+}
+
+.space-settings .primary-button {
+  margin-top: 0;
+}
+
+.lifecycle-actions {
+  display: flex;
+  align-items: end;
+  gap: 0.6rem;
+}
+
+.lifecycle-actions p {
+  max-width: 12rem;
+  margin: 0;
+  color: #ffaaa3;
+  font-size: 0.85rem;
+}
+
+.management-section-title {
+  margin: 2rem 0 0.75rem;
+}
+
+.management-empty {
+  margin: 0;
+  padding: 1rem;
+  color: #929ba1;
+}
+
+.member-row {
+  min-height: 4.5rem;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid #282d31;
+}
+
+.member-row:last-child {
+  border-bottom: 0;
+}
+
+.member-row > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.member-row > .member-actions {
+  display: flex;
+  grid-auto-flow: column;
+  gap: 0.6rem;
+}
+
+.member-row span {
+  color: #929ba1;
+  font-size: 0.84rem;
+}
+
+.audit-row {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid #282d31;
+}
+
+.audit-row:last-child {
+  border-bottom: 0;
+}
+
+.audit-row time {
+  color: #929ba1;
+  font-size: 0.84rem;
+}
+
 .board-heading {
   display: flex;
   align-items: end;
   justify-content: space-between;
   gap: 2rem;
   margin-bottom: 1.75rem;
+}
+
+.board-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.board-actions p {
+  color: #a9b0b5;
+}
+
+.invitation-link {
+  display: grid;
+  grid-template-columns: auto minmax(16rem, 34rem);
+  align-items: center;
+  gap: 0.75rem;
+  margin: -0.75rem 0 1.5rem;
+  color: #a9b0b5;
+  font-size: 0.85rem;
+}
+
+.invitation-link input {
+  min-height: 2.5rem;
+  border: 1px solid #363d42;
+  border-radius: 0.65rem;
+  background: #101316;
+  color: #fff;
+  padding: 0.55rem 0.75rem;
 }
 
 .board-heading h1 {
@@ -258,9 +433,21 @@ button:disabled {
 @media (max-width: 700px) {
   .team-header,
   .header-actions,
-  .board-heading {
+  .board-heading,
+  .board-actions,
+  .management-heading,
+  .member-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .invitation-link {
+    grid-template-columns: 1fr;
+  }
+
+  .space-settings,
+  .space-settings form {
+    grid-template-columns: 1fr;
   }
 
   .identity-name,

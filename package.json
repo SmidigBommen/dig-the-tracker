@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:db": "./scripts/test-db",
-    "test:db:running": "npm run build:api && node api-dist/migrate.js up && DIG_DATABASE_TESTS=1 vitest run api/repository.integration.test.ts api/modules/slice-one.integration.test.ts",
+    "test:db:running": "npm run build:api && node api-dist/migrate.js up && DIG_DATABASE_TESTS=1 vitest run --no-file-parallelism api/repository.integration.test.ts api/modules/slice-one.integration.test.ts api/modules/slice-two.integration.test.ts",
     "test:watch": "vitest",
     "container:build": "podman build -t dig-tracker -f Containerfile .",
     "container:run": "podman run --rm -p 127.0.0.1:8080:8080 dig-tracker",

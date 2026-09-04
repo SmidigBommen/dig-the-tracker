@@ -1,6 +1,6 @@
 # Dig team Kanban
 
-Dig is a flow-based Kanban system for small teams. The current implementation is Slice 1 of the team MVP: OpenID Connect sign-in, PostgreSQL sessions, Space creation and selection, and the default empty Board.
+Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 and 2 of the team MVP: authenticated Spaces, safe invitations, membership administration, and Space lifecycle controls.
 
 The running application does not expose the retained single-actor Task prototype. Task creation and movement return in Slice 3 behind the new `BoardModule` Interface.
 
@@ -13,9 +13,15 @@ The running application does not expose the retained single-actor Task prototype
 - One unnamed Board per Space
 - Default Backlog, In Progress with WIP limit 3, and Done Columns
 - Space selection, last-Space reload, and sign-out
+- Seven-day, single-use invitation links that store only a secret digest
+- Member promotion, demotion, removal, and voluntary leave with a last-administrator guard
+- Session rotation or revocation after permission changes
+- Space name and time-zone settings
+- Read-only archive, restore, and deletion scheduling with a seven-day cancellation window
+- Administrator-only invitation status and immutable access audit
 - PostgreSQL persistence and checksummed migrations
 
-Invitations, membership administration, Tasks, comments, live updates, reports, archive behavior, and export are not implemented in the running path yet. Do not expose this build publicly.
+Tasks, comments, live updates, reports, permanent Space deletion, and export are not implemented in the running path yet. Do not expose this build publicly.
 
 ## Configure OpenID Connect
 
@@ -100,3 +106,4 @@ Open http://127.0.0.1:5173.
 - [Team MVP design checkpoint](docs/design/team-kanban-checkpoint.md)
 - [Vertical-slice plan](docs/design/vertical-slice-plan.md)
 - [Slice 1 implementation notes](docs/implementation/slice-01-authenticated-space-shell.md)
+- [Slice 2 implementation notes](docs/implementation/slice-02-safe-team-membership.md)

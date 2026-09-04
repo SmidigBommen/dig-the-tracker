@@ -55,7 +55,11 @@ run('Slice 1 Module Interfaces', () => {
       sessionHmacSecret: 'test-session-hmac-secret-with-32-bytes',
       now: () => now,
     })
-    const space = new SpaceModuleImplementation(db)
+    const space = new SpaceModuleImplementation(db, {
+      invitationHmacSecret: 'test-invitation-hmac-secret-with-32-bytes',
+      sessionHmacSecret: 'test-session-hmac-secret-with-32-bytes',
+      now: () => now,
+    })
     const board = new BoardModuleImplementation(db)
     return { identity, space, board, oidc }
   }

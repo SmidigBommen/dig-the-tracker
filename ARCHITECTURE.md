@@ -1,6 +1,6 @@
 # Architecture
 
-Dig is a React, Node, and PostgreSQL modular monolith. Slice 1 runs the authenticated Space shell through three server Modules. OpenID Connect is the only true-external dependency.
+Dig is a React, Node, and PostgreSQL modular monolith. Slices 1 and 2 run authentication, Space membership, lifecycle controls, and the empty Board through three server Modules. OpenID Connect is the only true-external dependency.
 
 ## Running path
 
@@ -51,11 +51,11 @@ Its Implementation owns state, nonce, PKCE, identity mapping, secret hashing, ex
 
 `SpaceModule` has three entries:
 
-- `read` returns the current identity's Space switcher.
-- `change` creates a Space in Slice 1.
+- `read` returns the Space switcher, Space details, Members, invitation status, and administrative audit.
+- `change` owns idempotent Space, invitation, membership, role, archive, restore, and deletion-schedule changes.
 - `authorize` creates a request-scoped `AuthorizedSpace` for a named use.
 
-Its Implementation owns Space-key normalization and permanent reservation, installation-administrator checks, idempotency, first membership, and atomic default-Board creation.
+Its Implementation owns Space-key reservation, invitation digests and expiry, the last-administrator rule, access revisions, session effects, audit writes, and lifecycle rules. Access-changing transactions publish an optional invalidation after commit for the live feed added in Slice 6.
 
 `BoardModule` keeps the selected `read`, `change`, and `follow` Interface. Slice 1 implements the empty `overview` read. Task changes and the live feed remain unavailable until their planned slices.
 
@@ -71,7 +71,7 @@ Its Implementation owns Space-key normalization and permanent reservation, insta
 
 ## PostgreSQL
 
-The `team` schema contains identities, sign-in attempts, browser sessions, Space-key reservations, Spaces, Members, Boards, Board Columns, and Space idempotency receipts.
+The `team` schema contains identities, sign-in attempts, browser sessions, Space-key reservations, Spaces, Members, invitations, administrative audit, Boards, Board Columns, and Space idempotency receipts.
 
 Every Board Column carries `space_id`. A composite foreign key guarantees that its Board belongs to the same Space. Partial unique indexes enforce one Intake and one Completion Column per active Board. Database checks enforce valid flow roles and positive Active WIP limits.
 
@@ -79,7 +79,7 @@ The public-schema prototype tables remain temporarily because the working tree a
 
 ## Browser
 
-`src/team/TeamApp.tsx` owns Slice 1 browser state. It loads the session and Space switcher, reopens the last accessible Space, creates the first Space, renders the default Board, and signs out. `src/team/team-api.ts` is the owned HTTP Adapter.
+`src/team/TeamApp.tsx` owns the current browser state. It handles sign-in, Space creation and selection, invitation acceptance, Member administration, Space settings and lifecycle, the empty Board, and sign-out. `src/team/team-api.ts` is the owned HTTP Adapter.
 
 The older `TaskContext`, Task views, and client remain in the repository but are not imported by the runtime entry point.
 
@@ -89,4 +89,4 @@ The application image contains the browser build, server build, and migrations. 
 
 Readiness/liveness, graceful drain, backup verification, monitoring, and release hardening remain Slice 9 work.
 
-The app still binds to host loopback in repository Compose. Do not publish this Slice 1 build to a public network. Invitations, full membership lifecycle, rate limiting, and the remaining release security gates are not complete.
+The app still binds to host loopback in repository Compose. Do not publish this build to a public network. Task authorization, rate limiting, operating checks, and the remaining release gates are not complete.

@@ -16,10 +16,23 @@ import {
 } from './modules/identity/identity-module.js'
 import {
   SpaceModuleImplementation,
+  type MemberRole,
+  type SpaceCommand,
   type SpaceFault,
+  type SpaceLocator,
   type SpaceModule,
 } from './modules/space/space-module.js'
-import type { LocalApplicationPath, OpaqueSecret, RequestId, SpaceKey } from './modules/shared.js'
+import type {
+  LocalApplicationPath,
+  InvitationId,
+  MemberId,
+  OpaqueCursor,
+  OpaqueSecret,
+  RequestId,
+  Revision,
+  SpaceId,
+  SpaceKey,
+} from './modules/shared.js'
 
 const SESSION_COOKIE = 'dig_session'
 const ATTEMPT_COOKIE = 'dig_oidc_attempt'
@@ -195,7 +208,9 @@ export function createTeamServer(modules: ServerModules, config: AppConfig) {
       if (method === 'GET' && pathname === '/api/spaces') {
         const identity = await requireIdentity(request, response, modules.identity, 'read')
         if (!identity) return
-        const result = await modules.space.read(identity, { kind: 'switcher', include: 'active' })
+        const include = url.searchParams.get('include') ?? 'active'
+        if (include !== 'active' && include !== 'archived') throw new RequestError(400, 'Invalid Space list')
+        const result = await modules.space.read(identity, { kind: 'switcher', include })
         if (!result.ok || result.value.kind !== 'switcher') {
           sendFault(response, result.ok ? { kind: 'temporarily-unavailable' } : result.fault)
           return
@@ -222,7 +237,173 @@ export function createTeamServer(modules: ServerModules, config: AppConfig) {
           sendFault(response, result.fault)
           return
         }
+        if (result.value.result.kind !== 'space-created') {
+          sendFault(response, { kind: 'temporarily-unavailable' })
+          return
+        }
         sendJson(response, 201, result.value.result.space)
+        return
+      }
+      const invitationIssueMatch = pathname.match(/^\/api\/spaces\/([^/]+)\/invitations$/)
+      if (method === 'POST' && invitationIssueMatch) {
+        const identity = await requireIdentity(request, response, modules.identity, 'change')
+        if (!identity) return
+        const body = await readJson(request)
+        const result = await modules.space.change(identity, {
+          requestId: requestIdFrom(body),
+          command: {
+            kind: 'issue-invitation',
+            space: { kind: 'key', spaceKey: decodeURIComponent(invitationIssueMatch[1]) as SpaceKey },
+          },
+        })
+        if (!result.ok) {
+          sendFault(response, result.fault)
+          return
+        }
+        if (result.value.result.kind !== 'invitation-issued') {
+          sendFault(response, { kind: 'temporarily-unavailable' })
+          return
+        }
+        sendJson(response, 201, {
+          invitation: result.value.result.invitation,
+          invitationPath: `/invitations/${encodeURIComponent(result.value.result.invitationSecret)}`,
+        })
+        return
+      }
+      const invitationAcceptMatch = pathname.match(/^\/api\/invitations\/([^/]+)\/accept$/)
+      if (method === 'POST' && invitationAcceptMatch) {
+        const identity = await requireIdentity(request, response, modules.identity, 'change')
+        if (!identity) return
+        const body = await readJson(request)
+        const result = await modules.space.change(identity, {
+          requestId: requestIdFrom(body),
+          command: {
+            kind: 'accept-invitation',
+            invitationSecret: decodeURIComponent(invitationAcceptMatch[1]) as OpaqueSecret,
+          },
+        })
+        if (!result.ok) {
+          sendFault(response, result.fault)
+          return
+        }
+        if (result.value.result.kind !== 'invitation-accepted') {
+          sendFault(response, { kind: 'temporarily-unavailable' })
+          return
+        }
+        const browser = applySessionDirective(response, config, result.value.session)
+        sendJson(response, 200, { space: result.value.result.space, ...browser })
+        return
+      }
+      const managementMatch = pathname.match(/^\/api\/spaces\/([^/]+)\/management$/)
+      if (method === 'POST' && managementMatch) {
+        const identity = await requireIdentity(request, response, modules.identity, 'change')
+        if (!identity) return
+        const body = await readJson(request)
+        const spaceKey = decodeURIComponent(managementMatch[1]) as SpaceKey
+        const locator = { kind: 'key' as const, spaceKey }
+        let command: SpaceCommand
+        const expectedRevision = (typeof body.expectedRevision === 'number' ? body.expectedRevision : 0) as Revision
+        if (body.action === 'set-member-role') {
+          if (body.role !== 'member' && body.role !== 'space-administrator') {
+            throw new RequestError(400, 'Invalid Member role')
+          }
+          command = {
+            kind: 'set-member-role',
+            space: locator,
+            member: {
+              memberId: (typeof body.memberId === 'string' ? body.memberId : '') as MemberId,
+              expectedRevision,
+            },
+            role: body.role as MemberRole,
+          }
+        } else if (body.action === 'remove-member') {
+          command = {
+            kind: 'remove-member',
+            space: locator,
+            member: {
+              memberId: (typeof body.memberId === 'string' ? body.memberId : '') as MemberId,
+              expectedRevision,
+            },
+          }
+        } else if (body.action === 'leave-space') {
+          command = { kind: 'leave-space', space: locator }
+        } else if (body.action === 'revoke-invitation') {
+          command = {
+            kind: 'revoke-invitation', space: locator,
+            invitationId: (typeof body.invitationId === 'string' ? body.invitationId : '') as InvitationId,
+          }
+        } else if (body.action === 'revise-space') {
+          command = {
+            kind: 'revise-space',
+            space: { spaceId: await resolveSpaceId(modules.space, identity, locator), expectedRevision },
+            changes: {
+              displayName: typeof body.displayName === 'string' ? body.displayName : undefined,
+              timeZone: typeof body.timeZone === 'string' ? body.timeZone : undefined,
+            },
+          }
+        } else if (body.action === 'archive-space' || body.action === 'restore-space'
+          || body.action === 'schedule-space-deletion' || body.action === 'cancel-space-deletion') {
+          const kinds = {
+            'archive-space': 'archive-space',
+            'restore-space': 'restore-space',
+            'schedule-space-deletion': 'schedule-space-deletion',
+            'cancel-space-deletion': 'cancel-space-deletion',
+          } as const
+          command = {
+            kind: kinds[body.action],
+            space: { spaceId: await resolveSpaceId(modules.space, identity, locator), expectedRevision },
+          }
+        } else {
+          throw new RequestError(400, 'Unknown Space management action')
+        }
+        const result = await modules.space.change(identity, {
+          requestId: requestIdFrom(body),
+          command,
+        })
+        if (!result.ok) {
+          sendFault(response, result.fault)
+          return
+        }
+        const browser = applySessionDirective(response, config, result.value.session)
+        sendJson(response, 200, { result: result.value.result, ...browser })
+        return
+      }
+      if (method === 'GET' && managementMatch) {
+        const identity = await requireIdentity(request, response, modules.identity, 'read')
+        if (!identity) return
+        const space = { kind: 'key' as const, spaceKey: decodeURIComponent(managementMatch[1]) as SpaceKey }
+        const membersAfter = url.searchParams.get('membersAfter') as OpaqueCursor | null
+        const invitationsAfter = url.searchParams.get('invitationsAfter') as OpaqueCursor | null
+        const auditAfter = url.searchParams.get('auditAfter') as OpaqueCursor | null
+        const [details, members, invitations, audit] = await Promise.all([
+          modules.space.read(identity, { kind: 'space', space }),
+          modules.space.read(identity, { kind: 'members', space, page: { after: membersAfter ?? undefined } }),
+          modules.space.read(identity, { kind: 'invitations', space, page: { after: invitationsAfter ?? undefined } }),
+          modules.space.read(identity, { kind: 'audit', space, page: { after: auditAfter ?? undefined } }),
+        ])
+        const failed = [details, members, invitations, audit].find((entry) => !entry.ok)
+        if (failed && !failed.ok) {
+          sendFault(response, failed.fault)
+          return
+        }
+        if (!details.ok || details.value.kind !== 'space'
+          || !members.ok || members.value.kind !== 'members'
+          || !invitations.ok || invitations.value.kind !== 'invitations'
+          || !audit.ok || audit.value.kind !== 'audit') {
+          sendFault(response, { kind: 'temporarily-unavailable' })
+          return
+        }
+        sendJson(response, 200, {
+          space: details.value.space,
+          members: members.value.members,
+          invitations: invitations.value.invitations,
+          audit: audit.value.entries,
+          next: {
+            members: members.value.next,
+            invitations: invitations.value.next,
+            audit: audit.value.next,
+          },
+        })
         return
       }
       const boardMatch = pathname.match(/^\/api\/spaces\/([^/]+)\/board$/)
@@ -273,12 +454,30 @@ async function requireIdentity(
   return result.value.identity
 }
 
+async function resolveSpaceId(
+  spaceModule: SpaceModule,
+  identity: AuthenticatedIdentity,
+  locator: SpaceLocator,
+): Promise<SpaceId> {
+  const result = await spaceModule.read(identity, { kind: 'space', space: locator })
+  if (!result.ok) {
+    const fault = mapFault(result.fault)
+    throw new RequestError(fault.status, fault.message)
+  }
+  if (result.value.kind !== 'space') throw new RequestError(500, 'Internal server error')
+  return result.value.space.id
+}
+
 function evidence(request: IncomingMessage): SessionEvidence {
   return {
     sessionSecret: cookies(request)[SESSION_COOKIE] as OpaqueSecret | undefined,
     csrfToken: header(request, 'x-csrf-token') as OpaqueSecret | undefined,
     origin: request.headers.origin,
   }
+}
+
+function requestIdFrom(body: Record<string, unknown>): RequestId {
+  return (typeof body.requestId === 'string' ? body.requestId : '') as RequestId
 }
 
 function header(request: IncomingMessage, name: string): string | undefined {
@@ -322,6 +521,20 @@ function clearSessionCookie(response: ServerResponse, config: AppConfig) {
   response.setHeader('set-cookie', clearCookie(SESSION_COOKIE, config))
 }
 
+function applySessionDirective(
+  response: ServerResponse,
+  config: AppConfig,
+  directive: import('./modules/shared.js').BrowserSessionDirective,
+): { csrfToken?: OpaqueSecret; absoluteExpiresAt?: import('./modules/shared.js').Instant; signedOut?: true } {
+  if (directive.kind === 'clear') {
+    clearSessionCookie(response, config)
+    return { signedOut: true }
+  }
+  if (directive.kind === 'unchanged') return {}
+  response.setHeader('set-cookie', cookie(SESSION_COOKIE, directive.sessionSecret, config, 30 * 24 * 60 * 60))
+  return { csrfToken: directive.csrfToken, absoluteExpiresAt: directive.absoluteExpiresAt }
+}
+
 function setSecurityHeaders(response: ServerResponse) {
   response.setHeader('x-content-type-options', 'nosniff')
   response.setHeader('x-frame-options', 'DENY')
@@ -353,6 +566,8 @@ function mapFault(fault: HttpFault): { status: number; message: string } {
         : 'The request conflicts with an earlier change',
     }
     case 'invalid': return { status: 400, message: 'Check the submitted values' }
+    case 'invalid-invitation': return { status: 400, message: 'This invitation is invalid or no longer available' }
+    case 'last-administrator': return { status: 409, message: 'Promote another Member before changing the last administrator' }
     case 'sign-in-failed': return {
       status: 400,
       message: fault.reason === 'provider-unavailable' ? 'Sign-in provider unavailable' : 'Sign-in failed',
@@ -381,7 +596,10 @@ async function main() {
     installationAdministrators: config.installationAdministrators,
     sessionHmacSecret: config.sessionHmacSecret,
   })
-  const space = new SpaceModuleImplementation(db)
+  const space = new SpaceModuleImplementation(db, {
+    invitationHmacSecret: config.sessionHmacSecret,
+    sessionHmacSecret: config.sessionHmacSecret,
+  })
   const board = new BoardModuleImplementation(db)
   const server = createTeamServer({ identity, space, board }, config)
   server.listen(config.port, config.host, () => {

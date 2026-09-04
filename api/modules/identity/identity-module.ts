@@ -1,9 +1,10 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { Database } from '../../db.js'
 import { inTransaction } from '../../db.js'
 import type { OidcPort } from '../../adapters/oidc/oidc-port.js'
 import { OidcRejectedError, OidcUnavailableError } from '../../adapters/oidc/oidc-port.js'
 import { inspectAuthenticatedIdentity, makeAuthenticatedIdentity } from '../private-capabilities.js'
+import { createSessionSecret, csrfTokenFor, digestSessionSecret } from './private-session-secrets.js'
 import {
   SESSION_ABSOLUTE_MILLISECONDS,
   SESSION_IDLE_MILLISECONDS,
@@ -226,7 +227,7 @@ export class IdentityModuleImplementation implements IdentityModule {
       return { ok: false, fault: { kind: 'temporarily-unavailable' } }
     }
 
-    const sessionSecret = secret() as OpaqueSecret
+    const sessionSecret = createSessionSecret()
     const absoluteExpiresAt = new Date(now.getTime() + SESSION_ABSOLUTE_MILLISECONDS)
     const established = await inTransaction(this.db, async (client) => {
       const consumed = await client.query(
@@ -255,7 +256,7 @@ export class IdentityModuleImplementation implements IdentityModule {
         `insert into team.browser_sessions
           (identity_id, secret_hash, created_at, last_active_at, absolute_expires_at)
          values ($1,$2,$3,$3,$4) returning id`,
-        [row.id, digest(sessionSecret), now, absoluteExpiresAt],
+        [row.id, digestSessionSecret(sessionSecret), now, absoluteExpiresAt],
       )
       return { row, sessionId: sessionResult.rows[0].id }
     })
@@ -283,7 +284,7 @@ export class IdentityModuleImplementation implements IdentityModule {
         session: {
           kind: 'establish',
           sessionSecret,
-          csrfToken: this.csrfFor(established.sessionId),
+          csrfToken: csrfTokenFor(this.config.sessionHmacSecret, established.sessionId as SessionId),
           absoluteExpiresAt: absoluteExpiresAt.toISOString() as Instant,
         },
         returnTo: attempt.return_to as LocalApplicationPath,
@@ -303,7 +304,7 @@ export class IdentityModuleImplementation implements IdentityModule {
        from team.browser_sessions session
        join team.identities identity on identity.id = session.identity_id
        where session.secret_hash = $1`,
-      [digest(evidence.sessionSecret)],
+      [digestSessionSecret(evidence.sessionSecret)],
     )
     const row = result.rows[0]
     const now = this.now()
@@ -319,7 +320,8 @@ export class IdentityModuleImplementation implements IdentityModule {
       return { ok: false, fault: { kind: 'csrf' } }
     }
     if (use === 'change') {
-      if (!evidence.csrfToken || !equalSecrets(this.csrfFor(row.session_id), evidence.csrfToken)) {
+      if (!evidence.csrfToken
+        || !equalSecrets(csrfTokenFor(this.config.sessionHmacSecret, row.session_id as SessionId), evidence.csrfToken)) {
         return { ok: false, fault: { kind: 'csrf' } }
       }
     }
@@ -340,7 +342,7 @@ export class IdentityModuleImplementation implements IdentityModule {
         kind: 'resolved',
         identity,
         identityView: identityView(identity),
-        csrfToken: this.csrfFor(row.session_id),
+        csrfToken: csrfTokenFor(this.config.sessionHmacSecret, row.session_id as SessionId),
         absoluteExpiresAt: row.absolute_expires_at.toISOString() as Instant,
         session: { kind: 'unchanged' },
       },
@@ -353,20 +355,17 @@ export class IdentityModuleImplementation implements IdentityModule {
     }
     const result = await this.db.query<{ id: string }>(
       'select id from team.browser_sessions where secret_hash = $1 and revoked_at is null',
-      [digest(evidence.sessionSecret)],
+      [digestSessionSecret(evidence.sessionSecret)],
     )
     const row = result.rows[0]
     if (!row) return { ok: true, value: { kind: 'ended', session: { kind: 'clear' } } }
     if (!evidence.origin || !this.config.allowedOrigins.has(evidence.origin)
-      || !evidence.csrfToken || !equalSecrets(this.csrfFor(row.id), evidence.csrfToken)) {
+      || !evidence.csrfToken
+      || !equalSecrets(csrfTokenFor(this.config.sessionHmacSecret, row.id as SessionId), evidence.csrfToken)) {
       return { ok: false, fault: { kind: 'csrf' } }
     }
     await this.db.query('update team.browser_sessions set revoked_at = $1 where id = $2', [this.now(), row.id])
     return { ok: true, value: { kind: 'ended', session: { kind: 'clear' } } }
-  }
-
-  private csrfFor(sessionId: string): OpaqueSecret {
-    return createHmac('sha256', this.config.sessionHmacSecret).update(`csrf:${sessionId}`).digest('base64url') as OpaqueSecret
   }
 
   private isInstallationAdministrator(issuer: string, subject: string): boolean {

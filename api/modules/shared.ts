@@ -7,12 +7,14 @@ declare const scalarBrand: unique symbol
 type Branded<Value, Name extends string> = Value & { readonly [scalarBrand]: Name }
 
 export type AccessRevision = Branded<number, 'AccessRevision'>
+export type AuditId = Branded<string, 'AuditId'>
 export type BoardId = Branded<string, 'BoardId'>
 export type ChangeSequence = Branded<number, 'ChangeSequence'>
 export type ColumnId = Branded<string, 'ColumnId'>
 export type CommentId = Branded<string, 'CommentId'>
 export type IdentityId = Branded<string, 'IdentityId'>
 export type Instant = Branded<string, 'Instant'>
+export type InvitationId = Branded<string, 'InvitationId'>
 export type LocalApplicationPath = Branded<string, 'LocalApplicationPath'>
 export type MemberId = Branded<string, 'MemberId'>
 export type NotificationId = Branded<string, 'NotificationId'>
