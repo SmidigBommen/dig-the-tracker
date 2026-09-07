@@ -4,7 +4,7 @@ export type Database = pg.Pool
 export type DbClient = pg.PoolClient
 
 export function createDatabase(databaseUrl: string): Database {
-  return new pg.Pool({ connectionString: databaseUrl, max: 10 })
+  return new pg.Pool({ connectionString: databaseUrl, max: 10, connectionTimeoutMillis: 5_000 })
 }
 
 export async function inTransaction<T>(db: Database, operation: (client: DbClient) => Promise<T>): Promise<T> {

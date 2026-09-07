@@ -85,8 +85,8 @@ The older `TaskContext`, Task views, and client remain in the repository but are
 
 ## Deployment state
 
-The application image contains the browser build, server build, and migrations. Compose runs migrations before starting the server. PostgreSQL stays on the private container network.
+The application image contains the browser build, server build, and migrations. Server startup applies and validates checksummed migrations before listening, including when deployed as a standalone Coolify application. Compose retains its separate migration service; the startup check then finds no pending migrations. PostgreSQL stays on the private container network.
 
-Readiness/liveness, graceful drain, backup verification, monitoring, and release hardening remain Slice 9 work.
+`/health/live` reports HTTP-process liveness. `/health/ready` checks PostgreSQL after startup has completed; the image probes it with Node. Shutdown marks readiness unavailable and allows up to 30 seconds for HTTP and database connections to close. Full mutation drain, backup verification, monitoring, and release hardening remain Slice 9 work.
 
-The app still binds to host loopback in repository Compose. Do not publish this build to a public network. Task authorization, rate limiting, operating checks, and the remaining release gates are not complete.
+The app still binds to host loopback in repository Compose. Coolify setup for real-provider sign-in validation precedes further Task development. See [the deployment guide](docs/coolify-deployment.md). Task authorization, rate limiting, operating checks, and the remaining team-release gates are not complete.

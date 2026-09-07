@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { ProductionOidcAdapter } from './adapters/oidc/production-oidc-adapter.js'
 import { loadConfig, type AppConfig } from './config.js'
 import { createDatabase } from './db.js'
+import { migrate } from './migrate.js'
 import { BoardModuleImplementation, type BoardFault, type BoardModule } from './modules/board/board-module.js'
 import {
   IdentityModuleImplementation,
@@ -112,7 +113,11 @@ async function serveStatic(pathname: string, response: ServerResponse, staticDir
   return true
 }
 
-export function createTeamServer(modules: ServerModules, config: AppConfig) {
+export function createTeamServer(
+  modules: ServerModules,
+  config: AppConfig,
+  isReady: () => Promise<boolean> = async () => false,
+) {
   return createServer(async (request, response) => {
     setSecurityHeaders(response)
     const origin = request.headers.origin
@@ -127,6 +132,17 @@ export function createTeamServer(modules: ServerModules, config: AppConfig) {
       const url = new URL(request.url ?? '/', 'http://local.invalid')
       const pathname = url.pathname
       const method = request.method ?? 'GET'
+
+      if (method === 'GET' && pathname === '/health/live') {
+        sendJson(response, 200, { status: 'alive' })
+        return
+      }
+      if (method === 'GET' && pathname === '/health/ready') {
+        const ready = await isReady().catch(() => false)
+        response.setHeader('cache-control', 'no-store')
+        sendJson(response, ready ? 200 : 503, { status: ready ? 'ready' : 'unavailable' })
+        return
+      }
 
       if (method === 'OPTIONS') {
         response.statusCode = 204
@@ -588,7 +604,9 @@ class RequestError extends Error {
 async function main() {
   const config = loadConfig()
   if (!config.oidc) throw new Error('OpenID Connect is not configured')
+  await migrate(config.databaseUrl)
   const db = createDatabase(config.databaseUrl)
+  db.on('error', () => console.error(JSON.stringify({ event: 'database-connection-error' })))
   const oidc = new ProductionOidcAdapter(config.oidc)
   const identity = new IdentityModuleImplementation(db, oidc, {
     redirectUri: config.oidc.redirectUri,
@@ -601,14 +619,29 @@ async function main() {
     sessionHmacSecret: config.sessionHmacSecret,
   })
   const board = new BoardModuleImplementation(db)
-  const server = createTeamServer({ identity, space, board }, config)
+  let draining = false
+  const server = createTeamServer({ identity, space, board }, config, async () => {
+    if (draining) return false
+    // pg supports a per-query timeout, which its QueryConfig type omits.
+    const probe = { text: 'select 1', query_timeout: 2_000 }
+    await db.query(probe)
+    return !draining
+  })
   server.listen(config.port, config.host, () => {
     console.log(JSON.stringify({ event: 'server-listening', host: config.host, port: config.port }))
   })
 
   const shutdown = () => {
+    if (draining) return
+    draining = true
+    const deadline = setTimeout(() => process.exit(1), 30_000)
+    deadline.unref()
     server.close(async () => {
-      await db.end()
+      try {
+        await db.end()
+      } finally {
+        clearTimeout(deadline)
+      }
     })
   }
   process.on('SIGINT', shutdown)

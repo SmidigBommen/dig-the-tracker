@@ -16,7 +16,8 @@
 - `BoardModule` implements the empty overview read and transaction-time access recheck. Its change and follow entries remain later-slice placeholders.
 - PostgreSQL 16 uses checksummed migrations. New team tables live in the `team` schema.
 - The old public-schema Task prototype and browser files remain for replacement in Slice 3, but the runtime entry does not import them.
-- The repository Compose path remains loopback-only. Public deployment is blocked.
+- The repository Compose path remains loopback-only. Coolify setup for real-provider sign-in validation precedes Slice 3; the remaining team-release gates still apply.
+- For Coolify setup, OIDC configuration, or deployment verification, follow [the deployment guide](docs/coolify-deployment.md). Server startup now migrates before listening, and the image probes `/health/ready` against PostgreSQL.
 
 ## Structure
 

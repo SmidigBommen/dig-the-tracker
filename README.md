@@ -21,7 +21,11 @@ The running application does not expose the retained single-actor Task prototype
 - Administrator-only invitation status and immutable access audit
 - PostgreSQL persistence and checksummed migrations
 
-Tasks, comments, live updates, reports, permanent Space deletion, and export are not implemented in the running path yet. Do not expose this build publicly.
+Tasks, comments, live updates, reports, permanent Space deletion, and export are not implemented in the running path yet. Coolify setup for real-provider sign-in validation is the current deployment step; the remaining team-release gates still apply.
+
+## Coolify setup
+
+Follow [Coolify and OpenID Connect setup](docs/coolify-deployment.md). The existing `Containerfile` builds one application on port 8080, applies migrations before listening, and provides a database-backed readiness check. PostgreSQL runs as a separate private Coolify resource. Configure OIDC and secrets as runtime variables.
 
 ## Configure OpenID Connect
 

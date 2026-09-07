@@ -20,4 +20,6 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/db ./db
 EXPOSE 8080
 USER node
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:8080/health/ready', { signal: AbortSignal.timeout(8000) }).then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 CMD ["node", "api-dist/server.js"]
