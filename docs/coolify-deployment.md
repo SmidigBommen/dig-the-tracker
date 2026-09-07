@@ -99,7 +99,7 @@ Copy only your verified subject into `INSTALLATION_ADMIN_SUBJECTS`, redeploy, an
 
 If sign-in fails, check the exact issuer, callback, client authentication method, and outgoing HTTPS access to the provider's discovery, token, and JWKS endpoints. An Origin error usually means the browser hostname differs from `ALLOWED_ORIGINS` or the callback origin. An unhealthy container needs its migration or database connection error resolved before provider troubleshooting.
 
-Production provider sign-in through the callback and the backup setup remain unverified. The broader release work remains in [the vertical-slice plan](design/vertical-slice-plan.md). See [Coolify research](implementation/coolify-setup-research.md) for sources and configuration details.
+Production provider sign-in and Space creation are verified below. Backup setup, production reload persistence, and sign-out verification remain open. The broader release work remains in [the vertical-slice plan](design/vertical-slice-plan.md). See [Coolify research](implementation/coolify-setup-research.md) for sources and configuration details.
 
 ## Current Coolify deployment
 
@@ -111,8 +111,9 @@ Verified on 2026-09-07:
 - OIDC credentials and the verified local administrator subject are runtime variables. Production has a separate session secret. Secrets are excluded from build variables.
 - Coolify reports the application and database healthy. Public `/health/ready`, `/health/live`, and `/` returned 200; anonymous `/api/session` returned 401.
 - Sign-in initiation returned the tenant-specific Microsoft authorization endpoint, the production callback, authorization-code flow, and S256 PKCE. The sign-in attempt cookie has Secure, HttpOnly, and SameSite=Lax attributes.
+- The user confirmed successful production Microsoft Entra sign-in and created `coolify-test-space`, key `COOL`. Their screenshot shows the authenticated identity, one member, Space management controls, and the default Board with Backlog, In Progress with WIP limit 3, and Done.
 
-Add `https://dig.smidigbommen.no/api/auth/callback` as a Web redirect URI in Entra and retain the localhost URI. A person must complete production sign-in to verify code redemption and the resulting session. The production database is separate from local development, so local Spaces do not appear there automatically.
+The Web redirect URI `https://dig.smidigbommen.no/api/auth/callback` is registered in Entra and works through code redemption and session establishment. Retain `http://localhost:8080/api/auth/callback` for local Docker development. The production database is separate from local development, so local Spaces do not appear there automatically.
 
 ## Local verification
 
