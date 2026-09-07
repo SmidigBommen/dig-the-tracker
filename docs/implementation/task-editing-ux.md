@@ -17,4 +17,6 @@ The three alternatives and their memory-only interactions are preserved on branc
 
 ## Verification
 
-The existing BoardSession and browser suites cover automatic editing, overlapping typing, uncertain retries, conflicts, close behavior, archived Tasks, and keyboard capture. The browser-through-HTTP integration test verifies persisted edits with PostgreSQL.
+The existing BoardSession and browser suites cover automatic editing, overlapping typing, uncertain retries, conflicts, close behavior, archived Tasks, and keyboard capture. The browser-through-HTTP integration test verifies persisted edits with PostgreSQL. All 41 regular tests and 42 PostgreSQL integration tests passed. The integration run used a disposable database in the existing local PostgreSQL instance, which was removed afterward.
+
+Review found and fixed two additional races: reverting to the original value during an uncertain save, and editing the previous Task while the next Task loads. Both have regression coverage. Standards and Spec follow-up reviews reported no remaining findings.

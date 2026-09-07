@@ -82,13 +82,17 @@ export class BoardSession {
 
   hasUnsavedEdits = () => {
     const draft = this.state.draft, saved = this.editBaseline
-    return Boolean(draft?.taskId && (!saved || draft.title !== saved.title || draft.description !== saved.description
+    const uncertain = this.pending?.command.kind === 'revise-task' && this.pending.command.task.taskId === draft?.taskId
+    return Boolean(draft?.taskId && (uncertain || !saved || draft.title !== saved.title || draft.description !== saved.description
       || draft.assigneeId !== saved.assigneeId || JSON.stringify(draft.tags) !== JSON.stringify(saved.tags)))
   }
 
   async openEditor(task: TaskLocator) {
     if (!await this.saveEdits() || this.state.busy) return
-    if (await this.openTask(task)) {
+    this.set({ busy: true })
+    let opened: boolean | undefined
+    try { opened = await this.openTask(task) } finally { this.set({ busy: false }) }
+    if (opened) {
       this.cancelDraft()
       this.beginEdit()
     }
@@ -177,11 +181,13 @@ export class BoardSession {
   async saveDraft(): Promise<boolean> {
     const draft = this.state.draft
     if (!draft || !this.canChange() || this.state.conflict) return false
+    if (draft.taskId) {
+      const saved = await this.saveEdits()
+      if (saved) this.cancelDraft()
+      return saved
+    }
     const changes = { title: draft.title, description: draft.description, assigneeId: draft.assigneeId, tags: draft.tags }
-    const command: BoardCommand = draft.taskId
-      ? { kind: 'revise-task', task: { taskId: draft.taskId, expectedRevision: draft.expectedRevision! }, changes }
-      : { kind: 'capture-task', input: { ...changes, parentTaskId: draft.parentTaskId } }
-    const receipt = await this.commit(command)
+    const receipt = await this.commit({ kind: 'capture-task', input: { ...changes, parentTaskId: draft.parentTaskId } })
     if (!receipt) return false
     this.set({ draft: undefined, conflict: undefined })
     if (receipt.result.taskId) await this.openTask({ kind: 'id', taskId: receipt.result.taskId })

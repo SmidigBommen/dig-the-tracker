@@ -77,7 +77,7 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
       <div className={conflict ? 'task-comparison' : undefined}>
         <div>
           {draft ? <fieldset className="inline-task-editor" disabled={readOnly || (busy && !savingEdits)}>
-            <input className="task-title-input" name="title" aria-label="Title" value={draft.title} onChange={(event) => session.updateDraft({ title: event.target.value })} />
+            <input className="task-title-input" name="title" aria-label="Title" autoFocus value={draft.title} onChange={(event) => session.updateDraft({ title: event.target.value })} />
             <div className="task-properties">{assignee}<div className="task-property"><span>Column</span><span>{overview.columns.find((column) => column.id === detail.columnId)?.name}</span></div>{tagEditor}</div>
             <label className="task-description-label"><span>Description</span><textarea name="description" rows={5} placeholder="Add a description…" value={draft.description} onChange={(event) => session.updateDraft({ description: event.target.value })} /></label>
             <DescriptionLinks text={draft.description} />

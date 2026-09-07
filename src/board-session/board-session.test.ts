@@ -45,6 +45,24 @@ describe('BoardSession', () => {
     expect(session.getSnapshot().draft).toBeUndefined()
     expect(session.getSnapshot().detail?.id).toBe('task')
   })
+  it('pauses editing the old Task while the next Task is loading', async () => {
+    const transport = new MemoryBoardTransport()
+    const session = new BoardSession(transport, emptyBoard)
+    await session.openEditor({ kind: 'id', taskId: capturedTask.id })
+    let release!: (value: Result<BoardView, BoardFault>) => void
+    const port = transport as import('./board-session.ts').BoardTransport
+    port.read = () => new Promise((resolve) => { release = resolve })
+    const opening = session.openEditor({ kind: 'id', taskId: 'child' as never })
+    await Promise.resolve()
+    expect(session.getSnapshot().busy).toBe(true)
+    session.updateDraft({ title: 'Typing in a disabled field' })
+    expect(session.getSnapshot().draft?.title).toBe('Server title')
+    release({ ok: true, value: { kind: 'task', sequence: 1 as never,
+      value: { ...capturedTask, id: 'child' as never, title: 'Child', parentTaskId: capturedTask.id } } })
+    await opening
+    expect(session.getSnapshot().draft?.title).toBe('Child')
+    expect(session.getSnapshot().busy).toBe(false)
+  })
   it('keeps the dialog draft after a lost save and resolves the original request before newer edits', async () => {
     const transport = new MemoryBoardTransport()
     let release!: () => void
@@ -72,6 +90,34 @@ describe('BoardSession', () => {
     expect(transport.requests[1]).toEqual(transport.requests[0])
     expect(transport.requests[2]).toMatchObject({ command: { task: { expectedRevision: 2 }, changes: { title: 'Typed during save' } } })
     expect(session.getSnapshot().draft?.title).toBe('Typed during save')
+  })
+  it('resolves a lost save even when typing has returned to the original title', async () => {
+    const transport = new MemoryBoardTransport()
+    let release!: () => void
+    const delayed = new Promise<void>((resolve) => { release = resolve })
+    transport.change = async (request) => {
+      transport.requests.push(request)
+      if (transport.requests.length === 1) { await delayed; return { ok: false, fault: { kind: 'temporarily-unavailable' } } }
+      if (request.command.kind !== 'revise-task') throw new Error('Expected an edit')
+      const task = { ...capturedTask, title: request.command.changes.title!, revision: transport.requests.length as never }
+      return { ok: true, value: { ...transport.receipt, update: { ...transport.receipt.update, sequence: task.revision as never,
+        changes: [{ kind: 'task-upserted', task, placement: { columnId: task.columnId } }] } } }
+    }
+    const session = new BoardSession(transport, emptyBoard)
+    await session.openEditor({ kind: 'id', taskId: capturedTask.id })
+    session.updateDraft({ title: 'Temporary title' })
+    const saving = session.saveEdits()
+    session.updateDraft({ title: 'Server title' })
+    release()
+    await saving
+    expect(session.hasUnsavedEdits()).toBe(true)
+    await session.closeEditor()
+    expect(session.getSnapshot().draft?.title).toBe('Server title')
+    session.setConnected(true)
+    await session.closeEditor()
+    expect(transport.requests[1]).toEqual(transport.requests[0])
+    expect(transport.requests[2]).toMatchObject({ command: { changes: { title: 'Server title' } } })
+    expect(session.getSnapshot().draft).toBeUndefined()
   })
   it('keeps the draft beside current data after a stale edit and requires a deliberate retry', async () => {
     const transport = new MemoryBoardTransport()

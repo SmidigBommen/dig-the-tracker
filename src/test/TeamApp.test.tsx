@@ -93,9 +93,10 @@ describe('TeamApp Slice 1 shell', () => {
     expect(await screen.findByRole('heading', { name: 'Delivery' })).toBeInTheDocument()
     expect(screen.getByText('Backlog')).toBeInTheDocument()
     expect(screen.getByText('In Progress')).toBeInTheDocument()
-    expect(screen.getByText('WIP limit 3')).toBeInTheDocument()
+    expect(screen.getByText('Limit 3')).toBeInTheDocument()
     expect(screen.getByText('Done')).toBeInTheDocument()
-    expect(screen.getAllByText('No Tasks yet')).toHaveLength(3)
+    expect(screen.getAllByText('No Tasks yet')).toHaveLength(2)
+    expect(screen.getByRole('textbox', { name: 'Add a Task' })).toBeInTheDocument()
     expect(teamApi.createSpace).toHaveBeenCalledWith('csrf-token', expect.objectContaining({
       displayName: 'Delivery', key: 'DIG', timeZone: 'Europe/Oslo',
     }))
