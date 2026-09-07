@@ -1,3 +1,4 @@
+import type { BoardOverview } from '../../api/contracts/board.ts'
 export interface TeamSession {
   authenticated: true
   identity: {
@@ -21,34 +22,7 @@ export interface SpaceSummary {
   deletionScheduledFor?: string
 }
 
-export interface BoardOverview {
-  space: {
-    id: string
-    key: string
-    displayName: string
-    timeZone: string
-    lifecycle: 'active' | 'archived' | 'deletion_scheduled'
-    revision: number
-  }
-  board: { id: string; changeSequence: number; workflowRevision: number }
-  columns: Array<{
-    id: string
-    name: string
-    flowRole: 'queue' | 'active' | 'complete'
-    intake: boolean
-    completion: boolean
-    wipLimit: number | null
-    position: number
-    revision: number
-  }>
-  members: Array<{
-    id: string
-    displayName: string
-    role: 'member' | 'space-administrator'
-  }>
-  tasks: { items: []; next?: string }
-  unreadNotifications: number
-}
+export type { BoardOverview } from '../../api/contracts/board.ts'
 
 export interface SpaceMember {
   id: string

@@ -1,6 +1,6 @@
 # Small-team kanban design checkpoint
 
-Status: shared understanding confirmed by the user on 2026-09-04 after Q102. Slices 1 and 2 are implemented; later slices remain planned.
+Status: shared understanding confirmed by the user on 2026-09-04 after Q102. Slices 1 through 3 are implemented; later slices remain planned.
 
 ## Product direction
 

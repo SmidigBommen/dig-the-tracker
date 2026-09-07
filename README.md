@@ -1,8 +1,8 @@
 # Dig team Kanban
 
-Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 and 2 of the team MVP: authenticated Spaces, safe invitations, membership administration, and Space lifecycle controls.
+Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 through 3 of the team MVP: authenticated Spaces, membership administration, Space lifecycle, and Task capture and editing.
 
-The running application does not expose the retained single-actor Task prototype. Task creation and movement return in Slice 3 behind the new `BoardModule` Interface.
+Members can create, open, edit, assign, tag, archive, and restore Tasks and one-level Subtasks. Movement and Outcomes arrive in Slice 4.
 
 ## Current behavior
 
@@ -19,9 +19,11 @@ The running application does not expose the retained single-actor Task prototype
 - Space name and time-zone settings
 - Read-only archive, restore, and deletion scheduling with a seven-day cancellation window
 - Administrator-only invitation status and immutable access audit
+- Task revisions with drafts preserved beside stale-edit conflicts
+- Bounded lane, Subtask, Archive, and Tag autocomplete pages
 - PostgreSQL persistence and checksummed migrations
 
-Tasks, comments, live updates, reports, permanent Space deletion, and export are not implemented in the running path yet. Coolify setup for real-provider sign-in validation is the current deployment step; the remaining team-release gates still apply.
+Task movement, comments, live updates, reports, permanent Space deletion, and export remain planned. Coolify setup for real-provider sign-in validation is the current deployment step; the remaining team-release gates still apply.
 
 ## Coolify setup
 
@@ -94,7 +96,7 @@ Open http://127.0.0.1:5173.
 | `npm run build` | Type-check and build the browser and server |
 | `npm test` | Run the regular Vitest suites |
 | `npm run test:db` | Run migrations and Module/HTTP integration tests against disposable PostgreSQL |
-| `npm run test:db:running` | Run the same database tests against an existing PostgreSQL instance |
+| `npm run test:db:running` | Run the same database tests against an existing disposable PostgreSQL test instance |
 | `npm run lint` | Run ESLint |
 | `npm run db:up` | Start local PostgreSQL |
 | `npm run db:migrate` | Apply pending checksummed migrations |
@@ -111,3 +113,5 @@ Open http://127.0.0.1:5173.
 - [Vertical-slice plan](docs/design/vertical-slice-plan.md)
 - [Slice 1 implementation notes](docs/implementation/slice-01-authenticated-space-shell.md)
 - [Slice 2 implementation notes](docs/implementation/slice-02-safe-team-membership.md)
+
+- [Slice 3 implementation notes](docs/implementation/slice-03-capture-and-shape-work.md)

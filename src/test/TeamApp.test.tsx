@@ -43,9 +43,9 @@ const board = {
   },
   board: { id: 'board-1', changeSequence: 0, workflowRevision: 1 },
   columns: [
-    { id: 'backlog', name: 'Backlog', flowRole: 'queue' as const, intake: true, completion: false, wipLimit: null, position: 0, revision: 1 },
-    { id: 'progress', name: 'In Progress', flowRole: 'active' as const, intake: false, completion: false, wipLimit: 3, position: 1000, revision: 1 },
-    { id: 'done', name: 'Done', flowRole: 'complete' as const, intake: false, completion: true, wipLimit: null, position: 2000, revision: 1 },
+    { id: 'backlog', name: 'Backlog', flowRole: 'queue' as const, intake: true, completion: false, wipLimit: null, position: 0, revision: 1, tasks: { items: [] }, counts: { tasks: 0, parentTasks: 0, subtasks: 0 } },
+    { id: 'progress', name: 'In Progress', flowRole: 'active' as const, intake: false, completion: false, wipLimit: 3, position: 1000, revision: 1, tasks: { items: [] }, counts: { tasks: 0, parentTasks: 0, subtasks: 0 } },
+    { id: 'done', name: 'Done', flowRole: 'complete' as const, intake: false, completion: true, wipLimit: null, position: 2000, revision: 1, tasks: { items: [] }, counts: { tasks: 0, parentTasks: 0, subtasks: 0 } },
   ],
   members: [{ id: 'member-1', displayName: 'Ada Admin', role: 'space-administrator' as const }],
   tasks: { items: [] },

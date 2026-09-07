@@ -8,41 +8,18 @@
 
 ## Current implementation
 
-- Slices 1 and 2 of the small-team MVP are implemented.
-- The running React entry is `src/team/TeamApp.tsx`; it handles sign-in, invitations, Space selection, membership administration, Space lifecycle, the empty default Board, reload, and sign-out.
+- Slices 1 through 3 of the small-team MVP are implemented.
+- The running React entry is `src/team/TeamApp.tsx`; it handles sign-in, invitations, Space selection, membership administration, Space lifecycle, Task capture, editing, assignment, Tags, Subtasks, Task Archive, reload, and sign-out.
 - The Node HTTP Adapter is `api/server.ts`.
 - `IdentityModule` owns OpenID Connect correlation and PostgreSQL sessions.
 - `SpaceModule` owns Space reads, invitations, membership, roles, lifecycle, audit, idempotent changes, access invalidation, and request authorization.
-- `BoardModule` implements the empty overview read and transaction-time access recheck. Its change and follow entries remain later-slice placeholders.
+- `BoardModule` owns Task reads and changes, revisions, numbering, Tags, Subtasks, archive/restore, cursor pages, and transaction-time access checks. `follow` remains Slice 6 work.
+- `BoardSession` owns browser Task state and drafts through the `BoardTransport` port. Owned HTTP and in-memory test Adapters share wire values in `api/contracts/board.ts`.
 - PostgreSQL 16 uses checksummed migrations. New team tables live in the `team` schema.
-- The old public-schema Task prototype and browser files remain for replacement in Slice 3, but the runtime entry does not import them.
+- Slice 3 removes the prototype mutation path and drops its public-schema tables with a forward migration. Team data remains in the `team` schema.
+- Member removal and leave call Board-owned unassignment inside the Space transaction. Preserve the Space, Member, session, then Board lock order.
 - The repository Compose path remains loopback-only. Coolify setup for real-provider sign-in validation precedes Slice 3; the remaining team-release gates still apply.
 - For Coolify setup, OIDC configuration, or deployment verification, follow [the deployment guide](docs/coolify-deployment.md). Server startup now migrates before listening, and the image probes `/health/ready` against PostgreSQL.
-
-## Structure
-
-```text
-ARCHITECTURE.md
-CONTEXT.md
-api/
-  adapters/oidc/       OpenID Connect port, production Adapter, test Adapter
-  modules/identity/    IdentityModule Interface and Implementation
-  modules/space/       SpaceModule Interface and Implementation
-  modules/board/       BoardModule overview and access recheck
-  config.ts            runtime and OpenID Connect configuration
-  server.ts            HTTP, cookie, CSRF, JSON, health, static-file Adapter
-  migrate.ts           checksummed migration runner
-db/migrations/
-  202608300001_initial.sql         retained prototype schema
-  202609040001_team_slice_one.sql  team identity, Space, and Board schema
-  202609040002_space_membership.sql invitations, audit, and Space lifecycle
-src/
-  team/TeamApp.tsx      running Slice 1 browser Module
-  team/team-api.ts      owned HTTP Adapter
-  context/, components/, lib/api.ts  retained prototype, not running
-docs/design/            confirmed product and Module design
-docs/implementation/    delivered-slice notes
-```
 
 ## Module rules
 
@@ -70,4 +47,4 @@ docs/implementation/    delivered-slice notes
 
 ## Next slice
 
-Slice 3 adds Task capture, editing, assignment, tags, archive and restore, bounded pages, and the browser `BoardSession`. Follow [the vertical-slice plan](docs/design/vertical-slice-plan.md). Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.
+For Slice 4, read [the vertical-slice plan](docs/design/vertical-slice-plan.md) and [Board Interface contract](docs/design/board-interface-contract.md). Add relative placement, order revisions, Outcomes, close/reopen, WIP warnings, and history views. The prototype is already retired; preserve stable IDs and flow roles. Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.

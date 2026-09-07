@@ -1,3 +1,4 @@
+import { InvalidBoardRequest, parseBoardChange, parseBoardQuery } from './adapters/http/board-requests.js'
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
@@ -422,6 +423,30 @@ export function createTeamServer(
         })
         return
       }
+      const boardOperation = pathname.match(/^\/api\/spaces\/([^/]+)\/board\/(views|changes)$/)
+      if (boardOperation && ((method === 'GET' && boardOperation[2] === 'views') || (method === 'POST' && boardOperation[2] === 'changes'))) {
+        const changing = method === 'POST'
+        const identity = await requireIdentity(request, response, modules.identity, changing ? 'change' : 'read')
+        if (!identity) return
+        const space = { kind: 'key' as const, spaceKey: decodeURIComponent(boardOperation[1]) as SpaceKey }
+        if (changing) {
+          const authorized = await modules.space.authorize(identity, { space, use: 'board-change' })
+          if (!authorized.ok) { sendFault(response, authorized.fault); return }
+          const result = await modules.board.change(authorized.value, parseBoardChange(await readJson(request)))
+          if (!result.ok) sendFault(response, result.fault)
+          else sendJson(response, 200, result.value)
+        } else {
+          const authorized = await modules.space.authorize(identity, { space, use: 'board-read' })
+          if (!authorized.ok) { sendFault(response, authorized.fault); return }
+          let query: unknown
+          try { query = JSON.parse(url.searchParams.get('query') ?? '{}') }
+          catch { throw new InvalidBoardRequest('Invalid Board query') }
+          const result = await modules.board.read(authorized.value, parseBoardQuery(query))
+          if (!result.ok) sendFault(response, result.fault)
+          else sendJson(response, 200, result.value)
+        }
+        return
+      }
       const boardMatch = pathname.match(/^\/api\/spaces\/([^/]+)\/board$/)
       if (method === 'GET' && boardMatch) {
         const identity = await requireIdentity(request, response, modules.identity, 'read')
@@ -446,7 +471,9 @@ export function createTeamServer(
         && await serveStatic(pathname, response, config.staticDir)) return
       throw new RequestError(404, 'Not found')
     } catch (error) {
-      if (error instanceof RequestError) {
+      if (error instanceof InvalidBoardRequest) {
+        sendJson(response, 400, { error: error.message })
+      } else if (error instanceof RequestError) {
         sendJson(response, error.status, { error: error.message })
       } else {
         console.error(error)

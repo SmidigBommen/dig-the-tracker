@@ -1,6 +1,6 @@
 # BoardModule Interface contract
 
-Status: frozen as the implementation baseline on 2026-09-04. Slice 1 implements `read` for an empty Board overview. Later slices implement the remaining query grammar, `change`, and `follow`.
+Status: frozen as the implementation baseline on 2026-09-04. Slices 1 through 3 implement overview, Task/detail pages, Tag autocomplete, capture, revision, and family archive/restore. Later slices implement movement, collaboration, reports, and `follow`.
 
 This document makes the selected `BoardModule` Interface precise enough to plan and test vertical slices. Names describe domain intent, not HTTP routes, database tables, or React state.
 
@@ -65,11 +65,13 @@ IDs, revisions, cursors, keys, instants, and request IDs are branded scalars. Pl
 
 ```ts
 export type BoardQuery =
+  | { kind: 'tags'; text?: string; page?: PageRequest }
   | { kind: 'overview'; firstPageSize?: number }
   | { kind: 'tasks'; selection: TaskSelection; page?: PageRequest }
   | {
       kind: 'task'
       task: TaskLocator
+      subtasks?: PageRequest
       comments?: PageRequest
       history?: PageRequest
     }
@@ -87,6 +89,7 @@ export type TaskSelection =
   | { kind: 'archive' }
 
 export type BoardView =
+  | { kind: 'tags'; value: Page<TagView> }
   | { kind: 'overview'; value: BoardOverview }
   | { kind: 'tasks'; value: Page<TaskSummary> }
   | { kind: 'task'; value: TaskDetail }
@@ -317,3 +320,13 @@ The invariant and performance contracts in [Codebase Module design](codebase-mod
 - ordinary Task changes do not lock unrelated Spaces or the installation.
 
 The types intentionally leave view DTO fields to the slice that first needs them. Adding a field to a view is compatible. Adding an Interface entry, accepting transport or PostgreSQL types, weakening an invariant, or adding a new command/fault variant is a contract amendment and must update this document and its Interface tests.
+
+## Slice 3 wire values and query amendment
+
+The `tags` query adds bounded, case-insensitive prefix autocomplete for Space Tags, including Tags used only by archived Tasks. It uses the existing `read` entry and cursor faults. This query addition is covered by the Slice 3 Module tests.
+
+`CaptureTask` accepts optional `assigneeId` and Tag names for inline creation. `TaskChanges` accepts replacement Tag names. Task summaries return stable Tag IDs, an Assignee summary, parent Task ID, and archive state. `TaskDetail.subtasks` is a separately paged summary collection. Each overview Column contains its own Task page and counts for all its Tasks, parent Tasks, and Subtasks. A command result names the affected `taskId`.
+
+Wire values live in `api/contracts/board.ts`; server capabilities and PostgreSQL types remain outside that source. Cursors currently expire after one hour, a Board change, or process restart. Every expiry produces `cursor-expired`. Task-number ordering is private to Slice 3 until relative placement arrives in Slice 4.
+
+Family changes above 200 Tasks emit count and query-revision changes instead of a partial Task projection. `BoardSession` marks loaded pages stale and reloads the bounded overview and open Task detail. Snapshot reads never move its sequence backwards.

@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { BoardWorkspace } from '../views/BoardWorkspace.tsx'
+import { HttpBoardTransport } from '../adapters/http/board-transport.ts'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   teamApi,
   type BoardOverview,
@@ -406,6 +408,7 @@ export default function TeamApp() {
             : state.board
           ? <Board
               board={state.board}
+              csrfToken={state.session.csrfToken}
               canAdminister={state.spaces.find((space) => space.key === state.selectedKey)?.memberRole === 'space-administrator'}
               busy={busy}
               invitationLink={invitationLink}
@@ -511,6 +514,7 @@ function InvitationPanel({ busy, onAccept }: { busy: boolean; onAccept: () => Pr
 
 function Board({
   board,
+  csrfToken,
   canAdminister,
   busy,
   invitationLink,
@@ -519,6 +523,7 @@ function Board({
   onLeaveSpace,
 }: {
   board: BoardOverview
+  csrfToken: string
   canAdminister: boolean
   busy: boolean
   invitationLink?: string
@@ -526,6 +531,7 @@ function Board({
   onOpenManagement: () => Promise<void>
   onLeaveSpace: () => Promise<void>
 }) {
+  const transport = useMemo(() => new HttpBoardTransport(board.space.key, csrfToken), [board.space.key, csrfToken])
   return (
     <main className="board-page">
       <div className="board-heading">
@@ -563,20 +569,7 @@ function Board({
           <input aria-label="Invitation link" value={invitationLink} readOnly onFocus={(event) => event.currentTarget.select()} />
         </label>
       )}
-      <div className="column-grid" aria-label={`${board.space.displayName} Board`}>
-        {board.columns.map((column) => (
-          <section className={`flow-column flow-${column.flowRole}`} key={column.id} aria-labelledby={`column-${column.id}`}>
-            <header>
-              <div>
-                <p className="flow-role">{column.flowRole}</p>
-                <h2 id={`column-${column.id}`}>{column.name}</h2>
-              </div>
-              {column.wipLimit !== null && <span className="wip-limit">WIP limit {column.wipLimit}</span>}
-            </header>
-            <div className="empty-column">No Tasks yet</div>
-          </section>
-        ))}
-      </div>
+      <BoardWorkspace key={`${board.board.id}:${csrfToken}`} initialBoard={board} transport={transport} />
     </main>
   )
 }

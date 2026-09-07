@@ -1,6 +1,6 @@
 # Architecture
 
-Dig is a React, Node, and PostgreSQL modular monolith. Slices 1 and 2 run authentication, Space membership, lifecycle controls, and the empty Board through three server Modules. OpenID Connect is the only true-external dependency.
+Dig is a React, Node, and PostgreSQL modular monolith. Slices 1 through 3 run authentication, Space membership, lifecycle controls, and Task capture and editing through three server Modules. OpenID Connect is the only true-external dependency.
 
 ## Running path
 
@@ -9,14 +9,17 @@ flowchart LR
   subgraph Browser[Browser]
     Views[React views]
     TeamClient[Owned HTTP Adapter]
+    BoardSession[BoardSession]
     Views <--> TeamClient
+    Views <--> BoardSession
+    BoardSession <--> TeamClient
   end
 
   subgraph Node[Node process]
     HTTP[HTTP Adapter]
     Identity[IdentityModule]
     Space[SpaceModule]
-    Board[BoardModule overview]
+    Board[BoardModule]
     OIDCAdapter[OpenID Connect Adapter]
     HTTP --> Identity
     HTTP --> Space
@@ -36,7 +39,7 @@ flowchart LR
   Migrations[Migration runner] -.-> TeamSchema
 ```
 
-The HTTP Adapter resolves a server session through `IdentityModule`. It passes the resulting opaque `AuthenticatedIdentity` to `SpaceModule`. Board routes ask `SpaceModule` for an opaque `AuthorizedSpace<'board-read'>` and pass that value to `BoardModule.read`.
+The HTTP Adapter resolves a server session through `IdentityModule`. It passes the resulting opaque `AuthenticatedIdentity` to `SpaceModule`. Board routes request `AuthorizedSpace<'board-read'>` or `AuthorizedSpace<'board-change'>` and pass it to the corresponding Board entry.
 
 `BoardModule` does not trust the initial authorization as a lasting grant. Its PostgreSQL transaction locks and rechecks the Space, Member, session, use, lifecycle, and access revision before reading the Board.
 
@@ -57,7 +60,11 @@ Its Implementation owns state, nonce, PKCE, identity mapping, secret hashing, ex
 
 Its Implementation owns Space-key reservation, invitation digests and expiry, the last-administrator rule, access revisions, session effects, audit writes, and lifecycle rules. Access-changing transactions publish an optional invalidation after commit for the live feed added in Slice 6.
 
-`BoardModule` keeps the selected `read`, `change`, and `follow` Interface. Slice 1 implements the empty `overview` read. Task changes and the live feed remain unavailable until their planned slices.
+`BoardModule` keeps the selected `read`, `change`, and `follow` Interface. Reads now cover overview, Task detail, lane and Archive pages, Subtask pages, and Tag autocomplete. Changes cover capture, revision, family archive, and family restore. The live feed remains Slice 6 work.
+
+The Board transaction rechecks access, locks its Board row to serialize numbering and change sequences, checks the Member-scoped request receipt, validates revisions and relationships, then commits Task state, events, the receipt, and `BoardUpdate`. This lock never covers another Space. Space membership transactions call the Board-owned private unassignment operation before ending membership.
+
+Task pages use indexed Task numbers as the current ordering. Encrypted cursors bind a Space, selection, ordering, and Board sequence. A change, one-hour expiry, or process restart invalidates the cursor and requires a fresh bounded page. Slice 4 replaces Task-number ordering with relative placement.
 
 ## Session and sign-in flow
 
@@ -71,17 +78,17 @@ Its Implementation owns Space-key reservation, invitation digests and expiry, th
 
 ## PostgreSQL
 
-The `team` schema contains identities, sign-in attempts, browser sessions, Space-key reservations, Spaces, Members, invitations, administrative audit, Boards, Board Columns, and Space idempotency receipts.
+The `team` schema contains identities, sign-in attempts, browser sessions, Space-key reservations, Spaces, Members, invitations, administrative audit, Boards, Board Columns, Tasks, Tags, Task/Tag links, Task events, Board updates, and Space and Board idempotency receipts.
 
 Every Board Column carries `space_id`. A composite foreign key guarantees that its Board belongs to the same Space. Partial unique indexes enforce one Intake and one Completion Column per active Board. Database checks enforce valid flow roles and positive Active WIP limits.
 
-The public-schema prototype tables remain temporarily because the working tree already contained Task changes and the old behavior tests still exercise them. The running browser and HTTP Adapter do not use that path. Slice 3 removes it after replacement behavior passes through `BoardModule`.
+The Slice 3 retirement migration drops the unused public-schema prototype tables. Earlier checksummed migrations remain intact for installations that have already applied Slices 1 and 2.
 
 ## Browser
 
-`src/team/TeamApp.tsx` owns the current browser state. It handles sign-in, Space creation and selection, invitation acceptance, Member administration, Space settings and lifecycle, the empty Board, and sign-out. `src/team/team-api.ts` is the owned HTTP Adapter.
+`src/team/TeamApp.tsx` handles authentication and Space navigation and management. Its Board renders `src/views/BoardWorkspace.tsx`. `BoardSession` owns Task loading, drafts, cursor pages, connection state, and authoritative receipt reduction. The HTTP Adapter implements `BoardTransport`; tests use an in-memory Adapter at that port.
 
-The older `TaskContext`, Task views, and client remain in the repository but are not imported by the runtime entry point.
+Task detail loads descriptions separately from lane summaries. A stale edit preserves the draft beside the current Task and requires the Member to choose the current revision before retrying. An uncertain network response preserves the request ID so reconnecting cannot duplicate a capture. The browser pauses changes while disconnected. Server-Sent Events and automatic gap recovery remain Slice 6 work.
 
 ## Deployment state
 

@@ -1,3 +1,4 @@
+import { unassignEndedMember } from '../board/private-member-unassignment.js'
 import { createHash, createHmac, randomUUID } from 'node:crypto'
 import type { Database, DbClient } from '../../db.js'
 import { inTransaction } from '../../db.js'
@@ -872,6 +873,7 @@ export class SpaceModuleImplementation implements SpaceModule {
     }
 
     const now = this.now()
+    await unassignEndedMember(client, access.id as SpaceId, access.member_id as MemberId, access.member_id as MemberId, now)
     await client.query(
       'update team.members set ended_at = $1, revision = revision + 1 where id = $2',
       [now, access.member_id],
@@ -935,6 +937,7 @@ export class SpaceModuleImplementation implements SpaceModule {
     }
 
     const now = this.now()
+    await unassignEndedMember(client, access.id as SpaceId, target.id as MemberId, access.member_id as MemberId, now)
     await client.query(
       'update team.members set ended_at = $1, revision = revision + 1 where id = $2',
       [now, target.id],

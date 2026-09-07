@@ -25,6 +25,7 @@ export type Revision = Branded<number, 'Revision'>
 export type SessionId = Branded<string, 'SessionId'>
 export type SpaceId = Branded<string, 'SpaceId'>
 export type SpaceKey = Branded<string, 'SpaceKey'>
+export type TagId = Branded<string, 'TagId'>
 export type TaskId = Branded<string, 'TaskId'>
 export type TaskKey = Branded<string, 'TaskKey'>
 
