@@ -27,6 +27,7 @@ export interface BoardSessionState {
   conflict?: TaskDetail
   archive?: Page<TaskSummary>
   busy: boolean
+  savingEdits: boolean
   pagesStale: boolean
   connected: boolean
   error?: string
@@ -43,10 +44,12 @@ export class BoardSession {
   private refreshRequest = 0
   private archiveRequest = 0
   private pageGeneration = 0
+  private editBaseline?: TaskDraft
+  private editSave?: Promise<boolean>
 
   constructor(transport: BoardTransport, overview: BoardOverview) {
     this.transport = transport
-    this.state = { overview, tagSuggestions: [], busy: false, pagesStale: false, connected: true }
+    this.state = { overview, tagSuggestions: [], busy: false, savingEdits: false, pagesStale: false, connected: true }
   }
 
   getSnapshot = (): BoardSessionState => this.state
@@ -65,12 +68,85 @@ export class BoardSession {
   beginEdit() {
     const task = this.state.detail
     if (!task || task.archived || !this.canChange()) return
-    this.set({ draft: { taskId: task.id, expectedRevision: task.revision, title: task.title, description: task.description,
-      assigneeId: task.assignee?.id ?? null, tags: task.tags.map((tag) => tag.name) }, conflict: undefined, error: undefined })
+    this.editBaseline = { taskId: task.id, expectedRevision: task.revision, title: task.title, description: task.description,
+      assigneeId: task.assignee?.id ?? null, tags: task.tags.map((tag) => tag.name) }
+    this.set({ draft: this.editBaseline, conflict: undefined, error: undefined })
   }
 
   updateDraft(changes: Partial<Pick<TaskDraft, 'title' | 'description' | 'assigneeId' | 'tags'>>) {
-    if (this.state.draft && this.canChange()) this.set({ draft: { ...this.state.draft, ...changes } })
+    if (this.state.draft && this.state.connected && this.state.overview.space.lifecycle === 'active'
+      && (!this.state.busy || this.state.savingEdits)) {
+      this.set({ draft: { ...this.state.draft, ...changes }, error: this.state.conflict ? this.state.error : undefined })
+    }
+  }
+
+  hasUnsavedEdits = () => {
+    const draft = this.state.draft, saved = this.editBaseline
+    return Boolean(draft?.taskId && (!saved || draft.title !== saved.title || draft.description !== saved.description
+      || draft.assigneeId !== saved.assigneeId || JSON.stringify(draft.tags) !== JSON.stringify(saved.tags)))
+  }
+
+  async openEditor(task: TaskLocator) {
+    if (!await this.saveEdits() || this.state.busy) return
+    if (await this.openTask(task)) {
+      this.cancelDraft()
+      this.beginEdit()
+    }
+  }
+
+  async closeEditor() {
+    if (this.state.busy && !this.state.savingEdits) return
+    if (await this.saveEdits()) this.closeDetail()
+  }
+
+  saveEdits(): Promise<boolean> {
+    if (this.editSave) return this.editSave
+    if (!this.hasUnsavedEdits()) return Promise.resolve(true)
+    if (!this.canChange() || this.state.conflict) return Promise.resolve(false)
+    this.set({ savingEdits: true })
+    this.editSave = this.flushEdits().finally(() => {
+      this.editSave = undefined
+      this.set({ savingEdits: false })
+    })
+    return this.editSave
+  }
+
+  private async flushEdits(): Promise<boolean> {
+    while (this.hasUnsavedEdits()) {
+      if (!this.canChange() || this.state.conflict) return false
+      const draft = this.state.draft!
+      // Resolve an uncertain save with its original request before sending newer typing.
+      const retry = this.pending?.command.kind === 'revise-task' && this.pending.command.task.taskId === draft.taskId
+        ? this.pending.command : undefined
+      const submitted = retry ? { ...draft, ...retry.changes, expectedRevision: retry.task.expectedRevision } : draft
+      const receipt = await this.commit(retry ?? { kind: 'revise-task', task: { taskId: draft.taskId!, expectedRevision: draft.expectedRevision! },
+        changes: { title: draft.title, description: draft.description, assigneeId: draft.assigneeId, tags: draft.tags } })
+      if (!receipt) return false
+      const change = receipt.update.changes.find((change) => change.kind === 'task-upserted' && change.task.id === draft.taskId)
+      if (change?.kind !== 'task-upserted') { this.fail({ kind: 'temporarily-unavailable' }); return false }
+      const task = change.task
+      const saved = { ...submitted, expectedRevision: task.revision, title: task.title, assigneeId: task.assignee?.id ?? null,
+        tags: task.tags.map((tag) => tag.name) }
+      const current = this.state.draft!
+      this.editBaseline = saved
+      this.set({ draft: { ...current, expectedRevision: saved.expectedRevision,
+        title: current.title === submitted.title ? saved.title : current.title,
+        assigneeId: current.assigneeId === submitted.assigneeId ? saved.assigneeId : current.assigneeId,
+        tags: JSON.stringify(current.tags) === JSON.stringify(submitted.tags) ? saved.tags : current.tags },
+        detail: { ...task, description: submitted.description, subtasks: this.state.detail?.subtasks ?? { items: [] } } })
+    }
+    return true
+  }
+
+  async quickCapture(title: string, parentTaskId?: TaskId): Promise<boolean> {
+    if (!await this.saveEdits() || !this.canChange()) return false
+    const receipt = await this.commit({ kind: 'capture-task', input: { title, parentTaskId } })
+    if (!receipt) return false
+    if (parentTaskId) {
+      await this.openTask({ kind: 'id', taskId: parentTaskId })
+      this.beginEdit()
+    }
+    return true
   }
 
   cancelDraft() { this.set({ draft: undefined, conflict: undefined, error: undefined }) }
@@ -95,7 +171,7 @@ export class BoardSession {
     if (request !== this.detailRequest || generation !== this.pageGeneration) return
     if (!result.ok) { this.fail(result.fault); return }
     if (result.value.sequence < this.state.overview.board.changeSequence) return
-    if (result.value.kind === 'task') this.set({ detail: result.value.value, error: undefined })
+    if (result.value.kind === 'task') { this.set({ detail: result.value.value, error: undefined }); return true }
   }
 
   async saveDraft(): Promise<boolean> {
@@ -113,7 +189,7 @@ export class BoardSession {
   }
 
   useCurrentRevision() {
-    if (this.state.draft && this.state.conflict) this.set({ draft: { ...this.state.draft, expectedRevision: this.state.conflict.revision }, conflict: undefined })
+    if (this.state.draft && this.state.conflict) this.set({ draft: { ...this.state.draft, expectedRevision: this.state.conflict.revision }, conflict: undefined, error: undefined })
   }
 
   private async commit(command: BoardCommand): Promise<ChangeReceipt | undefined> {
@@ -179,7 +255,8 @@ export class BoardSession {
     this.pageGeneration++
     this.archiveRequest++
     this.detailRequest++
-    this.set({ overview: result.value.value, connected: true, pagesStale: false, archive: undefined, detail: undefined, error: undefined })
+    this.set({ overview: result.value.value, connected: true, pagesStale: false, archive: undefined,
+      detail: this.state.draft?.taskId ? this.state.detail : undefined, error: undefined })
     if (this.detailLocator) await this.openTask(this.detailLocator)
   }
 
@@ -248,11 +325,14 @@ export class BoardSession {
   }
 
   async archiveTask(restore = false) {
+    if (!await this.saveEdits()) return
     const detail = this.state.detail
     if (!detail || !this.canChange()) return
     const result = await this.commit({ kind: restore ? 'restore-task' : 'archive-task', task: { taskId: detail.id, expectedRevision: detail.revision } })
     if (result) {
+      this.cancelDraft()
       await this.openTask({ kind: 'id', taskId: detail.id })
+      if (restore) this.beginEdit()
       if (this.state.archive) await this.openArchive()
     }
   }

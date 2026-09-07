@@ -5,6 +5,35 @@ import { BoardSession } from './board-session.ts'
 import { MemoryBoardTransport, capturedTask, emptyBoard } from '../test/board-fixtures.ts'
 
 describe('BoardSession', () => {
+  it('saves inline edits in order without losing text entered during a save', async () => {
+    const transport = new MemoryBoardTransport()
+    let release!: () => void
+    const firstSave = new Promise<void>((resolve) => { release = resolve })
+    transport.change = async (request) => {
+      transport.requests.push(request)
+      if (transport.requests.length === 1) await firstSave
+      if (request.command.kind !== 'revise-task') throw new Error('Expected an edit')
+      const task = { ...capturedTask, ...request.command.changes, revision: (transport.requests.length + 1) as never, tags: [] }
+      return { ok: true, value: { ...transport.receipt, update: { ...transport.receipt.update,
+        sequence: task.revision as never, changes: [{ kind: 'task-upserted', task, placement: { columnId: task.columnId } }] } } }
+    }
+    const session = new BoardSession(transport, emptyBoard)
+    await session.openTask({ kind: 'id', taskId: capturedTask.id })
+    session.beginEdit()
+    session.updateDraft({ title: 'First edit' })
+    const saving = session.saveEdits()
+    session.updateDraft({ title: 'Finished title', description: 'Keep typing' })
+    expect(session.getSnapshot().draft?.title).toBe('Finished title')
+    release()
+    expect(await saving).toBe(true)
+    expect(transport.requests).toHaveLength(2)
+    expect(transport.requests[1]).toMatchObject({ command: { task: { expectedRevision: 2 }, changes: { title: 'Finished title', description: 'Keep typing' } } })
+    expect(session.getSnapshot().draft?.title).toBe('Finished title')
+    expect(session.getSnapshot().detail?.description).toBe('Keep typing')
+    expect(session.hasUnsavedEdits()).toBe(false)
+    await session.saveEdits()
+    expect(transport.requests).toHaveLength(2)
+  })
   it('captures from a draft and applies the authoritative receipt to loaded state', async () => {
     const transport = new MemoryBoardTransport()
     const session = new BoardSession(transport, emptyBoard)
@@ -15,6 +44,34 @@ describe('BoardSession', () => {
     expect(session.getSnapshot().overview.columns[0].tasks.items).toMatchObject([{ key: 'DIG-1', title: 'Server title' }])
     expect(session.getSnapshot().draft).toBeUndefined()
     expect(session.getSnapshot().detail?.id).toBe('task')
+  })
+  it('keeps the dialog draft after a lost save and resolves the original request before newer edits', async () => {
+    const transport = new MemoryBoardTransport()
+    let release!: () => void
+    const firstSave = new Promise<void>((resolve) => { release = resolve })
+    transport.change = async (request) => {
+      transport.requests.push(request)
+      if (transport.requests.length === 1) { await firstSave; return { ok: false, fault: { kind: 'temporarily-unavailable' } } }
+      if (request.command.kind !== 'revise-task') throw new Error('Expected an edit')
+      const task = { ...capturedTask, title: request.command.changes.title!, revision: transport.requests.length as never }
+      return { ok: true, value: { ...transport.receipt, update: { ...transport.receipt.update, sequence: task.revision as never,
+        changes: [{ kind: 'task-upserted', task, placement: { columnId: task.columnId } }] } } }
+    }
+    const session = new BoardSession(transport, emptyBoard)
+    await session.openEditor({ kind: 'id', taskId: capturedTask.id })
+    session.updateDraft({ title: 'Sent before disconnect' })
+    const saving = session.saveEdits()
+    session.updateDraft({ title: 'Typed during save' })
+    release()
+    expect(await saving).toBe(false)
+    await session.closeEditor()
+    expect(session.getSnapshot().draft?.title).toBe('Typed during save')
+    expect(session.getSnapshot().detail?.id).toBe(capturedTask.id)
+    session.setConnected(true)
+    expect(await session.saveEdits()).toBe(true)
+    expect(transport.requests[1]).toEqual(transport.requests[0])
+    expect(transport.requests[2]).toMatchObject({ command: { task: { expectedRevision: 2 }, changes: { title: 'Typed during save' } } })
+    expect(session.getSnapshot().draft?.title).toBe('Typed during save')
   })
   it('keeps the draft beside current data after a stale edit and requires a deliberate retry', async () => {
     const transport = new MemoryBoardTransport()
