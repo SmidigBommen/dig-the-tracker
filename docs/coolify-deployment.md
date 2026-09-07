@@ -1,12 +1,12 @@
 # Coolify and OpenID Connect setup
 
-This setup deploys the current Space and membership app so its real OpenID Connect sign-in can be verified before Task development resumes. It does not complete the remaining team-release work in Slice 9. The selected Coolify dashboard is `https://coolify.smidigbommen.no`; Dig will use `https://dig.smidigbommen.no` with Microsoft Entra. A Coolify project already exists; its application, database, and HTTPS configuration still need to be verified.
+This setup deploys the current Space and membership app so its real OpenID Connect sign-in can be verified before Task development resumes. It does not complete the remaining team-release work in Slice 9. The Coolify dashboard is `https://coolify.smidigbommen.no`; Dig uses `https://dig.smidigbommen.no` with Microsoft Entra.
 
 ## Prepare the resources
 
 1. Point the chosen Dig hostname at the Coolify deployment server.
 2. Create a PostgreSQL 16 resource with a persistent volume. Use database `dig`, user `dig`, and a generated password. Start it and keep public access disabled.
-3. Create an application from `SmidigBommen/dig-the-tracker` through Coolify's GitHub App or a read-only deploy key. Use the same server and destination network as PostgreSQL.
+3. Create an application from `SmidigBommen/dig-the-tracker`. The current repository is public, so Coolify can clone it without credentials. If it becomes private, configure Coolify's GitHub App or a read-only deploy key. Use the same server and destination network as PostgreSQL.
 4. Select a commit containing the startup and health-check changes described here. A local working-tree change is unavailable to Coolify until pushed.
 
 | Application setting | Value |
@@ -20,10 +20,13 @@ This setup deploys the current Space and membership app so its real OpenID Conne
 | Domain | `https://dig.smidigbommen.no` |
 | Static site | Disabled |
 | Pre/Post-deployment commands | Empty |
+| Health check | Enabled, HTTP GET |
+| Health check host / port / path | `127.0.0.1` / `8080` / `/health/ready` |
+| Health check interval / timeout / retries / start period | `30s` / `10s` / `3` / `60s` |
 
 The image runs as the `node` user and serves both the browser and API. Startup validates configuration, applies checksummed migrations under the PostgreSQL migration lock, and then opens port 8080. A failed migration prevents startup. The image's health check calls `/health/ready`; `/health/live` reports that the HTTP process is running. Readiness requires startup completion and a working database connection, and becomes unavailable during shutdown. Database connection attempts time out after five seconds; readiness queries time out after two seconds.
 
-Keep the image health check enabled. It runs every 30 seconds, allows ten seconds per probe, and has a 60-second startup allowance. No application volume or separate frontend resource is needed. Coolify terminates HTTPS and connects to the container over HTTP.
+Keep health checks enabled. The image provides a Node-based probe, but the current Coolify deployment did not detect the custom `HEALTHCHECK` and generated its own HTTP probe. Configure its host explicitly as `127.0.0.1`. The image listens on IPv4; the generated probe's `wget` fallback fails against IPv6 `localhost`. The exact generated probe failed locally with `localhost` and passed with `127.0.0.1` on 2026-09-07. No application volume or separate frontend resource is needed. Coolify terminates HTTPS and connects to the container over HTTP.
 
 Coolify pre-deployment commands run in an existing container and skip the first deployment. Startup migrations therefore own database initialization. [Coolify Dockerfile deployment](https://next.coolify.io/docs/applications/builds/dockerfile), [Health checks](https://coolify.io/docs/knowledge-base/health-checks).
 
@@ -96,7 +99,20 @@ Copy only your verified subject into `INSTALLATION_ADMIN_SUBJECTS`, redeploy, an
 
 If sign-in fails, check the exact issuer, callback, client authentication method, and outgoing HTTPS access to the provider's discovery, token, and JWKS endpoints. An Origin error usually means the browser hostname differs from `ALLOWED_ORIGINS` or the callback origin. An unhealthy container needs its migration or database connection error resolved before provider troubleshooting.
 
-Live provider sign-in, the remote deployment, and its backup setup remain unverified until these steps are performed. The broader release work remains in [the vertical-slice plan](design/vertical-slice-plan.md). See [Coolify research](implementation/coolify-setup-research.md) for sources and configuration details.
+Production provider sign-in through the callback and the backup setup remain unverified. The broader release work remains in [the vertical-slice plan](design/vertical-slice-plan.md). See [Coolify research](implementation/coolify-setup-research.md) for sources and configuration details.
+
+## Current Coolify deployment
+
+Verified on 2026-09-07:
+
+- Project `dig-the-tracker`, environment `production`, application `Dig` serves `https://dig.smidigbommen.no` with a trusted HTTPS certificate.
+- The application deploys the public repository's `coolify-setup` branch. The first successful deployment runs commit `a4ee913`. Automatic and preview deployments are disabled; deploy manually through Coolify after pushing a selected change.
+- The dedicated `dig-postgres` resource runs PostgreSQL 16 with persistent storage, database and user `dig`, and public access disabled. Both resources share Coolify's destination network. The existing unrelated application remained healthy.
+- OIDC credentials and the verified local administrator subject are runtime variables. Production has a separate session secret. Secrets are excluded from build variables.
+- Coolify reports the application and database healthy. Public `/health/ready`, `/health/live`, and `/` returned 200; anonymous `/api/session` returned 401.
+- Sign-in initiation returned the tenant-specific Microsoft authorization endpoint, the production callback, authorization-code flow, and S256 PKCE. The sign-in attempt cookie has Secure, HttpOnly, and SameSite=Lax attributes.
+
+Add `https://dig.smidigbommen.no/api/auth/callback` as a Web redirect URI in Entra and retain the localhost URI. A person must complete production sign-in to verify code redemption and the resulting session. The production database is separate from local development, so local Spaces do not appear there automatically.
 
 ## Local verification
 
@@ -109,4 +125,4 @@ Verified on 2026-09-07 with Docker Desktop, the Node 22 application image, and d
 - All 82 regular tests and 28 database integration tests passed; lint and the production build passed.
 - The production dependency audit reported no known vulnerabilities. The build's development dependency audit reported advisories; those remain separate release work.
 
-The local container used a placeholder issuer, so these checks do not establish compatibility with the real provider.
+The disposable container checks used a placeholder issuer. A separate local deployment in Compose project `dig-entra-local` subsequently completed real Microsoft Entra sign-in, administrator bootstrap, and creation of `Local-Test-Space`. That project's PostgreSQL volume now contains local development data and must be preserved.
