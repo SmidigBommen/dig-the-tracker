@@ -65,6 +65,17 @@ src/
 
 Shared contract source should contain only wire-safe values needed by both owned Adapters. Opaque server capabilities, PostgreSQL records, locks, secrets, and provider claims stay out of it.
 
-## Next implementation action
+## Next session: 2026-09-08
+
+Start with Coolify deployment setup before continuing feature work:
+
+- [ ] Change the Dig application's tracked branch from `coolify-setup` to `master`.
+- [ ] Enable automatic deployment through a GitHub App or webhook.
+- [ ] Deploy the completed Slice 3 and chosen Task dialog, then verify production readiness, sign-in, and Task editing.
+- [ ] Verify that a subsequent push to `master` triggers deployment and update the deployment notes with the confirmed configuration.
+
+Last recorded Coolify settings have automatic deployments disabled. The completed work is pushed to `master` at `0d4df5d`; local services are stopped with their data preserved. See [deployment notes](../coolify-deployment.md) and [Task editing UX](../implementation/task-editing-ux.md).
+
+## Following implementation action
 
 Start Slice 4 with relative placement through `BoardModule.change` and a keyboard Move action. Preserve Task revisions, request receipts, transaction-time access checks, and atomic Task events/Board updates. Add order revisions, closure and Outcomes, warnings, and history views through separate red-green cycles. Board-owned unassignment already runs in the Space membership transaction.
