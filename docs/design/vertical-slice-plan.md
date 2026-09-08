@@ -69,12 +69,12 @@ Shared contract source should contain only wire-safe values needed by both owned
 
 Start with Coolify deployment setup before continuing feature work:
 
-- [ ] Change the Dig application's tracked branch from `coolify-setup` to `master`.
+- [x] Change the Dig application's tracked branch from `coolify-setup` to `master`.
 - [ ] Enable automatic deployment through a GitHub App or webhook.
 - [ ] Deploy the completed Slice 3 and chosen Task dialog, then verify production readiness, sign-in, and Task editing.
 - [ ] Verify that a subsequent push to `master` triggers deployment and update the deployment notes with the confirmed configuration.
 
-Last recorded Coolify settings have automatic deployments disabled. The completed work is pushed to `master` at `0d4df5d`; local services are stopped with their data preserved. See [deployment notes](../coolify-deployment.md) and [Task editing UX](../implementation/task-editing-ux.md).
+On 2026-09-08, API access was verified and Dig was switched to `master` with Auto Deploy enabled. The GitHub webhook secret is configured, but repository delivery still needs verification. Production deployment of `9452fa6` succeeded; health checks, the new Task UI assets, and Microsoft sign-in initiation passed. Completing browser sign-in and checking Task editing remain pending. Local services are stopped with their data preserved. See [deployment notes](../coolify-deployment.md) and [Task editing UX](../implementation/task-editing-ux.md).
 
 ## Following implementation action
 

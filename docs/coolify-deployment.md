@@ -103,7 +103,18 @@ Production provider sign-in and Space creation are verified below. Backup setup,
 
 ## Current Coolify deployment
 
-Verified on 2026-09-07:
+Verified on 2026-09-08:
+
+- Dig tracks `master` with Auto Deploy enabled. Its GitHub webhook signing secret is configured. The repository webhook still needs end-to-end verification; this application uses the public GitHub source, so Auto Deploy requires a manual Git webhook in the repository.
+- Deployment `bqycygyp7wxgbvvpzm0wmvvq` finished successfully at commit `9452fa6`, containing Slice 3 and the chosen editable Task dialog. Coolify reports `running:healthy`.
+- Public `/health/live` and `/health/ready` return 200. Anonymous `/api/session` returns 401. The served frontend assets are `index-CgKFykaL.js` and `index-Bi_tfM8l.css`, matching the new Task UI.
+- Microsoft sign-in initiation returns 200 with the production callback and S256 PKCE. Completing browser sign-in and checking production Task edits after this deployment still require browser verification.
+
+The installed Coolify version requires `POST /api/v1/deploy` with a JSON `uuid`; its former GET endpoint returns 405.
+
+API access uses `COOLIFY_API_TOKEN` from the shell environment. The variable may need an interactive shell to load. Never record its value in repository files or logs.
+
+Earlier deployment verified on 2026-09-07:
 
 - Project `dig-the-tracker`, environment `production`, application `Dig` serves `https://dig.smidigbommen.no` with a trusted HTTPS certificate.
 - The application deploys the public repository's `coolify-setup` branch. The first successful deployment runs commit `a4ee913`. Automatic and preview deployments are disabled; deploy manually through Coolify after pushing a selected change.
