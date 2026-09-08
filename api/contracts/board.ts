@@ -26,6 +26,7 @@ export interface BoardColumnView {
   completion: boolean
   wipLimit: number | null
   position: number
+  orderRevision: Revision
   tasks: Page<TaskSummary>
   counts: ColumnCounts
   revision: Revision
@@ -61,6 +62,8 @@ export interface Page<T> {
 export interface TagView { id: TagId; name: string }
 
 export interface TaskSummary {
+  outcome: Outcome | null
+  closedAt: Instant | null
   archived: boolean
   parentTaskId: TaskId | null
   tags: TagView[]
@@ -74,6 +77,10 @@ export interface TaskSummary {
 
 export interface TaskDetail extends TaskSummary {
   description: string
+  startedAt: Instant | null
+  columnEnteredAt: Instant
+  cycleTimeMilliseconds: number | null
+  history?: Page<TaskHistoryEntry>
   subtasks: Page<TaskSummary>
 }
 
@@ -168,7 +175,18 @@ export interface WorkflowView { columns: BoardColumnView[] }
 export interface MemberSummary { id: MemberId; displayName: string; role: BoardMemberView['role'] }
 export interface CommentView { id: CommentId; text: string; revision: Revision }
 export interface CommentTombstone { id: CommentId; removedAt: Instant }
-export interface TaskHistoryEntry { occurredAt: Instant; summary: string }
+export interface TaskHistoryEntry {
+  id: string
+  occurredAt: Instant
+  kind: string
+  summary: string
+  actor: { id: MemberId; displayName: string }
+  fromColumn?: { id: ColumnId; name: string; flowRole: BoardColumnView['flowRole'] }
+  toColumn?: { id: ColumnId; name: string; flowRole: BoardColumnView['flowRole'] }
+  outcome?: Outcome
+  previousOutcome?: Outcome
+  comment?: string
+}
 
 export type BoardProjectionChange =
   | { kind: 'space-revised'; space: BoardOverview['space'] }
@@ -182,6 +200,7 @@ export type BoardProjectionChange =
   | { kind: 'history-appended'; taskId: TaskId; entries: TaskHistoryEntry[] }
   | { kind: 'notification-upserted'; notification: NotificationView }
   | { kind: 'notifications-read'; notificationIds?: NotificationId[]; all: boolean }
+  | { kind: 'column-order-revised'; columnId: ColumnId; revision: Revision }
   | { kind: 'board-counts-revised'; counts: BoardCounts }
   | { kind: 'query-revisions-changed'; revisions: QueryRevisions }
 

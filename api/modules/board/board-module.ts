@@ -1,3 +1,7 @@
+import { restoreFamily } from './private-family.js'
+import { transitionTask, changeOutcome, currentOutcome, type FlowTask } from './private-flow.js'
+import { historyPage } from './private-history.js'
+import { placeTask, appendRank, taskPlacement } from './private-placement.js'
 import { BoardRejection, decodeCursor, encodeCursor, pageSize } from './private-cursors.js'
 import { createHash } from 'node:crypto'
 import type { Database, DbClient } from '../../db.js'
@@ -9,7 +13,7 @@ import type { AuthorizedSpace } from '../space/space-module.js'
 
 export type * from '../../contracts/board.js'
 import type {
-  ColumnCounts, BoardCounts, BoardColumnView, BoardMemberView, BoardOverview, BoardQuery, BoardView,
+  BoardWarning, TaskHistoryEntry, ColumnCounts, BoardCounts, BoardColumnView, BoardMemberView, BoardOverview, BoardQuery, BoardView,
   BoardProjectionChange, Page, TagView, TaskSummary, TaskDetail, ChangeRequest, ChangeReceipt, FollowOptions, BoardFeedItem, BoardFault,
 } from '../../contracts/board.js'
 
@@ -46,6 +50,7 @@ interface ColumnRow {
   is_completion: boolean
   wip_limit: number | null
   position: number
+  order_revision: number
   revision: number
 }
 
@@ -128,11 +133,11 @@ export class BoardModuleImplementation implements BoardModule {
           const task = result.rows[0]
           if (!task) return { ok: false as const, fault: { kind: 'not-found' as const } }
           return { ok: true as const, value: { kind: 'task' as const, sequence,
-            value: await taskDetail(client, task, sequence, query.subtasks) satisfies TaskDetail } }
+            value: await taskDetail(client, task, sequence, query.subtasks, query.history) satisfies TaskDetail } }
         }
         const [columnResult, memberResult] = await Promise.all([
           client.query<ColumnRow>(
-            `select id, name, flow_role, is_intake, is_completion, wip_limit, position, revision
+            `select id, name, flow_role, is_intake, is_completion, wip_limit, position, revision, order_revision
              from team.board_columns
              where board_id = $1 and archived_at is null
              order by position`,
@@ -154,7 +159,7 @@ export class BoardModuleImplementation implements BoardModule {
             { kind: 'column', columnId: column.id }, { size: query.firstPageSize })
           columns.push({ id: column.id as ColumnId, name: column.name, flowRole: column.flow_role,
             intake: column.is_intake, completion: column.is_completion, wipLimit: column.wip_limit,
-            position: column.position, revision: column.revision as Revision, tasks,
+            position: column.position, orderRevision: column.order_revision as Revision, revision: column.revision as Revision, tasks,
             counts: counts.columns!.find((item) => item.columnId === column.id)!.counts })
         }
         return {
@@ -202,7 +207,7 @@ export class BoardModuleImplementation implements BoardModule {
     const claims = inspectAuthorizedSpace(access)
     if (!claims || claims.use !== 'board-change') return { ok: false, fault: { kind: 'forbidden' } }
     if (request.command.kind !== 'capture-task' && request.command.kind !== 'revise-task'
-      && request.command.kind !== 'archive-task' && request.command.kind !== 'restore-task') return { ok: false, fault: { kind: 'temporarily-unavailable' } }
+      && request.command.kind !== 'change-outcome' && request.command.kind !== 'place-task' && request.command.kind !== 'archive-task' && request.command.kind !== 'restore-task') return { ok: false, fault: { kind: 'temporarily-unavailable' } }
     if (typeof request.requestId !== 'string' || !request.requestId || request.requestId.length > 100) {
       return { ok: false, fault: { kind: 'invalid', issues: [{ field: 'requestId', message: 'Use 1 to 100 characters.' }] } }
     }
@@ -245,8 +250,10 @@ export class BoardModuleImplementation implements BoardModule {
           if (parent.rows[0].parent_task_id) return { ok: false as const,
             fault: { kind: 'rule-violation' as const, rule: 'subtask-depth' as const } }
         }
+        let events: TaskHistoryEntry[] = []
         let row: TaskRow
         let family: TaskRow[] = []
+        let affectedOrderColumns: string[] = []
         if (command.kind !== 'capture-task') {
           const current = await client.query<TaskRow>(
             'select *, $3::text as space_key from team.tasks where space_id = $1 and id::text = $2 for update',
@@ -269,25 +276,37 @@ export class BoardModuleImplementation implements BoardModule {
                 [claims.spaceId, currentTask.parent_task_id])
               if (parent.rows[0]) throw new BoardRejection({ kind: 'invalid', issues: [{ field: 'task', message: 'Restore the parent Task first.' }] })
             }
-            await client.query(
+            const affected = await client.query<{ id: string }>(`select distinct column_id as id from team.tasks
+              where space_id = $1 and (id = $2 or parent_task_id = $2) and archived_at is null`, [claims.spaceId, currentTask.id])
+            affectedOrderColumns = affected.rows.map((column) => column.id)
+            if (archived) await client.query(
               `with changed as (
-                update team.tasks set archived_at = case when $3 then now() else null end,
-                  column_id = case when $3 then column_id else (
-                    select id from team.board_columns where space_id = $1 and archived_at is null
-                      and case when team.tasks.closed_at is null then is_intake else is_completion end
-                  ) end, revision = revision + 1, updated_at = now()
-                where space_id = $1 and (id = $2 or parent_task_id = $2) and (archived_at is not null) <> $3
-                returning id
+                update team.tasks set archived_at = now(), revision = revision + 1, updated_at = now()
+                where space_id = $1 and (id = $2 or parent_task_id = $2) and archived_at is null returning id
               ) insert into team.task_events (space_id, task_id, actor_member_id, kind, details)
-                select $1, id, $4, $5, $6 from changed`,
-              [claims.spaceId, currentTask.id, archived, claims.memberId, command.kind, command],
+                select $1, id, $3, 'archive-task', '{}'::jsonb from changed`,
+              [claims.spaceId, currentTask.id, claims.memberId],
             )
+            else await restoreFamily(client, claims.spaceId, currentTask.id, claims.memberId)
             const changed = await client.query<TaskRow>(
               `select *, $3::text as space_key from team.tasks where space_id = $1 and (id = $2 or parent_task_id = $2)
                order by number limit 201`, [claims.spaceId, currentTask.id, permitted.space.space_key],
             )
+            if (!archived) {
+              const restoredColumns = await client.query<{ id: string }>(`select distinct column_id as id from team.tasks
+                where space_id = $1 and (id = $2 or parent_task_id = $2) and archived_at is null`, [claims.spaceId, currentTask.id])
+              affectedOrderColumns = restoredColumns.rows.map((column) => column.id)
+            }
             family = changed.rows
             row = family.find((task) => task.id === currentTask.id)!
+          } else if (command.kind === 'place-task' || command.kind === 'change-outcome') {
+            if (command.kind === 'place-task') {
+              await placeTask(client, claims.spaceId, current.rows[0], command.destination)
+              events = await transitionTask(client, claims.spaceId, claims.memberId, current.rows[0], command.destination.columnId, command.closure)
+            } else events = [await changeOutcome(client, claims.spaceId, claims.memberId, current.rows[0], command.outcome)]
+            const moved = await client.query<TaskRow>('select *, $3::text as space_key from team.tasks where space_id = $1 and id = $2',
+              [claims.spaceId, current.rows[0].id, permitted.space.space_key])
+            row = moved.rows[0]
           } else {
             if (current.rows[0].archived_at) throw new BoardRejection({ kind: 'invalid', issues: [{ field: 'task', message: 'Restore the Task before editing it.' }] })
           const revised = await client.query<TaskRow>(
@@ -310,6 +329,8 @@ export class BoardModuleImplementation implements BoardModule {
             [claims.spaceId, number.rows[0].number, input.title!.trim(), input.description ?? '', claims.memberId, permitted.space.space_key, input.assigneeId ?? null, command.input.parentTaskId ?? null],
           )
           row = created.rows[0]
+          await appendRank(client, claims.spaceId, row.id, row.column_id)
+          affectedOrderColumns = [row.column_id]
         }
         if (input.tags !== undefined) {
           await client.query('delete from team.task_tags where space_id = $1 and task_id = $2', [claims.spaceId, row.id])
@@ -334,12 +355,34 @@ export class BoardModuleImplementation implements BoardModule {
         const changes: BoardProjectionChange[] = []
         if (command.kind === 'archive-task' && family.length <= 200) changes.push({ kind: 'tasks-archived', taskIds: family.map((task) => task.id as TaskId) })
         else if (command.kind === 'restore-task' && family.length <= 200) {
-          for (const restored of family) changes.push({ kind: 'task-upserted', task: await taskSummary(client, restored), placement: { columnId: restored.column_id as ColumnId } })
-        } else if (command.kind === 'capture-task' || command.kind === 'revise-task') changes.push({ kind: 'task-upserted', task, placement: { columnId: task.columnId } })
-        changes.push({ kind: 'board-counts-revised', counts: await boardCounts(client, claims.spaceId) })
+          for (const restored of family) changes.push({ kind: 'task-upserted', task: await taskSummary(client, restored), placement: await taskPlacement(client, claims.spaceId, restored.id) })
+        } else if (command.kind === 'capture-task' || command.kind === 'revise-task' || command.kind === 'place-task' || command.kind === 'change-outcome') changes.push({ kind: 'task-upserted', task, placement: await taskPlacement(client, claims.spaceId, task.id) })
+        if (command.kind === 'capture-task' || command.kind === 'archive-task' || command.kind === 'restore-task') {
+          await client.query('update team.board_columns set order_revision = order_revision + 1 where space_id = $1 and id = any($2::uuid[])', [claims.spaceId, affectedOrderColumns])
+        }
+        if (events.length) changes.push({ kind: 'history-appended', taskId: task.id, entries: events })
+        const orders = await client.query<{ id: ColumnId; order_revision: Revision }>('select id, order_revision from team.board_columns where space_id = $1 and archived_at is null', [claims.spaceId])
+        for (const column of orders.rows) changes.push({ kind: 'column-order-revised', columnId: column.id, revision: column.order_revision })
+        const counts = await boardCounts(client, claims.spaceId)
+        const warnings: BoardWarning[] = []
+        if (command.kind === 'place-task') {
+          const destination = await client.query<{ flow_role: string; wip_limit: number | null }>(
+            'select flow_role, wip_limit from team.board_columns where space_id = $1 and id = $2', [claims.spaceId, row.column_id])
+          const column = destination.rows[0]
+          const count = counts.columns!.find((item) => item.columnId === row.column_id)!.counts
+          if (column.flow_role === 'active' && column.wip_limit !== null && count.tasks > column.wip_limit) {
+            warnings.push({ kind: 'wip-limit-exceeded', columnId: task.columnId, limit: column.wip_limit,
+              actual: count.tasks, parentTasks: count.parentTasks, subtasks: count.subtasks })
+          }
+          if (events.some((event) => event.kind === 'closed')) {
+            const open = await client.query<{ count: number }>('select count(*)::int as count from team.tasks where space_id = $1 and parent_task_id = $2 and closed_at is null', [claims.spaceId, row.id])
+            if (open.rows[0].count) warnings.push({ kind: 'open-subtasks', taskId: task.id, count: open.rows[0].count })
+          }
+        }
+        changes.push({ kind: 'board-counts-revised', counts })
         changes.push({ kind: 'query-revisions-changed', revisions: { tasks: Number(advanced.rows[0].sequence) as Revision, inbox: 1 as Revision } })
         const receipt: ChangeReceipt = {
-          result: { kind: command.kind, taskId: task.id }, warnings: [],
+          result: { kind: command.kind, taskId: task.id }, warnings,
           update: { sequence: Number(advanced.rows[0].sequence) as ChangeSequence, requestId: request.requestId,
             occurredAt: row.updated_at.toISOString() as import('../shared.js').Instant,
             changes },
@@ -405,8 +448,11 @@ async function recheckAccess(
   return { ok: true, space }
 }
 
-interface TaskRow {
+interface TaskRow extends FlowTask {
+  started_at: Date | null
+  column_entered_at: Date
   space_id: string
+  rank: string
   archived_at: Date | null
   parent_task_id: string | null
   assignee_id: string | null
@@ -431,7 +477,7 @@ async function taskSummary(client: DbClient, task: TaskRow): Promise<TaskSummary
     `select tag.id, tag.name from team.task_tags link join team.tags tag on tag.id = link.tag_id and tag.space_id = link.space_id
      where link.space_id = $1 and link.task_id = $2 order by lower(tag.name), tag.id`, [task.space_id, task.id],
   )
-  return { archived: Boolean(task.archived_at), parentTaskId: task.parent_task_id as TaskId | null, tags: tags.rows, id: task.id as TaskId, key: `${task.space_key}-${task.number}` as TaskKey,
+  return { outcome: currentOutcome(task), closedAt: task.closed_at?.toISOString() as import('../shared.js').Instant ?? null, archived: Boolean(task.archived_at), parentTaskId: task.parent_task_id as TaskId | null, tags: tags.rows, id: task.id as TaskId, key: `${task.space_key}-${task.number}` as TaskKey,
     title: task.title, assignee: assignee?.rows[0] ?? null, columnId: task.column_id as ColumnId, revision: task.revision as Revision }
 }
 
@@ -444,8 +490,12 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value)
 }
 
-async function taskDetail(client: DbClient, task: TaskRow, sequence: number, page?: PageRequest): Promise<TaskDetail> {
+async function taskDetail(client: DbClient, task: TaskRow, sequence: number, page?: PageRequest, history?: PageRequest): Promise<TaskDetail> {
   return { ...await taskSummary(client, task), description: task.description,
+    startedAt: task.started_at?.toISOString() as import('../shared.js').Instant ?? null,
+    columnEnteredAt: task.column_entered_at.toISOString() as import('../shared.js').Instant,
+    cycleTimeMilliseconds: task.started_at && task.closed_at ? task.closed_at.getTime() - task.started_at.getTime() : null,
+    ...(history ? { history: await historyPage(client, task.space_id, task.id, sequence, history) } : {}),
     subtasks: await taskPage(client, task.space_id, task.space_key, sequence, { kind: 'parent', taskId: task.id }, page) }
 }
 
@@ -454,22 +504,24 @@ type PageSelection = { kind: 'column'; columnId: string } | { kind: 'parent'; ta
 async function taskPage(client: DbClient, spaceId: string, spaceKey: string, sequence: number,
   selection: PageSelection, page?: PageRequest): Promise<Page<TaskSummary>> {
   const size = pageSize(page?.size)
-  const scope = `${spaceId}:${JSON.stringify(selection)}:number`
+  const ordered = selection.kind === 'column'
+  const scope = `${spaceId}:${JSON.stringify(selection)}:${ordered ? 'rank-number' : 'number'}`
   const last = decodeCursor(page?.after, scope, sequence)
+  const boundary: string[] = last ? (ordered ? JSON.parse(last) : [last]) : []
   const field = selection.kind === 'column' ? 'column_id' : 'parent_task_id'
   const id = selection.kind === 'column' ? selection.columnId : selection.kind === 'parent' ? selection.taskId : null
   const result = await client.query<TaskRow>(
-    `select id, space_id, number, title, column_id, assignee_id, parent_task_id, archived_at, revision,
-            created_at, updated_at, $3::text as space_key
+    `select id, space_id, number, rank, title, column_id, assignee_id, parent_task_id, archived_at, revision,
+            created_at, updated_at, outcome, duplicate_task_id, closed_at, $3::text as space_key
      from team.tasks where space_id = $1 ${selection.kind === 'archive' ? 'and archived_at is not null and $2::uuid is null' : `and ${field} = $2`}
        ${selection.kind === 'column' ? 'and archived_at is null' : ''}
-       ${last ? 'and number > $5' : ''} order by number limit $4`,
-    [spaceId, id, spaceKey, size + 1, ...(last ? [last] : [])],
+       ${last ? (ordered ? 'and (rank, number) > ($5::bigint, $6::bigint)' : 'and number > $5') : ''} order by ${ordered ? 'rank, number' : 'number'} limit $4`,
+    [spaceId, id, spaceKey, size + 1, ...boundary],
   )
   const rows = result.rows.slice(0, size)
   const items: TaskSummary[] = []
   for (const row of rows) items.push(await taskSummary(client, row))
-  return { items, ...(result.rows.length > size ? { next: encodeCursor(scope, sequence, rows.at(-1)!.number) } : {}) }
+  return { items, ...(result.rows.length > size ? { next: encodeCursor(scope, sequence, ordered ? JSON.stringify([rows.at(-1)!.rank, rows.at(-1)!.number]) : rows.at(-1)!.number) } : {}) }
 }
 
 async function boardCounts(client: DbClient, spaceId: string): Promise<BoardCounts> {

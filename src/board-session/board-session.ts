@@ -1,8 +1,8 @@
 import type {
-  TagView, BoardCommand, BoardFault, BoardOverview, BoardQuery, BoardUpdate, BoardView,
+  BoardWarning, Closure, Outcome, TaskDestination, TagView, BoardCommand, BoardFault, BoardOverview, BoardQuery, BoardUpdate, BoardView,
   ChangeReceipt, ChangeRequest, Page, TaskDetail, TaskLocator, TaskSummary,
 } from '../../api/contracts/board.ts'
-import type { ColumnId, MemberId, RequestId, Result, Revision, TaskId } from '../../api/modules/shared.ts'
+import type { ColumnId, MemberId, RequestId, Result, Revision, TaskId, TaskKey } from '../../api/modules/shared.ts'
 
 export interface BoardTransport {
   read(query: BoardQuery): Promise<Result<BoardView, BoardFault>>
@@ -31,6 +31,8 @@ export interface BoardSessionState {
   pagesStale: boolean
   connected: boolean
   error?: string
+  pendingFlowChange?: boolean
+  warnings: BoardWarning[]
 }
 
 export class BoardSession {
@@ -49,7 +51,7 @@ export class BoardSession {
 
   constructor(transport: BoardTransport, overview: BoardOverview) {
     this.transport = transport
-    this.state = { overview, tagSuggestions: [], busy: false, savingEdits: false, pagesStale: false, connected: true }
+    this.state = { overview, warnings: [], tagSuggestions: [], busy: false, savingEdits: false, pagesStale: false, connected: true }
   }
 
   getSnapshot = (): BoardSessionState => this.state
@@ -74,7 +76,7 @@ export class BoardSession {
   }
 
   updateDraft(changes: Partial<Pick<TaskDraft, 'title' | 'description' | 'assigneeId' | 'tags'>>) {
-    if (this.state.draft && this.state.connected && this.state.overview.space.lifecycle === 'active'
+    if (this.state.draft && !this.state.pendingFlowChange && this.state.connected && this.state.overview.space.lifecycle === 'active'
       && (!this.state.busy || this.state.savingEdits)) {
       this.set({ draft: { ...this.state.draft, ...changes }, error: this.state.conflict ? this.state.error : undefined })
     }
@@ -137,7 +139,7 @@ export class BoardSession {
         title: current.title === submitted.title ? saved.title : current.title,
         assigneeId: current.assigneeId === submitted.assigneeId ? saved.assigneeId : current.assigneeId,
         tags: JSON.stringify(current.tags) === JSON.stringify(submitted.tags) ? saved.tags : current.tags },
-        detail: { ...task, description: submitted.description, subtasks: this.state.detail?.subtasks ?? { items: [] } } })
+        detail: { ...this.state.detail!, ...task, description: submitted.description, subtasks: this.state.detail?.subtasks ?? { items: [] } } })
     }
     return true
   }
@@ -157,7 +159,7 @@ export class BoardSession {
   closeDetail() { this.detailRequest++; this.detailLocator = undefined; this.set({ detail: undefined, draft: undefined, conflict: undefined }) }
   setConnected(connected: boolean) { this.set({ connected }) }
 
-  private canChange() { return this.state.connected && !this.state.busy && this.state.overview.space.lifecycle === 'active' }
+  private canChange() { return !this.state.pendingFlowChange && this.state.connected && !this.state.busy && this.state.overview.space.lifecycle === 'active' }
 
   suggestTags = async (text: string) => {
     const request = ++this.tagRequest
@@ -171,7 +173,7 @@ export class BoardSession {
     this.detailLocator = task
     const generation = this.pageGeneration
     const request = ++this.detailRequest
-    const result = await this.transport.read({ kind: 'task', task })
+    const result = await this.transport.read({ kind: 'task', task, ...(this.state.detail?.history ? { history: {} } : {}) })
     if (request !== this.detailRequest || generation !== this.pageGeneration) return
     if (!result.ok) { this.fail(result.fault); return }
     if (result.value.sequence < this.state.overview.board.changeSequence) return
@@ -198,8 +200,12 @@ export class BoardSession {
     if (this.state.draft && this.state.conflict) this.set({ draft: { ...this.state.draft, expectedRevision: this.state.conflict.revision }, conflict: undefined, error: undefined })
   }
 
-  private async commit(command: BoardCommand): Promise<ChangeReceipt | undefined> {
-    this.set({ busy: true, error: undefined })
+  private async commit(command: BoardCommand, reloadTaskId?: TaskId): Promise<ChangeReceipt | undefined> {
+    if (this.state.pendingFlowChange && JSON.stringify(this.pending?.command) !== JSON.stringify(command)) {
+      this.set({ error: 'Retry the pending change before making another change.' })
+      return
+    }
+    this.set({ busy: true, error: undefined, warnings: [] })
     if (!this.pending || JSON.stringify(this.pending.command) !== JSON.stringify(command)) {
       this.pending = { requestId: crypto.randomUUID() as RequestId, command }
     }
@@ -207,38 +213,55 @@ export class BoardSession {
       const result = await this.transport.change(this.pending)
       if (!result.ok) {
         if (result.fault.kind !== 'temporarily-unavailable') this.pending = undefined
-        this.fail(result.fault)
+        if (result.fault.kind === 'conflict' && (command.kind === 'place-task')
+          && (result.fault.reason === 'stale-order' || result.fault.reason === 'stale-task')) {
+          await this.refresh()
+          this.set({ error: 'Another change won. The Board has been refreshed; choose the move again.' })
+        } else this.fail(result.fault)
         return
       }
       this.pending = undefined
+      this.set({ warnings: result.value.warnings })
       this.applyUpdate(result.value.update)
       if (this.state.pagesStale) await this.refresh()
+      if (reloadTaskId && this.state.detail?.id === reloadTaskId) await this.openTask({ kind: 'id', taskId: reloadTaskId })
       return result.value
     } catch {
       this.fail({ kind: 'temporarily-unavailable' })
       return
-    } finally { this.set({ busy: false }) }
+    } finally { this.set({ busy: false, pendingFlowChange: this.pending?.command.kind === 'place-task' || this.pending?.command.kind === 'change-outcome' }) }
   }
 
   applyUpdate(update: BoardUpdate) {
     if (update.sequence <= this.state.overview.board.changeSequence) return
     this.pageGeneration++
     let overview = this.state.overview
+    let detail = this.state.detail
     let pagesStale = this.state.pagesStale
     for (const change of update.changes) {
       if (change.kind === 'query-revisions-changed') {
         pagesStale = true
       } else if (change.kind === 'task-upserted') {
         const task = change.task
+        if (detail?.id === task.id) detail = { ...detail, ...task }
         overview = { ...overview, columns: overview.columns.map((column) => {
-          const wasLoaded = column.tasks.items.some((item) => item.id === task.id)
+          const oldIndex = column.tasks.items.findIndex((item) => item.id === task.id)
           const items = column.tasks.items.filter((item) => item.id !== task.id)
-          if (column.id === task.columnId && !task.archived && (wasLoaded || !column.tasks.next)) {
-            const oldIndex = column.tasks.items.findIndex((item) => item.id === task.id)
-            items.splice(oldIndex < 0 ? items.length : oldIndex, 0, task)
+          if (column.id === task.columnId && !task.archived) {
+            const { beforeTaskId, afterTaskId } = change.placement
+            const anchorId = beforeTaskId ?? afterTaskId
+            const anchor = items.findIndex((item) => item.id === anchorId)
+            if (anchorId && anchor >= 0) items.splice(anchor + (afterTaskId ? 1 : 0), 0, task)
+            else if (!anchorId && (oldIndex >= 0 || !column.tasks.next)) items.splice(oldIndex < 0 ? items.length : oldIndex, 0, task)
+            else pagesStale = true
           }
           return { ...column, tasks: { ...column.tasks, items } }
         }) }
+      } else if (change.kind === 'history-appended' && detail?.id === change.taskId && detail.history) {
+        const ids = new Set(change.entries.map((entry) => entry.id))
+        detail = { ...detail, history: { ...detail.history, items: [...change.entries].reverse().concat(detail.history.items.filter((entry) => !ids.has(entry.id))) } }
+      } else if (change.kind === 'column-order-revised') {
+        overview = { ...overview, columns: overview.columns.map((column) => column.id === change.columnId ? { ...column, orderRevision: change.revision } : column) }
       } else if (change.kind === 'tasks-archived') {
         overview = { ...overview, columns: overview.columns.map((column) => ({ ...column,
           tasks: { ...column.tasks, items: column.tasks.items.filter((task) => !change.taskIds.includes(task.id)) } })) }
@@ -249,7 +272,7 @@ export class BoardSession {
         overview = { ...overview, members: overview.members.filter((member) => member.id !== change.memberId) }
       }
     }
-    this.set({ pagesStale, overview: { ...overview, board: { ...overview.board, changeSequence: update.sequence } } })
+    this.set({ detail, pagesStale, overview: { ...overview, board: { ...overview.board, changeSequence: update.sequence } } })
   }
 
   async refresh() {
@@ -325,8 +348,69 @@ export class BoardSession {
       } else this.fail(result.fault)
       return
     }
-    if (result.value.kind === 'task' && this.state.detail?.id === detail.id) this.set({ detail: { ...result.value.value,
+    if (result.value.kind === 'task' && this.state.detail?.id === detail.id) this.set({ detail: { ...result.value.value, history: this.state.detail.history,
       subtasks: { items: [...detail.subtasks.items, ...result.value.value.subtasks.items], next: result.value.value.subtasks.next } } })
+    } finally { this.set({ busy: false }) }
+  }
+
+  async retryPendingChange() {
+    if (!this.state.connected || this.state.busy || this.state.overview.space.lifecycle !== 'active' || !this.state.pendingFlowChange || !this.pending) return false
+    const command = this.pending.command
+    const result = await this.commit(command, 'task' in command ? command.task.taskId : undefined)
+    if (!result) return false
+    if (this.state.detail && !this.hasUnsavedEdits()) this.beginEdit()
+    return true
+  }
+
+  async moveTask(task: TaskSummary, destination: TaskDestination, closure?: Closure) {
+    if (!await this.saveEdits() || !this.canChange()) return false
+    const current = this.state.detail?.id === task.id ? this.state.detail : task
+    const result = await this.commit({ kind: 'place-task', task: { taskId: current.id, expectedRevision: current.revision }, destination, closure }, current.id)
+    if (!result) return false
+    if (this.state.detail?.id === task.id) this.beginEdit()
+    return true
+  }
+
+  async chooseOutcome(kind: Outcome['kind'], duplicateKey: string, comment?: string) {
+    if (!await this.saveEdits() || !this.canChange() || !this.state.detail) return false
+    const detail = this.state.detail
+    let outcome: Outcome
+    if (kind === 'duplicate') {
+      this.set({ busy: true })
+      try {
+        const target = await this.transport.read({ kind: 'task', task: { kind: 'key', taskKey: duplicateKey.trim() as TaskKey } })
+        if (!target.ok) { this.fail(target.fault); return false }
+        if (target.value.kind !== 'task') return false
+        outcome = { kind, taskId: target.value.value.id }
+      } finally { this.set({ busy: false }) }
+    } else outcome = { kind }
+    if (detail.closedAt) {
+      const receipt = await this.commit({ kind: 'change-outcome', task: { taskId: detail.id, expectedRevision: detail.revision }, outcome }, detail.id)
+      if (!receipt) return false
+      this.beginEdit()
+      return true
+    }
+    const completion = this.state.overview.columns.find((column) => column.completion)!
+    return this.moveTask(detail, { columnId: completion.id, expectedOrderRevision: completion.orderRevision, place: { kind: 'last' } }, { outcome, ...(comment ? { comment } : {}) })
+  }
+
+  async loadHistory(more = false) {
+    const detail = this.state.detail
+    if (!detail || this.state.busy || more && (!detail.history?.next || this.state.pagesStale)) return
+    const generation = this.pageGeneration
+    const request = this.detailRequest
+    this.set({ busy: true })
+    try {
+      const result = await this.transport.read({ kind: 'task', task: { kind: 'id', taskId: detail.id }, history: { after: more ? detail.history?.next : undefined } })
+      if (generation !== this.pageGeneration || request !== this.detailRequest) return
+      if (!result.ok) {
+        if (result.fault.kind === 'cursor-expired') await this.openTask({ kind: 'id', taskId: detail.id })
+        this.fail(result.fault); return
+      }
+      if (result.value.kind === 'task' && result.value.value.history) {
+        const history = result.value.value.history
+        this.set({ detail: { ...this.state.detail!, history: { items: [...(more ? detail.history?.items ?? [] : []), ...history.items], next: history.next } } })
+      }
     } finally { this.set({ busy: false }) }
   }
 
@@ -353,6 +437,7 @@ export class BoardSession {
       error = 'Someone changed this Task. Compare your draft with the current version.'
       if (fault.current?.kind === 'task') this.set({ conflict: fault.current.value, detail: fault.current.value })
     }
+    if (fault.kind === 'conflict' && fault.reason === 'stale-order') error = 'Another move changed this Column. The Board has been refreshed; choose the position again.'
     if (fault.kind === 'read-only') { error = 'This Space is read-only.'; this.set({ overview: { ...this.state.overview,
       space: { ...this.state.overview.space, lifecycle: fault.reason === 'space-archived' ? 'archived' : 'deletion_scheduled' } } }) }
     if (fault.kind === 'forbidden') { error = 'Your access changed. Reopen the Space.'; this.set({ connected: false }) }

@@ -1,6 +1,6 @@
 # Architecture
 
-Dig is a React, Node, and PostgreSQL modular monolith. Slices 1 through 3 run authentication, Space membership, lifecycle controls, and Task capture and editing through three server Modules. OpenID Connect is the only true-external dependency.
+Dig is a React, Node, and PostgreSQL modular monolith. Slices 1 through 4 run authentication, Space membership, lifecycle controls, and Task capture, editing, movement, closure, and history through three server Modules. OpenID Connect is the only true-external dependency.
 
 ## Running path
 
@@ -60,11 +60,11 @@ Its Implementation owns state, nonce, PKCE, identity mapping, secret hashing, ex
 
 Its Implementation owns Space-key reservation, invitation digests and expiry, the last-administrator rule, access revisions, session effects, audit writes, and lifecycle rules. Access-changing transactions publish an optional invalidation after commit for the live feed added in Slice 6.
 
-`BoardModule` keeps the selected `read`, `change`, and `follow` Interface. Reads now cover overview, Task detail, lane and Archive pages, Subtask pages, and Tag autocomplete. Changes cover capture, revision, family archive, and family restore. The live feed remains Slice 6 work.
+`BoardModule` keeps the selected `read`, `change`, and `follow` Interface. Reads now cover overview, Task detail, lane and Archive pages, Subtask pages, Tag autocomplete, and independently paged Task history. Changes cover capture, revision, relative placement, Outcome changes, family archive, and family restore. The live feed remains Slice 6 work.
 
 The Board transaction rechecks access, locks its Board row to serialize numbering and change sequences, checks the Member-scoped request receipt, validates revisions and relationships, then commits Task state, events, the receipt, and `BoardUpdate`. This lock never covers another Space. Space membership transactions call the Board-owned private unassignment operation before ending membership.
 
-Task pages use indexed Task numbers as the current ordering. Encrypted cursors bind a Space, selection, ordering, and Board sequence. A change, one-hour expiry, or process restart invalidates the cursor and requires a fresh bounded page. Slice 4 replaces Task-number ordering with relative placement.
+Column pages use indexed relative ranks with Task numbers as a stable tie-breaker. Archive and Subtask pages retain Task-number ordering. Encrypted cursors bind a Space, selection, ordering, and Board sequence. A change, one-hour expiry, or process restart invalidates the cursor and requires a fresh bounded page. Ranks stay private. Commands name first, last, or a stable neighboring Task ID and the destination Column order revision. Exhausted rank gaps rebalance within that Column under the Board transaction lock. Capture, movement, archive, and restore advance affected order revisions.
 
 ## Session and sign-in flow
 
@@ -78,7 +78,7 @@ Task pages use indexed Task numbers as the current ordering. Encrypted cursors b
 
 ## PostgreSQL
 
-The `team` schema contains identities, sign-in attempts, browser sessions, Space-key reservations, Spaces, Members, invitations, administrative audit, Boards, Board Columns, Tasks, Tags, Task/Tag links, Task events, Board updates, and Space and Board idempotency receipts.
+The `team` schema contains identities, sign-in attempts, browser sessions, Space-key reservations, Spaces, Members, invitations, administrative audit, Boards, Board Columns, Tasks, Tags, Task/Tag links, Task events, Board updates, and Space and Board idempotency receipts. Task rows retain first Active entry, latest Column entry, current closure time, Outcome, and an optional same-Space Duplicate target. Transition, closure, reopening, and Outcome-change events append beside current state.
 
 Every Board Column carries `space_id`. A composite foreign key guarantees that its Board belongs to the same Space. Partial unique indexes enforce one Intake and one Completion Column per active Board. Database checks enforce valid flow roles and positive Active WIP limits.
 
@@ -88,7 +88,7 @@ The Slice 3 retirement migration drops the unused public-schema prototype tables
 
 `src/team/TeamApp.tsx` handles authentication and Space navigation and management. Its Board renders `src/views/BoardWorkspace.tsx`. `BoardSession` owns Task loading, drafts, cursor pages, connection state, and authoritative receipt reduction. The HTTP Adapter implements `BoardTransport`; tests use an in-memory Adapter at that port.
 
-Task detail loads descriptions separately from lane summaries. A stale edit preserves the draft beside the current Task and requires the Member to choose the current revision before retrying. An uncertain network response preserves the request ID so reconnecting cannot duplicate a capture. The browser pauses changes while disconnected. Server-Sent Events and automatic gap recovery remain Slice 6 work.
+Task detail loads descriptions separately from lane summaries. A stale edit preserves the draft beside the current Task and requires the Member to choose the current revision before retrying. An uncertain network response preserves the request ID so reconnecting cannot duplicate a capture. The browser pauses changes while disconnected. Drag and keyboard Move actions share the same relative placement command. Completion defaults to Completed; the dialog also offers Rejected, Cancelled, and Duplicate. WIP and open-Subtask warnings describe committed changes. History loads independently and preserves actor identity and transition Column snapshots. An uncertain movement or Outcome change keeps its request for explicit retry after reconnection. Server-Sent Events and automatic gap recovery remain Slice 6 work.
 
 ## Deployment state
 

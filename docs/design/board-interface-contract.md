@@ -1,6 +1,6 @@
 # BoardModule Interface contract
 
-Status: frozen as the implementation baseline on 2026-09-04. Slices 1 through 3 implement overview, Task/detail pages, Tag autocomplete, capture, revision, and family archive/restore. Later slices implement movement, collaboration, reports, and `follow`.
+Status: frozen as the implementation baseline on 2026-09-04. Slices 1 through 4 implement overview, Task/detail and history pages, Tag autocomplete, capture, revision, family archive/restore, movement, closure Outcomes, and warnings. Later slices implement collaboration, reports, and `follow`.
 
 This document makes the selected `BoardModule` Interface precise enough to plan and test vertical slices. Names describe domain intent, not HTTP routes, database tables, or React state.
 

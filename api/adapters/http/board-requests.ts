@@ -1,5 +1,5 @@
-import type { BoardQuery, CaptureTask, ChangeRequest, TaskChanges, VersionedTask } from '../../contracts/board.js'
-import type { MemberId, PageRequest, RequestId, Revision, TaskId } from '../../modules/shared.js'
+import type { BoardQuery, CaptureTask, ChangeRequest, TaskDestination, Closure, Outcome, TaskChanges, VersionedTask } from '../../contracts/board.js'
+import type { ColumnId, MemberId, PageRequest, RequestId, Revision, TaskId } from '../../modules/shared.js'
 
 export class InvalidBoardRequest extends Error {}
 
@@ -42,7 +42,7 @@ function changes(value: unknown, capture: boolean): CaptureTask | TaskChanges {
 
 export function parseBoardChange(value: unknown): ChangeRequest {
   const body = object(value, ['requestId', 'command'])
-  const command = object(body.command, ['kind', 'input', 'task', 'changes'])
+  const command = object(body.command, ['kind', 'input', 'task', 'changes', 'destination', 'closure', 'outcome'])
   const requestId = string(body.requestId) as RequestId
   switch (command.kind) {
     case 'capture-task':
@@ -51,6 +51,22 @@ export function parseBoardChange(value: unknown): ChangeRequest {
     case 'revise-task':
       object(command, ['kind', 'task', 'changes'])
       return { requestId, command: { kind: 'revise-task', task: task(command.task), changes: changes(command.changes, false) } }
+    case 'place-task': {
+      object(command, ['kind', 'task', 'destination', 'closure'])
+      const destination = object(command.destination, ['columnId', 'expectedOrderRevision', 'place'])
+      if (!Number.isSafeInteger(destination.expectedOrderRevision) || Number(destination.expectedOrderRevision) < 1) throw new InvalidBoardRequest('Invalid order revision')
+      const place = object(destination.place, ['kind', 'taskId'])
+      if (place.kind === 'before' || place.kind === 'after') string(place.taskId)
+      else if (place.kind === 'first' || place.kind === 'last') object(place, ['kind'])
+      else throw new InvalidBoardRequest('Invalid placement')
+      return { requestId, command: { kind: 'place-task', task: task(command.task), closure: closure(command.closure), destination: {
+        columnId: string(destination.columnId) as ColumnId, expectedOrderRevision: destination.expectedOrderRevision as Revision,
+        place: place as unknown as TaskDestination['place'],
+      } } }
+    }
+    case 'change-outcome':
+      object(command, ['kind', 'task', 'outcome'])
+      return { requestId, command: { kind: 'change-outcome', task: task(command.task), outcome: outcome(command.outcome) } }
     case 'archive-task':
     case 'restore-task':
       object(command, ['kind', 'task'])
@@ -60,7 +76,7 @@ export function parseBoardChange(value: unknown): ChangeRequest {
 }
 
 export function parseBoardQuery(value: unknown): BoardQuery {
-  const input = object(value, ['kind', 'firstPageSize', 'selection', 'page', 'task', 'subtasks', 'text'])
+  const input = object(value, ['kind', 'firstPageSize', 'selection', 'page', 'task', 'subtasks', 'history', 'text'])
   switch (input.kind) {
     case 'tags':
       object(input, ['kind', 'text', 'page'])
@@ -81,14 +97,32 @@ export function parseBoardQuery(value: unknown): BoardQuery {
       return input as BoardQuery
     }
     case 'task': {
-      object(input, ['kind', 'task', 'subtasks'])
+      object(input, ['kind', 'task', 'subtasks', 'history'])
       const locator = object(input.task, ['kind', 'taskId', 'taskKey'])
       if (locator.kind === 'id') { object(locator, ['kind', 'taskId']); string(locator.taskId) }
       else if (locator.kind === 'key') { object(locator, ['kind', 'taskKey']); string(locator.taskKey) }
       else throw new InvalidBoardRequest('Invalid Task locator')
       page(input.subtasks)
+      page(input.history)
       return input as BoardQuery
     }
     default: throw new InvalidBoardRequest('Unknown Board query')
   }
+}
+
+function outcome(value: unknown): Outcome {
+  const input = object(value, ['kind', 'taskId'])
+  if (input.kind === 'duplicate') return { kind: 'duplicate', taskId: string(input.taskId) as TaskId }
+  if (input.kind === 'completed' || input.kind === 'rejected' || input.kind === 'cancelled') {
+    object(input, ['kind'])
+    return { kind: input.kind }
+  }
+  throw new InvalidBoardRequest('Invalid Outcome')
+}
+
+function closure(value: unknown): Closure | undefined {
+  if (value === undefined) return undefined
+  const input = object(value, ['outcome', 'comment'])
+  return { ...(input.outcome !== undefined ? { outcome: outcome(input.outcome) } : {}),
+    ...(input.comment !== undefined ? { comment: string(input.comment) } : {}) }
 }

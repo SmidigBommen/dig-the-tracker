@@ -1,8 +1,8 @@
 # Dig team Kanban
 
-Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 through 3 of the team MVP: authenticated Spaces, membership administration, Space lifecycle, and Task capture and editing.
+Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 through 4 of the team MVP: authenticated Spaces, membership administration, Space lifecycle, Task capture and editing, and work movement and closure.
 
-Members can create, open, edit, assign, tag, archive, and restore Tasks and one-level Subtasks. Movement and Outcomes arrive in Slice 4.
+Members can create, open, edit, assign, tag, archive, and restore Tasks and one-level Subtasks. They can drag or explicitly move work, close with an Outcome, reopen, and inspect immutable Task history.
 
 ## Current behavior
 
@@ -20,10 +20,14 @@ Members can create, open, edit, assign, tag, archive, and restore Tasks and one-
 - Read-only archive, restore, and deletion scheduling with a seven-day cancellation window
 - Administrator-only invitation status and immutable access audit
 - Task revisions with drafts preserved beside stale-edit conflicts
-- Bounded lane, Subtask, Archive, and Tag autocomplete pages
+- Relative Task ordering with stale-move detection and keyboard movement
+- Completed, Rejected, Cancelled, and same-Space Duplicate Outcomes
+- WIP and open-Subtask warnings that allow changes to commit
+- Immutable transitions, closures, reopenings, and Outcome history
+- Bounded lane, Subtask, Archive, history, and Tag autocomplete pages
 - PostgreSQL persistence and checksummed migrations
 
-Task movement, comments, live updates, reports, permanent Space deletion, and export remain planned. Coolify setup for real-provider sign-in validation is the current deployment step; the remaining team-release gates still apply.
+Comments, Notifications, live updates, reports, permanent Space deletion, and export remain planned. Coolify setup for real-provider sign-in validation is the current deployment step; the remaining team-release gates still apply.
 
 ## Coolify setup
 

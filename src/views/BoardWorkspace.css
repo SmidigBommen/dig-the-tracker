@@ -91,3 +91,15 @@
   .subtask-row { gap: .4rem; }
   .subtask-row .work-key { display: none; }
 }
+
+.task-move, .task-closure, .task-history { border-top: 1px solid var(--border, #e3e7e8); margin-top: 1rem; padding-top: 1rem; }
+.task-move fieldset, .task-closure fieldset { border: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; }
+.task-move label, .task-closure label { display: grid; gap: .35rem; font-size: .85rem; }
+.task-move select, .task-closure select, .task-closure input, .task-closure textarea { max-width: 100%; border: 1px solid #b9c7c5; border-radius: .35rem; padding: .45rem; background: #fff; color: #193b37; font: inherit; }
+.task-history ol { list-style: none; margin: 0; padding: 0; }
+.task-history li { border-bottom: 1px solid #e3e7e8; padding: .7rem 0; }
+.task-history p { margin: 0 0 .25rem; }
+.task-history time { font-size: .75rem; color: #526b67; }
+.board-warnings { background: #fff1ce; color: #604600; padding: .6rem 1rem; border-radius: .4rem; margin: .75rem 0; }
+.wip-limit.exceeded { background: #fff1ce; color: #604600; }
+.work-card[draggable="true"] { cursor: grab; }
