@@ -105,7 +105,8 @@ Production provider sign-in and Space creation are verified below. Backup setup,
 
 Verified on 2026-09-08:
 
-- Dig tracks `master` with Auto Deploy enabled. Its GitHub webhook signing secret is configured, and the user completed the repository webhook setup. The webhook uses `https://coolify.smidigbommen.no/webhooks/source/github/events/manual`, JSON payloads, SSL verification, and push events. A push to `master` is the remaining end-to-end verification.
+- Dig tracks `master` with Auto Deploy enabled. Its GitHub webhook signing secret is configured, and the user completed the repository webhook setup. The webhook uses `https://coolify.smidigbommen.no/webhooks/source/github/events/manual`, JSON payloads, SSL verification, and push events.
+- Automatic deployment is verified: pushing `9856ef1` created deployment `ddfkmjhrchirljcvdizmbehv` with `is_webhook: true` and `is_api: false`. It finished successfully, Coolify reports `running:healthy`, and public readiness returns 200. Direct webhook deployments start from the push and do not wait for GitHub CI.
 - Deployment `bqycygyp7wxgbvvpzm0wmvvq` finished successfully at commit `9452fa6`, containing Slice 3 and the chosen editable Task dialog. Coolify reports `running:healthy`.
 - Public `/health/live` and `/health/ready` return 200. Anonymous `/api/session` returns 401. The served frontend assets are `index-CgKFykaL.js` and `index-Bi_tfM8l.css`, matching the new Task UI.
 - Microsoft sign-in initiation returns 200 with the production callback and S256 PKCE. Completing browser sign-in and checking production Task edits after this deployment still require browser verification.
