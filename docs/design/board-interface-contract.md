@@ -1,6 +1,6 @@
 # BoardModule Interface contract
 
-Status: frozen as the implementation baseline on 2026-09-04. Slices 1 through 4 implement overview, Task/detail and history pages, Tag autocomplete, capture, revision, family archive/restore, movement, closure Outcomes, and warnings. Later slices implement collaboration, reports, and `follow`.
+Status: frozen as the implementation baseline on 2026-09-04. Slices 1 through 5 implement overview, Task/detail and history pages, Tag autocomplete, capture, revision, family archive/restore, movement, closure Outcomes, warnings, comments, mentions, and Notifications. Later slices implement live collaboration, reports, and `follow`.
 
 This document makes the selected `BoardModule` Interface precise enough to plan and test vertical slices. Names describe domain intent, not HTTP routes, database tables, or React state.
 
@@ -72,6 +72,7 @@ export type BoardQuery =
       kind: 'task'
       task: TaskLocator
       subtasks?: PageRequest
+      markNotificationsRead?: boolean
       comments?: PageRequest
       history?: PageRequest
     }
@@ -240,7 +241,7 @@ export type BoardProjectionChange =
     }
   | { kind: 'history-appended'; taskId: TaskId; entries: TaskHistoryEntry[] }
   | { kind: 'notification-upserted'; notification: NotificationView }
-  | { kind: 'notifications-read'; notificationIds?: NotificationId[]; all: boolean }
+  | { kind: 'notifications-read'; memberId: MemberId; notificationIds?: NotificationId[]; taskId?: TaskId; all: boolean; unreadNotifications: number }
   | { kind: 'board-counts-revised'; counts: BoardCounts }
   | { kind: 'query-revisions-changed'; revisions: QueryRevisions }
 ```
@@ -287,6 +288,7 @@ export type BoardFault =
         | 'stale-workflow'
         | 'request-id-reused'
       current?: BoardView
+      currentComment?: CommentView
     }
   | {
       kind: 'rule-violation'
@@ -330,3 +332,13 @@ The `tags` query adds bounded, case-insensitive prefix autocomplete for Space Ta
 Wire values live in `api/contracts/board.ts`; server capabilities and PostgreSQL types remain outside that source. Cursors currently expire after one hour, a Board change, or process restart. Every expiry produces `cursor-expired`. Task-number ordering is private to Slice 3 until relative placement arrives in Slice 4.
 
 Family changes above 200 Tasks emit count and query-revision changes instead of a partial Task projection. `BoardSession` marks loaded pages stale and reloads the bounded overview and open Task detail. Snapshot reads never move its sequence backwards.
+
+## Slice 5 discussion and inbox values
+
+`BoardOverview.currentMemberId` identifies the requesting Member for comment controls and personal read-state reduction. `TaskDetail.comments` is an independent bounded page. Comments return stable author and mention IDs, text, revision, creation and edit times, and an optional removal time. Removal clears text and mentions while retaining authorship, creation time, and a revisioned tombstone. A stale-comment fault carries `currentComment` so the browser can retain and compare the draft.
+
+Notification views contain a stable ID, reason, Task locator and title, actor, read state, and creation and expiry times. Task and inbox reads return the recipient's unread count. The browser sends `markNotificationsRead: true` when opening Task detail. That explicit intent marks its unexpired Notifications read only for that Member and returns the resulting Board sequence. Ordinary Task lookups and page loads leave read state unchanged; this preserves unread discussion when resolving a Duplicate target. Inbox cursors bind recipient identity and inbox revision; comment cursors bind Task identity and Board sequence. Both default to 50 items and cap at 200.
+
+`notifications-read` names its Member and uses one Notification ID, one Task ID, or `all` to keep the projection bounded. Other Members ignore this projection; the live feed must filter it before delivery. Notification creation emits query invalidation, with personal contents read through `inbox`. A Member receives at most one Notification per comment action, with a mention taking precedence over an assigned-Task comment. Editing notifies newly added mentions only. The actor never receives a Notification for their own action.
+
+Closing comments are comments linked to the original closure event. Migrated comments retain original attribution and time. History resolves editable text and tombstones through that link without changing the immutable closure record or adding a duplicate closure entry. No Interface entry or command variant was added in Slice 5.

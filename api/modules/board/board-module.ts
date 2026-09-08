@@ -1,3 +1,6 @@
+import { inboxPage, unreadCount, markNotificationsRead, notify } from './private-notifications.js'
+import { changeComment, commentPage, commentForClosure } from './private-comments.js'
+import { commitChange, appendUpdate } from './private-receipts.js'
 import { restoreFamily } from './private-family.js'
 import { transitionTask, changeOutcome, currentOutcome, type FlowTask } from './private-flow.js'
 import { historyPage } from './private-history.js'
@@ -67,7 +70,7 @@ export class BoardModuleImplementation implements BoardModule {
     access: AuthorizedSpace<'board-read'>,
     query: BoardQuery,
   ): Promise<Result<BoardView, BoardFault>> {
-    if (query.kind !== 'overview' && query.kind !== 'task' && query.kind !== 'tasks' && query.kind !== 'tags') return { ok: false, fault: { kind: 'temporarily-unavailable' } }
+    if (query.kind !== 'overview' && query.kind !== 'task' && query.kind !== 'tasks' && query.kind !== 'tags' && query.kind !== 'inbox') return { ok: false, fault: { kind: 'temporarily-unavailable' } }
     if (query.kind === 'overview' && query.firstPageSize !== undefined
       && (!Number.isInteger(query.firstPageSize) || query.firstPageSize < 1 || query.firstPageSize > 200)) {
       return {
@@ -85,13 +88,14 @@ export class BoardModuleImplementation implements BoardModule {
 
         const boardResult = await client.query<BoardRow>(
           `select id, change_sequence, workflow_revision
-           from team.boards where space_id = $1 for share`,
+           from team.boards where space_id = $1 for ${query.kind === 'task' && query.markNotificationsRead === true ? 'update' : 'share'}`,
           [claims.spaceId],
         )
         const board = boardResult.rows[0]
         if (!board) return { ok: false as const, fault: { kind: 'not-found' as const } }
 
-        const sequence = Number(board.change_sequence) as ChangeSequence
+        let sequence = Number(board.change_sequence) as ChangeSequence
+        if (query.kind === 'inbox') return { ok: true as const, value: { kind: 'inbox' as const, sequence, value: await inboxPage(client, claims.spaceId, claims.memberId, query.page), unreadNotifications: await unreadCount(client, claims.spaceId, claims.memberId) } }
         if (query.kind === 'tags') {
           if (query.text !== undefined && (typeof query.text !== 'string' || [...query.text].length > 40)) {
             throw new BoardRejection({ kind: 'invalid', issues: [{ field: 'text', message: 'Use at most 40 characters.' }] })
@@ -132,8 +136,11 @@ export class BoardModuleImplementation implements BoardModule {
           )
           const task = result.rows[0]
           if (!task) return { ok: false as const, fault: { kind: 'not-found' as const } }
-          return { ok: true as const, value: { kind: 'task' as const, sequence,
-            value: await taskDetail(client, task, sequence, query.subtasks, query.history) satisfies TaskDetail } }
+          const readChange = query.markNotificationsRead === true
+            ? await markNotificationsRead(client, claims.spaceId, claims.memberId, { taskId: task.id as TaskId }) : undefined
+          if (readChange) sequence = (await appendUpdate(client, claims.spaceId, [readChange])).sequence
+          return { ok: true as const, value: { kind: 'task' as const, sequence, unreadNotifications: await unreadCount(client, claims.spaceId, claims.memberId),
+            value: await taskDetail(client, task, sequence, query.subtasks, query.history, query.comments) satisfies TaskDetail } }
         }
         const [columnResult, memberResult] = await Promise.all([
           client.query<ColumnRow>(
@@ -168,6 +175,7 @@ export class BoardModuleImplementation implements BoardModule {
             kind: 'overview' as const,
             sequence,
             value: {
+              currentMemberId: claims.memberId,
               space: {
                 id: permitted.space.id as SpaceId,
                 key: permitted.space.space_key as SpaceKey,
@@ -188,7 +196,7 @@ export class BoardModuleImplementation implements BoardModule {
                 role: member.role,
               })),
               tasks: { items: [] },
-              unreadNotifications: 0,
+              unreadNotifications: await unreadCount(client, claims.spaceId, claims.memberId),
             },
           },
         }
@@ -207,7 +215,7 @@ export class BoardModuleImplementation implements BoardModule {
     const claims = inspectAuthorizedSpace(access)
     if (!claims || claims.use !== 'board-change') return { ok: false, fault: { kind: 'forbidden' } }
     if (request.command.kind !== 'capture-task' && request.command.kind !== 'revise-task'
-      && request.command.kind !== 'change-outcome' && request.command.kind !== 'place-task' && request.command.kind !== 'archive-task' && request.command.kind !== 'restore-task') return { ok: false, fault: { kind: 'temporarily-unavailable' } }
+      && request.command.kind !== 'mark-notification-read' && request.command.kind !== 'mark-all-notifications-read' && request.command.kind !== 'revise-comment' && request.command.kind !== 'remove-comment' && request.command.kind !== 'add-comment' && request.command.kind !== 'change-outcome' && request.command.kind !== 'place-task' && request.command.kind !== 'archive-task' && request.command.kind !== 'restore-task') return { ok: false, fault: { kind: 'temporarily-unavailable' } }
     if (typeof request.requestId !== 'string' || !request.requestId || request.requestId.length > 100) {
       return { ok: false, fault: { kind: 'invalid', issues: [{ field: 'requestId', message: 'Use 1 to 100 characters.' }] } }
     }
@@ -238,6 +246,17 @@ export class BoardModuleImplementation implements BoardModule {
             fault: { kind: 'conflict' as const, reason: 'request-id-reused' as const } }
           return { ok: true as const, value: previous.rows[0].response }
         }
+        if (command.kind === 'mark-notification-read' || command.kind === 'mark-all-notifications-read') {
+          const changed = await markNotificationsRead(client, claims.spaceId, claims.memberId, command.kind === 'mark-notification-read' ? { notificationId: command.notificationId } : {})
+          return { ok: true as const, value: await commitChange(client, claims.spaceId, claims.memberId, request, requestHash,
+            { kind: command.kind }, changed ? [changed] : []) }
+        }
+        if (command.kind === 'add-comment' || command.kind === 'revise-comment' || command.kind === 'remove-comment') {
+          const changed = await changeComment(client, claims.spaceId, claims.memberId, claims.identityId, permitted.role, command)
+          const receipt = await commitChange(client, claims.spaceId, claims.memberId, request, requestHash,
+            { kind: command.kind, taskId: changed.taskId, commentId: changed.comment.id }, changed.changes)
+          return { ok: true as const, value: receipt }
+        }
         if ('assigneeId' in input && input.assigneeId !== undefined && input.assigneeId !== null) {
           const member = await client.query('select id from team.members where space_id = $1 and id::text = $2 and ended_at is null',
             [claims.spaceId, input.assigneeId])
@@ -251,6 +270,7 @@ export class BoardModuleImplementation implements BoardModule {
             fault: { kind: 'rule-violation' as const, rule: 'subtask-depth' as const } }
         }
         let events: TaskHistoryEntry[] = []
+        let previousAssignee: string | null = null
         let row: TaskRow
         let family: TaskRow[] = []
         let affectedOrderColumns: string[] = []
@@ -260,6 +280,7 @@ export class BoardModuleImplementation implements BoardModule {
             [claims.spaceId, command.task.taskId, permitted.space.space_key],
           )
           if (!current.rows[0]) return { ok: false as const, fault: { kind: 'not-found' as const } }
+          previousAssignee = current.rows[0].assignee_id
           if (current.rows[0].revision !== command.task.expectedRevision) {
             const board = await client.query<{ change_sequence: string }>('select change_sequence from team.boards where space_id = $1', [claims.spaceId])
             return { ok: false as const, fault: { kind: 'conflict' as const, reason: 'stale-task' as const,
@@ -332,6 +353,9 @@ export class BoardModuleImplementation implements BoardModule {
           await appendRank(client, claims.spaceId, row.id, row.column_id)
           affectedOrderColumns = [row.column_id]
         }
+        if ((command.kind === 'capture-task' || command.kind === 'revise-task') && row.assignee_id && row.assignee_id !== previousAssignee) {
+          await notify(client, claims.spaceId, claims.memberId, row.id, [{ memberId: row.assignee_id, kind: 'assignment' }])
+        }
         if (input.tags !== undefined) {
           await client.query('delete from team.task_tags where space_id = $1 and task_id = $2', [claims.spaceId, row.id])
           for (const name of input.tags) {
@@ -344,9 +368,6 @@ export class BoardModuleImplementation implements BoardModule {
               [claims.spaceId, row.id, tag.rows[0].id])
           }
         }
-        const advanced = await client.query<{ sequence: string }>(
-          'update team.boards set change_sequence = change_sequence + 1 where space_id = $1 returning change_sequence as sequence', [claims.spaceId],
-        )
         if (command.kind === 'capture-task' || command.kind === 'revise-task') {
           await client.query('insert into team.task_events (space_id, task_id, actor_member_id, kind, details) values ($1,$2,$3,$4,$5)',
             [claims.spaceId, row.id, claims.memberId, command.kind, command])
@@ -359,6 +380,12 @@ export class BoardModuleImplementation implements BoardModule {
         } else if (command.kind === 'capture-task' || command.kind === 'revise-task' || command.kind === 'place-task' || command.kind === 'change-outcome') changes.push({ kind: 'task-upserted', task, placement: await taskPlacement(client, claims.spaceId, task.id) })
         if (command.kind === 'capture-task' || command.kind === 'archive-task' || command.kind === 'restore-task') {
           await client.query('update team.board_columns set order_revision = order_revision + 1 where space_id = $1 and id = any($2::uuid[])', [claims.spaceId, affectedOrderColumns])
+        }
+        for (const event of events) {
+          if (event.kind === 'closed') {
+            const comment = await commentForClosure(client, claims.spaceId, event.id)
+            if (comment) changes.push({ kind: 'comment-upserted', taskId: task.id, comment })
+          }
         }
         if (events.length) changes.push({ kind: 'history-appended', taskId: task.id, entries: events })
         const orders = await client.query<{ id: ColumnId; order_revision: Revision }>('select id, order_revision from team.board_columns where space_id = $1 and archived_at is null', [claims.spaceId])
@@ -380,17 +407,8 @@ export class BoardModuleImplementation implements BoardModule {
           }
         }
         changes.push({ kind: 'board-counts-revised', counts })
-        changes.push({ kind: 'query-revisions-changed', revisions: { tasks: Number(advanced.rows[0].sequence) as Revision, inbox: 1 as Revision } })
-        const receipt: ChangeReceipt = {
-          result: { kind: command.kind, taskId: task.id }, warnings,
-          update: { sequence: Number(advanced.rows[0].sequence) as ChangeSequence, requestId: request.requestId,
-            occurredAt: row.updated_at.toISOString() as import('../shared.js').Instant,
-            changes },
-        }
-        await client.query(`insert into team.board_request_receipts (space_id, member_id, request_id, request_hash, response)
-          values ($1,$2,$3,$4,$5)`, [claims.spaceId, claims.memberId, request.requestId, requestHash, receipt])
-        await client.query('insert into team.board_updates (space_id, sequence, update) values ($1,$2,$3)',
-          [claims.spaceId, receipt.update.sequence, receipt.update])
+        const receipt = await commitChange(client, claims.spaceId, claims.memberId, request, requestHash,
+          { kind: command.kind, taskId: task.id }, changes, warnings)
         return { ok: true as const, value: receipt }
       })
     } catch (error) {
@@ -413,7 +431,7 @@ export class BoardModuleImplementation implements BoardModule {
 async function recheckAccess(
   client: DbClient,
   claims: NonNullable<ReturnType<typeof inspectAuthorizedSpace>>,
-): Promise<{ ok: true; space: AccessSpaceRow } | { ok: false; fault: BoardFault }> {
+): Promise<{ ok: true; space: AccessSpaceRow; role: 'member' | 'space-administrator' } | { ok: false; fault: BoardFault }> {
   const spaceResult = await client.query<AccessSpaceRow>(
     `select id, space_key, display_name, time_zone, lifecycle, revision, access_revision
      from team.spaces where id = $1 for share`,
@@ -425,8 +443,8 @@ async function recheckAccess(
     return { ok: false, fault: { kind: 'forbidden' } }
   }
 
-  const member = await client.query(
-    `select id from team.members
+  const member = await client.query<{ id: string; role: 'member' | 'space-administrator' }>(
+    `select id, role from team.members
      where id = $1 and space_id = $2 and identity_id = $3 and ended_at is null
      for share`,
     [claims.memberId, claims.spaceId, claims.identityId],
@@ -445,7 +463,7 @@ async function recheckAccess(
   if (claims.use !== 'board-read' && space.lifecycle !== 'active') {
     return { ok: false, fault: { kind: 'read-only', reason: space.lifecycle === 'archived' ? 'space-archived' : 'deletion-scheduled' } }
   }
-  return { ok: true, space }
+  return { ok: true, space, role: member.rows[0].role }
 }
 
 interface TaskRow extends FlowTask {
@@ -490,11 +508,12 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value)
 }
 
-async function taskDetail(client: DbClient, task: TaskRow, sequence: number, page?: PageRequest, history?: PageRequest): Promise<TaskDetail> {
+async function taskDetail(client: DbClient, task: TaskRow, sequence: number, page?: PageRequest, history?: PageRequest, comments?: PageRequest): Promise<TaskDetail> {
   return { ...await taskSummary(client, task), description: task.description,
     startedAt: task.started_at?.toISOString() as import('../shared.js').Instant ?? null,
     columnEnteredAt: task.column_entered_at.toISOString() as import('../shared.js').Instant,
     cycleTimeMilliseconds: task.started_at && task.closed_at ? task.closed_at.getTime() - task.started_at.getTime() : null,
+    ...(comments ? { comments: await commentPage(client, task.space_id, task.id, sequence, comments) } : {}),
     ...(history ? { history: await historyPage(client, task.space_id, task.id, sequence, history) } : {}),
     subtasks: await taskPage(client, task.space_id, task.space_key, sequence, { kind: 'parent', taskId: task.id }, page) }
 }

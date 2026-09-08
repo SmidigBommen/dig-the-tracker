@@ -1,6 +1,6 @@
 # Dig team Kanban
 
-Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 through 4 of the team MVP: authenticated Spaces, membership administration, Space lifecycle, Task capture and editing, and work movement and closure.
+Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 through 5 of the team MVP: authenticated Spaces, membership administration, Space lifecycle, Task capture and editing, work movement and closure, comments, and the in-app inbox.
 
 Members can create, open, edit, assign, tag, archive, and restore Tasks and one-level Subtasks. They can drag or explicitly move work, close with an Outcome, reopen, and inspect immutable Task history.
 
@@ -24,10 +24,12 @@ Members can create, open, edit, assign, tag, archive, and restore Tasks and one-
 - Completed, Rejected, Cancelled, and same-Space Duplicate Outcomes
 - WIP and open-Subtask warnings that allow changes to commit
 - Immutable transitions, closures, reopenings, and Outcome history
-- Bounded lane, Subtask, Archive, history, and Tag autocomplete pages
+- Authored comments with revisions, stable Member mentions, tombstones, and administrator moderation
+- Assignment, mention, and assigned-Task comment Notifications with read state and 90-day expiry
+- Bounded lane, Subtask, Archive, comment, history, inbox, and Tag autocomplete pages
 - PostgreSQL persistence and checksummed migrations
 
-Comments, Notifications, live updates, reports, permanent Space deletion, and export remain planned. Coolify setup for real-provider sign-in validation is the current deployment step; the remaining team-release gates still apply.
+Live updates, reports, permanent Space deletion, and export remain planned. Coolify setup for real-provider sign-in validation is the current deployment step; the remaining team-release gates still apply.
 
 ## Coolify setup
 
@@ -119,3 +121,5 @@ Open http://127.0.0.1:5173.
 - [Slice 2 implementation notes](docs/implementation/slice-02-safe-team-membership.md)
 
 - [Slice 3 implementation notes](docs/implementation/slice-03-capture-and-shape-work.md)
+- [Slice 4 implementation notes](docs/implementation/slice-04-move-work-and-record-flow.md)
+- [Slice 5 implementation notes](docs/implementation/slice-05-discuss-and-notify.md)

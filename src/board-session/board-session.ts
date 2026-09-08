@@ -1,8 +1,8 @@
 import type {
-  BoardWarning, Closure, Outcome, TaskDestination, TagView, BoardCommand, BoardFault, BoardOverview, BoardQuery, BoardUpdate, BoardView,
+  NotificationView, CommentView, BoardWarning, Closure, Outcome, TaskDestination, TagView, BoardCommand, BoardFault, BoardOverview, BoardQuery, BoardUpdate, BoardView,
   ChangeReceipt, ChangeRequest, Page, TaskDetail, TaskLocator, TaskSummary,
 } from '../../api/contracts/board.ts'
-import type { ColumnId, MemberId, RequestId, Result, Revision, TaskId, TaskKey } from '../../api/modules/shared.ts'
+import type { NotificationId, CommentId, ColumnId, MemberId, RequestId, Result, Revision, TaskId, TaskKey } from '../../api/modules/shared.ts'
 
 export interface BoardTransport {
   read(query: BoardQuery): Promise<Result<BoardView, BoardFault>>
@@ -19,19 +19,29 @@ export interface TaskDraft {
   tags: string[]
 }
 
+export interface CommentDraft {
+  text: string
+  mentions: MemberId[]
+  commentId?: CommentId
+  expectedRevision?: Revision
+}
+
 export interface BoardSessionState {
+  commentDraft?: CommentDraft
+  commentConflict?: CommentView
   overview: BoardOverview
   tagSuggestions: TagView[]
   detail?: TaskDetail
   draft?: TaskDraft
   conflict?: TaskDetail
+  inbox?: Page<NotificationView>
   archive?: Page<TaskSummary>
   busy: boolean
   savingEdits: boolean
   pagesStale: boolean
   connected: boolean
   error?: string
-  pendingFlowChange?: boolean
+  pendingAction?: boolean
   warnings: BoardWarning[]
 }
 
@@ -45,7 +55,9 @@ export class BoardSession {
   private tagRequest = 0
   private refreshRequest = 0
   private archiveRequest = 0
+  private inboxRequest = 0
   private pageGeneration = 0
+  private readonly commentDrafts = new Map<TaskId, CommentDraft>()
   private editBaseline?: TaskDraft
   private editSave?: Promise<boolean>
 
@@ -76,7 +88,7 @@ export class BoardSession {
   }
 
   updateDraft(changes: Partial<Pick<TaskDraft, 'title' | 'description' | 'assigneeId' | 'tags'>>) {
-    if (this.state.draft && !this.state.pendingFlowChange && this.state.connected && this.state.overview.space.lifecycle === 'active'
+    if (this.state.draft && !this.state.pendingAction && this.state.connected && this.state.overview.space.lifecycle === 'active'
       && (!this.state.busy || this.state.savingEdits)) {
       this.set({ draft: { ...this.state.draft, ...changes }, error: this.state.conflict ? this.state.error : undefined })
     }
@@ -159,7 +171,7 @@ export class BoardSession {
   closeDetail() { this.detailRequest++; this.detailLocator = undefined; this.set({ detail: undefined, draft: undefined, conflict: undefined }) }
   setConnected(connected: boolean) { this.set({ connected }) }
 
-  private canChange() { return !this.state.pendingFlowChange && this.state.connected && !this.state.busy && this.state.overview.space.lifecycle === 'active' }
+  private canChange() { return !this.state.pendingAction && this.state.connected && !this.state.busy && this.state.overview.space.lifecycle === 'active' }
 
   suggestTags = async (text: string) => {
     const request = ++this.tagRequest
@@ -173,11 +185,13 @@ export class BoardSession {
     this.detailLocator = task
     const generation = this.pageGeneration
     const request = ++this.detailRequest
-    const result = await this.transport.read({ kind: 'task', task, ...(this.state.detail?.history ? { history: {} } : {}) })
+    const result = await this.transport.read({ kind: 'task', task, markNotificationsRead: true, comments: {}, ...(this.state.detail?.history ? { history: {} } : {}) })
     if (request !== this.detailRequest || generation !== this.pageGeneration) return
     if (!result.ok) { this.fail(result.fault); return }
     if (result.value.sequence < this.state.overview.board.changeSequence) return
-    if (result.value.kind === 'task') { this.set({ detail: result.value.value, error: undefined }); return true }
+    if (result.value.kind === 'task') { const taskId = result.value.value.id; this.set({ overview: { ...this.state.overview, unreadNotifications: result.value.unreadNotifications ?? this.state.overview.unreadNotifications },
+      inbox: this.state.inbox ? { ...this.state.inbox, items: this.state.inbox.items.map((notification) => notification.task.id === taskId ? { ...notification, read: true } : notification) } : undefined,
+      detail: result.value.value, commentConflict: undefined, commentDraft: this.commentDrafts.get(result.value.value.id) ?? { text: '', mentions: [] }, error: undefined }); return true }
   }
 
   async saveDraft(): Promise<boolean> {
@@ -200,8 +214,8 @@ export class BoardSession {
     if (this.state.draft && this.state.conflict) this.set({ draft: { ...this.state.draft, expectedRevision: this.state.conflict.revision }, conflict: undefined, error: undefined })
   }
 
-  private async commit(command: BoardCommand, reloadTaskId?: TaskId): Promise<ChangeReceipt | undefined> {
-    if (this.state.pendingFlowChange && JSON.stringify(this.pending?.command) !== JSON.stringify(command)) {
+  private async commit(command: BoardCommand, reloadTaskId?: TaskId, reloadInbox = false): Promise<ChangeReceipt | undefined> {
+    if (this.state.pendingAction && JSON.stringify(this.pending?.command) !== JSON.stringify(command)) {
       this.set({ error: 'Retry the pending change before making another change.' })
       return
     }
@@ -225,11 +239,12 @@ export class BoardSession {
       this.applyUpdate(result.value.update)
       if (this.state.pagesStale) await this.refresh()
       if (reloadTaskId && this.state.detail?.id === reloadTaskId) await this.openTask({ kind: 'id', taskId: reloadTaskId })
+      if (reloadInbox) await this.readInbox()
       return result.value
     } catch {
       this.fail({ kind: 'temporarily-unavailable' })
       return
-    } finally { this.set({ busy: false, pendingFlowChange: this.pending?.command.kind === 'place-task' || this.pending?.command.kind === 'change-outcome' }) }
+    } finally { this.set({ busy: false, pendingAction: Boolean(this.pending && this.pending.command.kind !== 'capture-task' && this.pending.command.kind !== 'revise-task') }) }
   }
 
   applyUpdate(update: BoardUpdate) {
@@ -237,6 +252,7 @@ export class BoardSession {
     this.pageGeneration++
     let overview = this.state.overview
     let detail = this.state.detail
+    let inbox = this.state.inbox
     let pagesStale = this.state.pagesStale
     for (const change of update.changes) {
       if (change.kind === 'query-revisions-changed') {
@@ -257,6 +273,14 @@ export class BoardSession {
           }
           return { ...column, tasks: { ...column.tasks, items } }
         }) }
+      } else if (change.kind === 'comment-upserted' && detail?.id === change.taskId && detail.comments) {
+        const existing = detail.comments.items.some((item) => item.id === change.comment.id)
+        detail = { ...detail, comments: { ...detail.comments, items: existing
+          ? detail.comments.items.map((item) => item.id === change.comment.id ? change.comment : item)
+          : [change.comment, ...detail.comments.items] } }
+      } else if (change.kind === 'comment-removed' && detail?.id === change.taskId && detail.comments) {
+        detail = { ...detail, comments: { ...detail.comments, items: detail.comments.items.map((item) => item.id === change.comment.id
+          ? { ...item, text: '', mentions: [], removedAt: change.comment.removedAt, revision: change.comment.revision } : item) } }
       } else if (change.kind === 'history-appended' && detail?.id === change.taskId && detail.history) {
         const ids = new Set(change.entries.map((entry) => entry.id))
         detail = { ...detail, history: { ...detail.history, items: [...change.entries].reverse().concat(detail.history.items.filter((entry) => !ids.has(entry.id))) } }
@@ -268,11 +292,15 @@ export class BoardSession {
       } else if (change.kind === 'board-counts-revised' && change.counts.columns) {
         const counts = change.counts.columns
         overview = { ...overview, columns: overview.columns.map((column) => ({ ...column, counts: counts.find((item) => item.columnId === column.id)?.counts ?? column.counts })) }
+      } else if (change.kind === 'notifications-read' && change.memberId === overview.currentMemberId) {
+        overview = { ...overview, unreadNotifications: change.unreadNotifications }
+        if (inbox) inbox = { ...inbox, items: inbox.items.map((notification) => change.all || change.taskId === notification.task.id || change.notificationIds?.includes(notification.id)
+          ? { ...notification, read: true } : notification) }
       } else if (change.kind === 'membership-ended') {
         overview = { ...overview, members: overview.members.filter((member) => member.id !== change.memberId) }
       }
     }
-    this.set({ detail, pagesStale, overview: { ...overview, board: { ...overview.board, changeSequence: update.sequence } } })
+    this.set({ inbox, detail, pagesStale, overview: { ...overview, board: { ...overview.board, changeSequence: update.sequence } } })
   }
 
   async refresh() {
@@ -330,6 +358,30 @@ export class BoardSession {
     } finally { this.set({ busy: false }) }
   }
 
+  async openInbox(more = false) {
+    if (this.state.busy || more && (!this.state.inbox?.next || this.state.pagesStale)) return
+    this.set({ busy: true })
+    try { await this.readInbox(more) } finally { this.set({ busy: false }) }
+  }
+
+  private async readInbox(more = false) {
+    const request = ++this.inboxRequest, generation = this.pageGeneration
+    const result = await this.transport.read({ kind: 'inbox', page: { after: more ? this.state.inbox?.next : undefined } })
+    if (request !== this.inboxRequest || generation !== this.pageGeneration) return
+    if (!result.ok) { if (result.fault.kind === 'cursor-expired') this.set({ inbox: undefined }); this.fail(result.fault); return }
+    if (result.value.kind === 'inbox' && result.value.sequence >= this.state.overview.board.changeSequence) this.set({
+      inbox: { items: [...(more ? this.state.inbox?.items ?? [] : []), ...result.value.value.items], next: result.value.value.next },
+      overview: { ...this.state.overview, unreadNotifications: result.value.unreadNotifications ?? this.state.overview.unreadNotifications },
+    })
+  }
+
+  closeInbox() { this.inboxRequest++; this.set({ inbox: undefined }) }
+
+  async markNotificationRead(notificationId?: NotificationId) {
+    if (!this.canChange()) return
+    await this.commit(notificationId ? { kind: 'mark-notification-read', notificationId } : { kind: 'mark-all-notifications-read' }, undefined, true)
+  }
+
   closeArchive() { this.archiveRequest++; this.set({ archive: undefined }) }
 
   async loadMoreSubtasks() {
@@ -348,16 +400,21 @@ export class BoardSession {
       } else this.fail(result.fault)
       return
     }
-    if (result.value.kind === 'task' && this.state.detail?.id === detail.id) this.set({ detail: { ...result.value.value, history: this.state.detail.history,
+    if (result.value.kind === 'task' && this.state.detail?.id === detail.id) this.set({ detail: { ...result.value.value, history: this.state.detail.history, comments: this.state.detail.comments,
       subtasks: { items: [...detail.subtasks.items, ...result.value.value.subtasks.items], next: result.value.value.subtasks.next } } })
     } finally { this.set({ busy: false }) }
   }
 
   async retryPendingChange() {
-    if (!this.state.connected || this.state.busy || this.state.overview.space.lifecycle !== 'active' || !this.state.pendingFlowChange || !this.pending) return false
+    if (!this.state.connected || this.state.busy || this.state.overview.space.lifecycle !== 'active' || !this.state.pendingAction || !this.pending) return false
     const command = this.pending.command
-    const result = await this.commit(command, 'task' in command ? command.task.taskId : undefined)
+    const taskId = 'task' in command ? command.task.taskId : command.kind === 'add-comment' ? command.taskId : this.state.detail?.id
+    const result = await this.commit(command, taskId, command.kind === 'mark-notification-read' || command.kind === 'mark-all-notifications-read')
     if (!result) return false
+    if ((command.kind === 'add-comment' || command.kind === 'revise-comment') && result.result.taskId) {
+      this.commentDrafts.delete(result.result.taskId)
+      if (this.state.detail?.id === result.result.taskId) this.set({ commentDraft: { text: '', mentions: [] }, commentConflict: undefined })
+    }
     if (this.state.detail && !this.hasUnsavedEdits()) this.beginEdit()
     return true
   }
@@ -392,6 +449,70 @@ export class BoardSession {
     }
     const completion = this.state.overview.columns.find((column) => column.completion)!
     return this.moveTask(detail, { columnId: completion.id, expectedOrderRevision: completion.orderRevision, place: { kind: 'last' } }, { outcome, ...(comment ? { comment } : {}) })
+  }
+
+  hasUnsavedComments = () => this.commentDrafts.size > 0
+
+  updateCommentDraft(changes: Partial<Pick<CommentDraft, 'text' | 'mentions'>>) {
+    if (!this.canChange() || !this.state.detail) return
+    const draft = { ...this.state.commentDraft ?? { text: '', mentions: [] }, ...changes }
+    if (draft.text || draft.mentions.length || draft.commentId) this.commentDrafts.set(this.state.detail.id, draft)
+    else this.commentDrafts.delete(this.state.detail.id)
+    this.set({ commentDraft: draft })
+  }
+
+  editComment(comment: CommentView) {
+    if (!this.canChange() || !this.state.detail || this.state.commentDraft?.text || this.state.commentDraft?.commentId) return
+    const draft = { commentId: comment.id, expectedRevision: comment.revision, text: comment.text, mentions: comment.mentions.map((member) => member.id) }
+    this.commentDrafts.set(this.state.detail.id, draft)
+    this.set({ commentDraft: draft })
+  }
+
+  cancelComment() {
+    if (this.state.busy || this.state.pendingAction) return
+    if (this.state.detail) this.commentDrafts.delete(this.state.detail.id)
+    this.set({ commentDraft: { text: '', mentions: [] }, commentConflict: undefined })
+  }
+
+  useCurrentCommentRevision() {
+    const current = this.state.commentConflict, detail = this.state.detail, draft = this.state.commentDraft
+    if (!current || !detail || !draft || !this.canChange()) return
+    const revised = { ...draft, commentId: current.removedAt ? undefined : current.id,
+      expectedRevision: current.removedAt ? undefined : current.revision }
+    this.commentDrafts.set(detail.id, revised)
+    this.set({ commentDraft: revised, commentConflict: undefined, error: undefined })
+  }
+
+  async saveComment() {
+    if (!await this.saveEdits() || !this.canChange() || !this.state.detail || !this.state.commentDraft || this.state.commentConflict) return false
+    const { detail, commentDraft: draft } = this.state
+    const command: BoardCommand = draft.commentId ? { kind: 'revise-comment', comment: { commentId: draft.commentId, expectedRevision: draft.expectedRevision! }, text: draft.text, mentions: draft.mentions }
+      : { kind: 'add-comment', taskId: detail.id, text: draft.text, mentions: draft.mentions }
+    const receipt = await this.commit(command, detail.id)
+    if (!receipt) return false
+    this.commentDrafts.delete(detail.id)
+    this.set({ commentDraft: { text: '', mentions: [] }, commentConflict: undefined })
+    this.beginEdit()
+    return true
+  }
+
+  async removeComment(comment: CommentView) {
+    if (!await this.saveEdits() || !this.canChange() || !this.state.detail) return
+    await this.commit({ kind: 'remove-comment', comment: { commentId: comment.id, expectedRevision: comment.revision } }, this.state.detail.id)
+  }
+
+  async loadMoreComments() {
+    const detail = this.state.detail
+    if (!detail?.comments?.next || this.state.busy || this.state.pagesStale) return
+    const generation = this.pageGeneration, request = this.detailRequest
+    this.set({ busy: true })
+    try {
+      const result = await this.transport.read({ kind: 'task', task: { kind: 'id', taskId: detail.id }, comments: { after: detail.comments.next } })
+      if (generation !== this.pageGeneration || request !== this.detailRequest) return
+      if (!result.ok) { if (result.fault.kind === 'cursor-expired') await this.openTask({ kind: 'id', taskId: detail.id }); this.fail(result.fault); return }
+      if (result.value.kind === 'task' && result.value.value.comments) this.set({ detail: { ...this.state.detail!,
+        comments: { items: [...detail.comments.items, ...result.value.value.comments.items], next: result.value.value.comments.next } } })
+    } finally { this.set({ busy: false }) }
   }
 
   async loadHistory(more = false) {
@@ -437,6 +558,7 @@ export class BoardSession {
       error = 'Someone changed this Task. Compare your draft with the current version.'
       if (fault.current?.kind === 'task') this.set({ conflict: fault.current.value, detail: fault.current.value })
     }
+    if (fault.kind === 'conflict' && fault.reason === 'stale-comment') { error = 'This comment changed. Your draft is kept beside the current version.'; this.set({ commentConflict: fault.currentComment }) }
     if (fault.kind === 'conflict' && fault.reason === 'stale-order') error = 'Another move changed this Column. The Board has been refreshed; choose the position again.'
     if (fault.kind === 'read-only') { error = 'This Space is read-only.'; this.set({ overview: { ...this.state.overview,
       space: { ...this.state.overview.space, lifecycle: fault.reason === 'space-archived' ? 'archived' : 'deletion_scheduled' } } }) }

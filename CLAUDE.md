@@ -8,12 +8,12 @@
 
 ## Current implementation
 
-- Slices 1 through 4 of the small-team MVP are implemented.
-- The running React entry is `src/team/TeamApp.tsx`; it handles sign-in, invitations, Space selection, membership administration, Space lifecycle, Task capture, editing, assignment, Tags, Subtasks, Task Archive, movement, closure Outcomes, history, reload, and sign-out.
+- Slices 1 through 5 of the small-team MVP are implemented.
+- The running React entry is `src/team/TeamApp.tsx`; it handles sign-in, invitations, Space selection, membership administration, Space lifecycle, Task capture, editing, assignment, Tags, Subtasks, Task Archive, movement, closure Outcomes, history, comments, mentions, the in-app inbox, reload, and sign-out.
 - The Node HTTP Adapter is `api/server.ts`.
 - `IdentityModule` owns OpenID Connect correlation and PostgreSQL sessions.
 - `SpaceModule` owns Space reads, invitations, membership, roles, lifecycle, audit, idempotent changes, access invalidation, and request authorization.
-- `BoardModule` owns Task reads and changes, revisions, numbering, Tags, Subtasks, archive/restore, relative placement, order revisions, closure Outcomes, immutable flow history, cursor pages, and transaction-time access checks. `follow` remains Slice 6 work.
+- `BoardModule` owns Task reads and changes, revisions, numbering, Tags, Subtasks, archive/restore, relative placement, order revisions, closure Outcomes, immutable flow history, comment revisions and tombstones, Notifications, cursor pages, and transaction-time access checks. `follow` remains Slice 6 work.
 - `BoardSession` owns browser Task state and drafts through the `BoardTransport` port. Owned HTTP and in-memory test Adapters share wire values in `api/contracts/board.ts`.
 - PostgreSQL 16 uses checksummed migrations. New team tables live in the `team` schema.
 - Slice 3 removes the prototype mutation path and drops its public-schema tables with a forward migration. Team data remains in the `team` schema.
@@ -47,4 +47,4 @@
 
 ## Next slice
 
-For Slice 5 comments and Notifications, read [the vertical-slice plan](docs/design/vertical-slice-plan.md), [Board Interface contract](docs/design/board-interface-contract.md), and [Slice 4 notes](docs/implementation/slice-04-move-work-and-record-flow.md). Closing comments currently live in immutable closure history; integrate them with comments without losing attribution or duplicating history. Preserve atomic receipts, Task events, warnings, and Board updates. Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.
+For Slice 6 live collaboration, read [the vertical-slice plan](docs/design/vertical-slice-plan.md), [Board Interface contract](docs/design/board-interface-contract.md), and [Slice 5 notes](docs/implementation/slice-05-discuss-and-notify.md). Preserve atomic receipts, Task events, Notifications, and Board updates. Inbox contents belong to the recipient; filter personal projections before feed delivery. Inbox revision writes use Board-owned rows after the Board lock, keeping membership locks in their established order. Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.

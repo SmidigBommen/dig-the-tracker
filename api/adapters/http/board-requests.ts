@@ -1,5 +1,5 @@
-import type { BoardQuery, CaptureTask, ChangeRequest, TaskDestination, Closure, Outcome, TaskChanges, VersionedTask } from '../../contracts/board.js'
-import type { ColumnId, MemberId, PageRequest, RequestId, Revision, TaskId } from '../../modules/shared.js'
+import type { BoardQuery, CaptureTask, ChangeRequest, VersionedComment, TaskDestination, Closure, Outcome, TaskChanges, VersionedTask } from '../../contracts/board.js'
+import type { ColumnId, CommentId, NotificationId, MemberId, PageRequest, RequestId, Revision, TaskId } from '../../modules/shared.js'
 
 export class InvalidBoardRequest extends Error {}
 
@@ -42,9 +42,24 @@ function changes(value: unknown, capture: boolean): CaptureTask | TaskChanges {
 
 export function parseBoardChange(value: unknown): ChangeRequest {
   const body = object(value, ['requestId', 'command'])
-  const command = object(body.command, ['kind', 'input', 'task', 'changes', 'destination', 'closure', 'outcome'])
+  const command = object(body.command, ['kind', 'input', 'task', 'changes', 'destination', 'closure', 'outcome', 'taskId', 'text', 'mentions', 'comment', 'notificationId'])
   const requestId = string(body.requestId) as RequestId
   switch (command.kind) {
+    case 'mark-notification-read':
+      object(command, ['kind', 'notificationId'])
+      return { requestId, command: { kind: 'mark-notification-read', notificationId: string(command.notificationId) as NotificationId } }
+    case 'mark-all-notifications-read':
+      object(command, ['kind'])
+      return { requestId, command: { kind: 'mark-all-notifications-read' } }
+    case 'add-comment':
+      object(command, ['kind', 'taskId', 'text', 'mentions'])
+      return { requestId, command: { kind: 'add-comment', taskId: string(command.taskId) as TaskId, text: string(command.text), mentions: mentions(command.mentions) } }
+    case 'revise-comment':
+      object(command, ['kind', 'comment', 'text', 'mentions'])
+      return { requestId, command: { kind: 'revise-comment', comment: comment(command.comment), text: string(command.text), mentions: mentions(command.mentions) } }
+    case 'remove-comment':
+      object(command, ['kind', 'comment'])
+      return { requestId, command: { kind: 'remove-comment', comment: comment(command.comment) } }
     case 'capture-task':
       object(command, ['kind', 'input'])
       return { requestId, command: { kind: 'capture-task', input: changes(command.input, true) as CaptureTask } }
@@ -76,8 +91,12 @@ export function parseBoardChange(value: unknown): ChangeRequest {
 }
 
 export function parseBoardQuery(value: unknown): BoardQuery {
-  const input = object(value, ['kind', 'firstPageSize', 'selection', 'page', 'task', 'subtasks', 'history', 'text'])
+  const input = object(value, ['kind', 'firstPageSize', 'selection', 'page', 'task', 'subtasks', 'history', 'comments', 'text', 'markNotificationsRead'])
   switch (input.kind) {
+    case 'inbox':
+      object(input, ['kind', 'page'])
+      page(input.page)
+      return input as BoardQuery
     case 'tags':
       object(input, ['kind', 'text', 'page'])
       if (input.text !== undefined) string(input.text)
@@ -97,13 +116,15 @@ export function parseBoardQuery(value: unknown): BoardQuery {
       return input as BoardQuery
     }
     case 'task': {
-      object(input, ['kind', 'task', 'subtasks', 'history'])
+      object(input, ['kind', 'task', 'subtasks', 'history', 'comments', 'markNotificationsRead'])
+      if (input.markNotificationsRead !== undefined && typeof input.markNotificationsRead !== 'boolean') throw new InvalidBoardRequest('Invalid Task open flag')
       const locator = object(input.task, ['kind', 'taskId', 'taskKey'])
       if (locator.kind === 'id') { object(locator, ['kind', 'taskId']); string(locator.taskId) }
       else if (locator.kind === 'key') { object(locator, ['kind', 'taskKey']); string(locator.taskKey) }
       else throw new InvalidBoardRequest('Invalid Task locator')
       page(input.subtasks)
       page(input.history)
+      page(input.comments)
       return input as BoardQuery
     }
     default: throw new InvalidBoardRequest('Unknown Board query')
@@ -125,4 +146,15 @@ function closure(value: unknown): Closure | undefined {
   const input = object(value, ['outcome', 'comment'])
   return { ...(input.outcome !== undefined ? { outcome: outcome(input.outcome) } : {}),
     ...(input.comment !== undefined ? { comment: string(input.comment) } : {}) }
+}
+
+function comment(value: unknown): VersionedComment {
+  const input = object(value, ['commentId', 'expectedRevision'])
+  if (!Number.isSafeInteger(input.expectedRevision) || Number(input.expectedRevision) < 1) throw new InvalidBoardRequest('Invalid comment revision')
+  return { commentId: string(input.commentId) as CommentId, expectedRevision: input.expectedRevision as Revision }
+}
+
+function mentions(value: unknown): MemberId[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) throw new InvalidBoardRequest('Invalid mentions')
+  return value as MemberId[]
 }

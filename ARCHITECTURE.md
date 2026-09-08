@@ -1,6 +1,6 @@
 # Architecture
 
-Dig is a React, Node, and PostgreSQL modular monolith. Slices 1 through 4 run authentication, Space membership, lifecycle controls, and Task capture, editing, movement, closure, and history through three server Modules. OpenID Connect is the only true-external dependency.
+Dig is a React, Node, and PostgreSQL modular monolith. Slices 1 through 5 run authentication, Space membership, lifecycle controls, and Task capture, editing, movement, closure, history, comments, and Notifications through three server Modules. OpenID Connect is the only true-external dependency.
 
 ## Running path
 
@@ -60,11 +60,17 @@ Its Implementation owns state, nonce, PKCE, identity mapping, secret hashing, ex
 
 Its Implementation owns Space-key reservation, invitation digests and expiry, the last-administrator rule, access revisions, session effects, audit writes, and lifecycle rules. Access-changing transactions publish an optional invalidation after commit for the live feed added in Slice 6.
 
-`BoardModule` keeps the selected `read`, `change`, and `follow` Interface. Reads now cover overview, Task detail, lane and Archive pages, Subtask pages, Tag autocomplete, and independently paged Task history. Changes cover capture, revision, relative placement, Outcome changes, family archive, and family restore. The live feed remains Slice 6 work.
+`BoardModule` keeps the selected `read`, `change`, and `follow` Interface. Reads now cover overview, Task detail, lane and Archive pages, Subtask pages, Tag autocomplete, independently paged comments and Task history, and the recipient's inbox. Changes cover capture, revision, relative placement, Outcome changes, family archive, family restore, authored comments, moderation, and personal Notification read state. The live feed remains Slice 6 work.
 
-The Board transaction rechecks access, locks its Board row to serialize numbering and change sequences, checks the Member-scoped request receipt, validates revisions and relationships, then commits Task state, events, the receipt, and `BoardUpdate`. This lock never covers another Space. Space membership transactions call the Board-owned private unassignment operation before ending membership.
+The Board transaction rechecks access, locks its Board row to serialize numbering and change sequences, checks the Member-scoped request receipt, validates revisions and relationships, then commits Task or comment state, events, Notifications, moderation audit when applicable, the receipt, and `BoardUpdate`. This lock never covers another Space. Space membership transactions call the Board-owned private unassignment operation before ending membership.
 
 Column pages use indexed relative ranks with Task numbers as a stable tie-breaker. Archive and Subtask pages retain Task-number ordering. Encrypted cursors bind a Space, selection, ordering, and Board sequence. A change, one-hour expiry, or process restart invalidates the cursor and requires a fresh bounded page. Ranks stay private. Commands name first, last, or a stable neighboring Task ID and the destination Column order revision. Exhausted rank gaps rebalance within that Column under the Board transaction lock. Capture, movement, archive, and restore advance affected order revisions.
+
+Comment pages use immutable insertion ordering with their own Task-scoped cursors. Inbox cursors bind the recipient and their inbox revision. Expired Notifications disappear from reads and unread counts at 90 days; inbox reads also remove that recipient's expired rows. Inbox revisions live in Board-owned `member_inboxes` rows, so Notification creation never upgrades membership locks after acquiring the Board lock.
+
+Opening a Task sends an explicit `markNotificationsRead: true` query flag and marks only the opener's Notifications for that Task read. Ordinary Task lookups and page loads leave read state unchanged. These reads acquire the Board write lock before changing read state and append a Board update when anything changes. This personal read state remains available in an archived Space. Explicit Board changes still require an active Space. Shared updates invalidate inbox queries without exposing inbox contents; read-state projections identify the Member and must be filtered before Slice 6 feed delivery.
+
+Closing comments link to their immutable closure event. A forward migration imports existing closure text with its original author and timestamp. Comment edits and tombstones affect the text shown in history while closure identity, time, and Outcome remain unchanged. SpaceModule owns the private moderation audit writer invoked within the Board transaction.
 
 ## Session and sign-in flow
 
@@ -78,7 +84,7 @@ Column pages use indexed relative ranks with Task numbers as a stable tie-breake
 
 ## PostgreSQL
 
-The `team` schema contains identities, sign-in attempts, browser sessions, Space-key reservations, Spaces, Members, invitations, administrative audit, Boards, Board Columns, Tasks, Tags, Task/Tag links, Task events, Board updates, and Space and Board idempotency receipts. Task rows retain first Active entry, latest Column entry, current closure time, Outcome, and an optional same-Space Duplicate target. Transition, closure, reopening, and Outcome-change events append beside current state.
+The `team` schema contains identities, sign-in attempts, browser sessions, Space-key reservations, Spaces, Members, invitations, administrative audit, Boards, Board Columns, Tasks, Tags, Task/Tag links, Task events, comments, mention bindings, Notifications, inbox revisions, Board updates, and Space and Board idempotency receipts. Task rows retain first Active entry, latest Column entry, current closure time, Outcome, and an optional same-Space Duplicate target. Transition, closure, reopening, and Outcome-change events append beside current state.
 
 Every Board Column carries `space_id`. A composite foreign key guarantees that its Board belongs to the same Space. Partial unique indexes enforce one Intake and one Completion Column per active Board. Database checks enforce valid flow roles and positive Active WIP limits.
 
@@ -88,7 +94,7 @@ The Slice 3 retirement migration drops the unused public-schema prototype tables
 
 `src/team/TeamApp.tsx` handles authentication and Space navigation and management. Its Board renders `src/views/BoardWorkspace.tsx`. `BoardSession` owns Task loading, drafts, cursor pages, connection state, and authoritative receipt reduction. The HTTP Adapter implements `BoardTransport`; tests use an in-memory Adapter at that port.
 
-Task detail loads descriptions separately from lane summaries. A stale edit preserves the draft beside the current Task and requires the Member to choose the current revision before retrying. An uncertain network response preserves the request ID so reconnecting cannot duplicate a capture. The browser pauses changes while disconnected. Drag and keyboard Move actions share the same relative placement command. Completion defaults to Completed; the dialog also offers Rejected, Cancelled, and Duplicate. WIP and open-Subtask warnings describe committed changes. History loads independently and preserves actor identity and transition Column snapshots. An uncertain movement or Outcome change keeps its request for explicit retry after reconnection. Server-Sent Events and automatic gap recovery remain Slice 6 work.
+Task detail loads descriptions separately from lane summaries. A stale edit preserves the draft beside the current Task and requires the Member to choose the current revision before retrying. An uncertain network response preserves the request ID so reconnecting cannot duplicate a capture. The browser pauses changes while disconnected. Drag and keyboard Move actions share the same relative placement command. Completion defaults to Completed; the dialog also offers Rejected, Cancelled, and Duplicate. WIP and open-Subtask warnings describe committed changes. History loads independently and preserves actor identity and transition Column snapshots. An uncertain movement or Outcome change keeps its request for explicit retry after reconnection. Comment drafts survive Task navigation and uncertain requests. A stale comment shows the current text beside the retained draft before an explicit retry. The inbox opens Tasks and supports individual and all-read actions. Server-Sent Events and automatic gap recovery remain Slice 6 work.
 
 ## Deployment state
 

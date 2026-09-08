@@ -39,6 +39,7 @@ export interface BoardMemberView {
 }
 
 export interface BoardOverview {
+  currentMemberId: MemberId
   space: {
     id: SpaceId
     key: SpaceKey
@@ -81,12 +82,21 @@ export interface TaskDetail extends TaskSummary {
   columnEnteredAt: Instant
   cycleTimeMilliseconds: number | null
   history?: Page<TaskHistoryEntry>
+  comments?: Page<CommentView>
   subtasks: Page<TaskSummary>
 }
 
 export interface FlowView { columns: BoardColumnView[] }
 export interface WorkloadView { members: BoardMemberView[] }
-export interface NotificationView { id: NotificationId; read: boolean }
+export interface NotificationView {
+  id: NotificationId
+  read: boolean
+  kind: 'assignment' | 'mention' | 'comment'
+  task: { id: TaskId; key: TaskKey; title: string }
+  actor: { id: MemberId; displayName: string }
+  createdAt: Instant
+  expiresAt: Instant
+}
 
 export type TaskLocator =
   | { kind: 'id'; taskId: TaskId }
@@ -101,7 +111,7 @@ export type BoardQuery =
   | { kind: 'tags'; text?: string; page?: PageRequest }
   | { kind: 'overview'; firstPageSize?: number }
   | { kind: 'tasks'; selection: TaskSelection; page?: PageRequest }
-  | { kind: 'task'; task: TaskLocator; subtasks?: PageRequest; comments?: PageRequest; history?: PageRequest }
+  | { kind: 'task'; task: TaskLocator; markNotificationsRead?: boolean; subtasks?: PageRequest; comments?: PageRequest; history?: PageRequest }
   | { kind: 'flow' }
   | { kind: 'workload' }
   | { kind: 'inbox'; page?: PageRequest }
@@ -110,10 +120,10 @@ export type BoardView =
   | { kind: 'tags'; value: Page<TagView>; sequence: ChangeSequence }
   | { kind: 'overview'; value: BoardOverview; sequence: ChangeSequence }
   | { kind: 'tasks'; value: Page<TaskSummary>; sequence: ChangeSequence }
-  | { kind: 'task'; value: TaskDetail; sequence: ChangeSequence }
+  | { kind: 'task'; value: TaskDetail; sequence: ChangeSequence; unreadNotifications?: number }
   | { kind: 'flow'; value: FlowView; sequence: ChangeSequence }
   | { kind: 'workload'; value: WorkloadView; sequence: ChangeSequence }
-  | { kind: 'inbox'; value: Page<NotificationView>; sequence: ChangeSequence }
+  | { kind: 'inbox'; value: Page<NotificationView>; sequence: ChangeSequence; unreadNotifications?: number }
 
 export interface VersionedTask { taskId: TaskId; expectedRevision: Revision }
 export interface VersionedComment { commentId: CommentId; expectedRevision: Revision }
@@ -162,7 +172,7 @@ export type BoardCommand =
   | { kind: 'set-workflow'; expectedRevision: Revision; desired: WorkflowPlan }
 
 export interface ChangeRequest { requestId: RequestId; command: BoardCommand }
-export type BoardCommandResult = { kind: BoardCommand['kind']; taskId?: TaskId }
+export type BoardCommandResult = { kind: BoardCommand['kind']; taskId?: TaskId; commentId?: CommentId }
 export type BoardWarning =
   | { kind: 'wip-limit-exceeded'; columnId: ColumnId; limit: number; actual: number; parentTasks: number; subtasks: number }
   | { kind: 'open-subtasks'; taskId: TaskId; count: number }
@@ -173,8 +183,17 @@ export interface QueryRevisions { tasks: Revision; inbox: Revision }
 export interface TaskPlacement { columnId: ColumnId; beforeTaskId?: TaskId; afterTaskId?: TaskId }
 export interface WorkflowView { columns: BoardColumnView[] }
 export interface MemberSummary { id: MemberId; displayName: string; role: BoardMemberView['role'] }
-export interface CommentView { id: CommentId; text: string; revision: Revision }
-export interface CommentTombstone { id: CommentId; removedAt: Instant }
+export interface CommentView {
+  id: CommentId
+  text: string
+  revision: Revision
+  author: { id: MemberId; displayName: string }
+  mentions: Array<{ id: MemberId; displayName: string }>
+  createdAt: Instant
+  editedAt: Instant | null
+  removedAt: Instant | null
+}
+export interface CommentTombstone { id: CommentId; removedAt: Instant; revision: Revision }
 export interface TaskHistoryEntry {
   id: string
   occurredAt: Instant
@@ -199,7 +218,7 @@ export type BoardProjectionChange =
   | { kind: 'comment-removed'; taskId: TaskId; comment: CommentTombstone }
   | { kind: 'history-appended'; taskId: TaskId; entries: TaskHistoryEntry[] }
   | { kind: 'notification-upserted'; notification: NotificationView }
-  | { kind: 'notifications-read'; notificationIds?: NotificationId[]; all: boolean }
+  | { kind: 'notifications-read'; memberId: MemberId; notificationIds?: NotificationId[]; taskId?: TaskId; all: boolean; unreadNotifications: number }
   | { kind: 'column-order-revised'; columnId: ColumnId; revision: Revision }
   | { kind: 'board-counts-revised'; counts: BoardCounts }
   | { kind: 'query-revisions-changed'; revisions: QueryRevisions }
@@ -222,7 +241,7 @@ export type BoardFault =
   | { kind: 'not-found' }
   | { kind: 'forbidden' }
   | { kind: 'read-only'; reason: 'space-archived' | 'deletion-scheduled' }
-  | { kind: 'conflict'; reason: 'stale-task' | 'stale-comment' | 'stale-order' | 'stale-workflow' | 'request-id-reused'; current?: BoardView }
+  | { kind: 'conflict'; reason: 'stale-task' | 'stale-comment' | 'stale-order' | 'stale-workflow' | 'request-id-reused'; current?: BoardView; currentComment?: CommentView }
   | { kind: 'rule-violation'; rule: 'subtask-depth' | 'column-not-empty' | 'intake-required' | 'completion-required' | 'active-wip-limit-required' | 'closure-required' | 'duplicate-target-invalid' }
   | { kind: 'cursor-expired' }
   | { kind: 'rate-limited'; retryAfterSeconds: number }

@@ -67,6 +67,7 @@ export interface InvitationView {
 }
 
 export type SpaceAuditAction =
+  | 'comment-moderated'
   | 'space-created'
   | 'space-revised'
   | 'invitation-issued'

@@ -1,5 +1,6 @@
 import type { DbClient } from '../../db.js'
 import type { Closure, Outcome, TaskHistoryEntry } from '../../contracts/board.js'
+import { addComment } from './private-comments.js'
 import { BoardRejection } from './private-cursors.js'
 import { recordEvent } from './private-history.js'
 
@@ -51,7 +52,14 @@ export async function transitionTask(client: DbClient, spaceId: string, actorId:
     closed_at = case when $3 = 'complete' then now() else null end, outcome = $4, duplicate_task_id = $5
     where space_id = $1 and id = $2`, [spaceId, task.id, toColumn.flowRole, outcome?.kind ?? null, outcome?.kind === 'duplicate' ? outcome.taskId : null])
   const events = [await recordEvent(client, spaceId, task.id, actorId, 'column-transition', { fromColumn, toColumn })]
-  if (closing) events.push(await recordEvent(client, spaceId, task.id, actorId, 'closed', { outcome: outcome!, comment: closure?.comment }))
+  if (closing) {
+    const event = await recordEvent(client, spaceId, task.id, actorId, 'closed', { outcome: outcome!, comment: closure?.comment })
+    events.push(event)
+    if (closure?.comment) {
+      const comment = await addComment(client, spaceId, task.id, actorId, closure.comment)
+      await client.query('update team.task_comments set origin_event_id = $3 where space_id = $1 and id = $2', [spaceId, comment.id, event.id])
+    }
+  }
   else if (task.closed_at) events.push(await recordEvent(client, spaceId, task.id, actorId, 'reopened', { previousOutcome: currentOutcome(task)! }))
   return events
 }

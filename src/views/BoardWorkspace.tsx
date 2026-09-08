@@ -2,22 +2,25 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore, type DragEven
 import type { BoardOverview, BoardWarning, Outcome, TaskDestination, TaskHistoryEntry, TaskSummary } from '../../api/contracts/board.ts'
 import type { ColumnId, MemberId } from '../../api/modules/shared.ts'
 import { BoardSession, type BoardTransport } from '../board-session/board-session.ts'
+import { InboxPanel } from './InboxPanel.tsx'
+import { CommentPanel } from './CommentPanel.tsx'
+import { PlainText } from './PlainText.tsx'
 import './BoardWorkspace.css'
 
 export function BoardWorkspace({ initialBoard, transport }: { initialBoard: BoardOverview; transport: BoardTransport }) {
   const [session] = useState(() => new BoardSession(transport, initialBoard))
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot)
   const { overview, draft, detail, busy, connected, conflict, savingEdits } = state
-  const readOnly = !connected || overview.space.lifecycle !== 'active' || Boolean(state.pendingFlowChange)
+  const readOnly = !connected || overview.space.lifecycle !== 'active' || Boolean(state.pendingAction)
   const dirty = session.hasUnsavedEdits()
   const dragged = useRef<TaskSummary | null>(null)
-  const canDrag = !readOnly && !busy && !detail && !draft && !state.archive
+  const canDrag = !readOnly && !busy && !detail && !draft && !state.archive && !state.inbox
 
   useEffect(() => {
     const offline = () => session.setConnected(false)
     const online = () => { void session.refresh() }
     const leaving = (event: BeforeUnloadEvent) => {
-      if (session.hasUnsavedEdits() || session.getSnapshot().draft && !session.getSnapshot().draft?.taskId) event.preventDefault()
+      if (session.hasUnsavedComments() || session.hasUnsavedEdits() || session.getSnapshot().draft && !session.getSnapshot().draft?.taskId) event.preventDefault()
     }
     window.addEventListener('offline', offline)
     window.addEventListener('online', online)
@@ -63,11 +66,12 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
   return <div className="board-workspace">
     <div className="work-toolbar">
       <button className="primary-button" disabled={readOnly || busy} onClick={() => session.beginCapture()}>New Task</button>
+      <button className="quiet-button" disabled={busy} onClick={() => void session.openInbox()}>Inbox {overview.unreadNotifications > 0 ? `(${overview.unreadNotifications})` : ''}</button>
       <button className="quiet-button" disabled={busy} onClick={() => void session.openArchive()}>Task Archive</button>
       <button className="quiet-button" disabled={busy} onClick={() => void reconnect()}>{connected ? 'Refresh Board' : 'Reconnect'}</button>
     </div>
     {!detail && <Warnings warnings={state.warnings} overview={overview} />}
-    {!detail && state.pendingFlowChange && <button className="quiet-button" disabled={!connected || busy} onClick={() => void session.retryPendingChange()}>Retry pending change</button>}
+    {!detail && state.pendingAction && <button className="quiet-button" disabled={!connected || busy} onClick={() => void session.retryPendingChange()}>Retry pending change</button>}
     {state.pagesStale && <p role="status">The loaded pages changed. Refresh the Board to continue.</p>}
     {!connected && !detail && !draft && <p role="status">Connection lost. The Board is readable; editing is paused.</p>}
     {state.error && !detail && !draft && <p role="alert" className="team-error">{state.error}</p>}
@@ -83,7 +87,8 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
         {column.tasks.next && <button className="quiet-button" disabled={busy || state.pagesStale} onClick={() => void session.loadMore(column.id)}>Load more in {column.name}</button>}
       </section>)}
     </div>
-    {state.archive && !detail && !draft && <TaskDialog title="Task Archive" onClose={() => session.closeArchive()}>
+    {state.inbox && !detail && !draft && <TaskDialog title="Inbox" onClose={() => session.closeInbox()}><InboxPanel session={session} state={state} readOnly={readOnly} /></TaskDialog>}
+    {state.archive && !state.inbox && !detail && !draft && <TaskDialog title="Task Archive" onClose={() => session.closeArchive()}>
       {state.archive.items.length ? <div className="work-cards">{state.archive.items.map(card)}</div> : <p>No archived Tasks.</p>}
       {state.archive.next && <button className="quiet-button" disabled={busy || state.pagesStale} onClick={() => void session.openArchive(true)}>Load more archived Tasks</button>}
     </TaskDialog>}
@@ -94,7 +99,7 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
     }>
       {detail.parentTaskId && <button className="task-breadcrumb" disabled={busy} onClick={() => void session.openEditor({ kind: 'id', taskId: detail.parentTaskId! })}>← Parent Task</button>}
       <Warnings warnings={state.warnings} overview={overview} />
-      {state.pendingFlowChange && <button className="quiet-button" disabled={!connected || busy} onClick={() => void session.retryPendingChange()}>Retry pending change</button>}
+      {state.pendingAction && <button className="quiet-button" disabled={!connected || busy} onClick={() => void session.retryPendingChange()}>Retry pending change</button>}
       {detail.outcome && <p className="lifecycle-badge">Outcome: {outcomeName(detail.outcome.kind)}</p>}
       {detail.outcome?.kind === 'duplicate' && <button className="text-button" disabled={busy}
         onClick={() => { if (detail.outcome?.kind === 'duplicate') void session.openEditor({ kind: 'id', taskId: detail.outcome.taskId }) }}>Open Duplicate target</button>}
@@ -125,6 +130,7 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
         onMove={(destination) => session.moveTask(detail, destination)} />}
       {!detail.archived && <TaskClosure key={`closure-${detail.id}-${Boolean(detail.closedAt)}`} closed={Boolean(detail.closedAt)} current={detail.outcome}
         disabled={readOnly || busy || Boolean(conflict)} onSave={(kind, key, comment) => session.chooseOutcome(kind, key, comment)} />}
+      <CommentPanel session={session} state={state} disabled={readOnly || busy || detail.archived} />
       <section className="task-history" aria-label="Task history">
         <h3>History</h3>
         {!detail.history ? <button className="quiet-button" disabled={busy} onClick={() => void session.loadHistory()}>Show history</button>
@@ -243,10 +249,6 @@ function DescriptionLinks({ text }: { text: string }) {
   return links.length > 0 && <div className="description-links" aria-label="Description links">{links.map((link) => <a key={link} href={link} target="_blank" rel="noreferrer noopener">↗ {link}</a>)}</div>
 }
 
-function PlainText({ text }: { text: string }) {
-  return <p className="task-description">{text.split(/(https?:\/\/[^\s<>]+)/g).map((part, index) => /^https?:\/\//.test(part)
-    ? <a key={index} href={part} target="_blank" rel="noreferrer noopener">{part}</a> : part)}</p>
-}
 
 function TaskMove({ task, overview, disabled, onMove }: { task: TaskSummary; overview: BoardOverview; disabled: boolean; onMove: (destination: TaskDestination) => Promise<boolean> }) {
   const [columnId, setColumnId] = useState(task.columnId)
