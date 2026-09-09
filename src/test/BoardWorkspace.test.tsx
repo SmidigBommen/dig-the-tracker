@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BoardWorkspace } from '../views/BoardWorkspace.tsx'
 import { capturedTask, emptyBoard, MemoryBoardTransport } from './board-fixtures.ts'
@@ -63,6 +63,19 @@ describe('capture and edit Tasks in the browser', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(transport.requests[0]).toMatchObject({ command: { kind: 'revise-task', changes: { title: 'Save before closing' } } })
     expect(card).toHaveFocus()
+  })
+
+  it('keeps title focus when Enter confirms an IME composition', async () => {
+    const transport = new MemoryBoardTransport()
+    const board = { ...emptyBoard, columns: [{ ...emptyBoard.columns[0], tasks: { items: [capturedTask] } }] }
+    render(<BoardWorkspace initialBoard={board} transport={transport} />)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /DIG-1/ }))
+    const title = await screen.findByLabelText('Title')
+    await user.click(title)
+    fireEvent.keyDown(title, { key: 'Enter', isComposing: true })
+    expect(title).toHaveFocus()
+    expect(transport.requests).toHaveLength(0)
   })
 
   it('opens archived Tasks without an editable draft', async () => {

@@ -1,10 +1,15 @@
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type DragEvent, type ReactNode } from 'react'
-import type { BoardOverview, BoardWarning, Outcome, TaskDestination, TaskHistoryEntry, TaskSummary } from '../../api/contracts/board.ts'
+import { Button } from '../ui/Button.tsx'
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type DragEvent } from 'react'
+import type { BoardOverview, BoardWarning, Outcome, TaskSummary } from '../../api/contracts/board.ts'
 import type { ColumnId, MemberId } from '../../api/modules/shared.ts'
 import { BoardSession, type BoardTransport } from '../board-session/board-session.ts'
 import { InboxPanel } from './InboxPanel.tsx'
-import { CommentPanel } from './CommentPanel.tsx'
 import { PlainText } from './PlainText.tsx'
+import { Dialog as TaskDialog } from '../ui/Dialog.tsx'
+import { AutoTextarea } from '../ui/AutoTextarea.tsx'
+import { TaskActions } from './TaskActions.tsx'
+import { TaskActivity } from './TaskActivity.tsx'
+import '../ui/design-system.css'
 import './BoardWorkspace.css'
 
 export function BoardWorkspace({ initialBoard, transport }: { initialBoard: BoardOverview; transport: BoardTransport }) {
@@ -74,13 +79,13 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
 
   return <div className="board-workspace">
     <div className="work-toolbar">
-      <button className="primary-button" disabled={readOnly || busy} onClick={() => session.beginCapture()}>New Task</button>
-      <button className="quiet-button" disabled={busy} onClick={() => void session.openInbox()}>Inbox {overview.unreadNotifications > 0 ? `(${overview.unreadNotifications})` : ''}</button>
-      <button className="quiet-button" disabled={busy} onClick={() => void session.openArchive()}>Task Archive</button>
-      <button className="quiet-button" disabled={busy} onClick={() => void reconnect()}>{connected ? 'Refresh Board' : 'Reconnect'}</button>
+      <Button variant="primary" disabled={readOnly || busy} onClick={() => session.beginCapture()}>New Task</Button>
+      <Button variant="secondary" disabled={busy} onClick={() => void session.openInbox()}>Inbox {overview.unreadNotifications > 0 ? `(${overview.unreadNotifications})` : ''}</Button>
+      <Button variant="secondary" disabled={busy} onClick={() => void session.openArchive()}>Task Archive</Button>
+      <Button variant="secondary" disabled={busy} onClick={() => void reconnect()}>{connected ? 'Refresh Board' : 'Reconnect'}</Button>
     </div>
     {!detail && <Warnings warnings={state.warnings} overview={overview} />}
-    {!detail && state.pendingAction && <button className="quiet-button" disabled={!connected || busy} onClick={() => void session.retryPendingChange()}>Retry pending change</button>}
+    {!detail && state.pendingAction && <Button variant="secondary" disabled={!connected || busy} onClick={() => void session.retryPendingChange()}>Retry pending change</Button>}
     {state.pagesStale && <p role="status">The loaded pages changed. Refresh the Board to continue.</p>}
     {!connected && !detail && !draft && <p role="status">Connection lost. The Board is readable; editing is paused.</p>}
     {state.error && !detail && !draft && <p role="alert" className="team-error">{state.error}</p>}
@@ -102,72 +107,69 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
           {column.intake ? <QuickCapture label="Add a Task" disabled={readOnly || busy} onCapture={(title) => session.quickCapture(title)} />
             : !column.tasks.items.length && <p className="empty-column">No Tasks yet</p>}
         </div>
-        {column.tasks.next && <button className="quiet-button" disabled={busy || state.pagesStale} onClick={() => void session.loadMore(column.id)}>Load more in {column.name}</button>}
+        {column.tasks.next && <Button variant="secondary" disabled={busy || state.pagesStale} onClick={() => void session.loadMore(column.id)}>Load more in {column.name}</Button>}
       </section>)}
     </div>
     {state.inbox && !detail && !draft && <TaskDialog title="Inbox" onClose={() => session.closeInbox()}><InboxPanel session={session} state={state} readOnly={readOnly} /></TaskDialog>}
     {state.archive && !state.inbox && !detail && !draft && <TaskDialog title="Task Archive" onClose={() => session.closeArchive()}>
       {state.archive.items.length ? <div className="work-cards">{state.archive.items.map(card)}</div> : <p>No archived Tasks.</p>}
-      {state.archive.next && <button className="quiet-button" disabled={busy || state.pagesStale} onClick={() => void session.openArchive(true)}>Load more archived Tasks</button>}
+      {state.archive.next && <Button variant="secondary" disabled={busy || state.pagesStale} onClick={() => void session.openArchive(true)}>Load more archived Tasks</Button>}
     </TaskDialog>}
     {detail && (!draft || draft.taskId) && <TaskDialog key={detail.id} title={detail.key} onClose={() => void session.closeEditor()} actions={
-      <details className="task-overflow"><summary aria-label="More Task actions">•••</summary><div>
-        <button disabled={readOnly || busy || Boolean(conflict)} onClick={() => void session.archiveTask(detail.archived)}>{detail.archived ? 'Restore Task' : 'Archive Task'}</button>
-      </div></details>
+      <TaskActions key={detail.id} session={session} state={state} disabled={readOnly || busy || Boolean(conflict)} />
     }>
       {detail.parentTaskId && <button className="task-breadcrumb" disabled={busy} onClick={() => void session.openEditor({ kind: 'id', taskId: detail.parentTaskId! })}>← Parent Task</button>}
       <Warnings warnings={state.warnings} overview={overview} />
-      {state.pendingAction && <button className="quiet-button" disabled={!connected || busy} onClick={() => void session.retryPendingChange()}>Retry pending change</button>}
+      {state.pendingAction && <Button variant="secondary" disabled={!connected || busy} onClick={() => void session.retryPendingChange()}>Retry pending change</Button>}
       {detail.outcome && <p className="lifecycle-badge">Outcome: {outcomeName(detail.outcome.kind)}</p>}
-      {detail.outcome?.kind === 'duplicate' && <button className="text-button" disabled={busy}
-        onClick={() => { if (detail.outcome?.kind === 'duplicate') void session.openEditor({ kind: 'id', taskId: detail.outcome.taskId }) }}>Open Duplicate target</button>}
+      {detail.outcome?.kind === 'duplicate' && <Button variant="ghost" disabled={busy}
+        onClick={() => { if (detail.outcome?.kind === 'duplicate') void session.openEditor({ kind: 'id', taskId: detail.outcome.taskId }) }}>Open Duplicate target</Button>}
       {detail.archived && <p className="lifecycle-badge">Archived Task</p>}
       <div className={conflict ? 'task-comparison' : undefined}>
         <div>
           {draft ? <fieldset className="inline-task-editor" disabled={readOnly || detail.archived || (busy && !savingEdits)}>
-            <input className="task-title-input" name="title" aria-label="Title" value={draft.title} onChange={(event) => session.updateDraft({ title: event.target.value })} />
-            <div className="task-properties">{assignee}<div className="task-property"><span>Column</span><span>{overview.columns.find((column) => column.id === detail.columnId)?.name}</span></div>{tagEditor}</div>
-            <label className="task-description-label"><span>Description</span><textarea name="description" rows={5} placeholder="Add a description…" value={draft.description} onChange={(event) => session.updateDraft({ description: event.target.value })} /></label>
+            <AutoTextarea className="task-title-input" rows={1} name="title" aria-label="Title" value={draft.title}
+              onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.blur() } }}
+              onChange={(event) => session.updateDraft({ title: event.target.value.replace(/\r?\n/g, ' ') })} />
+            <div className="task-properties">{assignee}<label className="task-property"><span>Column</span><select value={detail.columnId} disabled={busy || Boolean(conflict)} onChange={(event) => {
+              const column = overview.columns.find((column) => column.id === event.target.value)!
+              void session.moveTask(detail, { columnId: column.id, expectedOrderRevision: column.orderRevision, place: { kind: 'last' } })
+            }}>{overview.columns.map((column) => <option key={column.id} value={column.id}>{column.name}</option>)}</select></label>{tagEditor}</div>
+            <label className="task-description-label"><span>Description</span><AutoTextarea name="description" rows={2} placeholder="Add a description…" value={draft.description} onChange={(event) => session.updateDraft({ description: event.target.value })} /></label>
             <DescriptionLinks text={draft.description} />
-          </fieldset> : <><h2 className="task-read-title">{detail.title}</h2><PlainText text={detail.description} /><p>Assignee: {detail.assignee?.displayName ?? 'Unassigned'}</p><Tags tags={detail.tags.map((tag) => tag.name)} /></>}
+          </fieldset> : <><h2 className="task-read-title">{detail.title}</h2>
+            <div className="task-properties"><div className="task-property"><span>Assignee</span><span>{detail.assignee?.displayName ?? 'Unassigned'}</span></div>
+              <div className="task-property"><span>Column</span><span>{overview.columns.find((column) => column.id === detail.columnId)?.name}</span></div>
+              <div className="task-property"><span>Tags</span><Tags tags={detail.tags.map((tag) => tag.name)} /></div></div>
+            <div className="task-description-label"><span>Description</span></div><PlainText text={detail.description || 'No description.'} /></>}
           <div className="task-save-status" role="status">{savingEdits ? 'Saving…' : dirty ? 'Unsaved changes' : draft ? 'All changes saved' : 'Read-only'}
-            {dirty && !busy && !conflict && <button className="text-button" disabled={readOnly} onClick={() => void session.saveEdits()}>{state.error ? 'Retry save' : 'Save now'}</button>}
+            {dirty && !busy && !conflict && <Button variant="ghost" disabled={readOnly} onClick={() => void session.saveEdits()}>{state.error ? 'Retry save' : 'Save now'}</Button>}
           </div>
           {state.error && <p role="alert" className="team-error">{state.error}</p>}
-          {!connected && <button className="quiet-button" disabled={busy} onClick={() => void reconnect()}>Reconnect</button>}
+          {!connected && <Button variant="secondary" disabled={busy} onClick={() => void reconnect()}>Reconnect</Button>}
           {dirty && <button className="text-button discard-draft" disabled={busy} onClick={() => session.closeDetail()}>Discard unsaved changes</button>}
         </div>
         {conflict && <section className="current-task" aria-label="Current version">
           <h3>Current version</h3><h4>{conflict.title}</h4><PlainText text={conflict.description} />
           <p>Assignee: {conflict.assignee?.displayName ?? 'Unassigned'}</p><Tags tags={conflict.tags.map((tag) => tag.name)} />
-          <button className="quiet-button" disabled={readOnly || detail.archived} onClick={() => session.useCurrentRevision()}>Keep my draft and edit from this version</button>
-          <button className="text-button" onClick={() => { session.cancelDraft(); session.beginEdit() }}>Use current version</button>
+          <Button variant="secondary" disabled={readOnly || detail.archived} onClick={() => session.useCurrentRevision()}>Keep my draft and edit from this version</Button>
+          <Button variant="ghost" onClick={() => { session.cancelDraft(); session.beginEdit() }}>Use current version</Button>
         </section>}
       </div>
-      {!detail.archived && <TaskMove key={`move-${detail.id}`} task={detail} overview={overview} disabled={readOnly || busy || Boolean(conflict)}
-        onMove={(destination) => session.moveTask(detail, destination)} />}
-      {!detail.archived && <TaskClosure key={`closure-${detail.id}-${Boolean(detail.closedAt)}`} closed={Boolean(detail.closedAt)} current={detail.outcome}
-        disabled={readOnly || busy || Boolean(conflict)} onSave={(kind, key, comment) => session.chooseOutcome(kind, key, comment)} />}
-      <CommentPanel session={session} state={state} disabled={readOnly || busy || detail.archived} />
-      <section className="task-history" aria-label="Task history">
-        <h3>History</h3>
-        {!detail.history ? <button className="quiet-button" disabled={busy} onClick={() => void session.loadHistory()}>Show history</button>
-          : <><ol>{detail.history.items.map((entry) => <HistoryEntry key={entry.id} entry={entry} />)}</ol>
-            {detail.history.next && <button className="quiet-button" disabled={busy || state.pagesStale} onClick={() => void session.loadHistory(true)}>Load more history</button>}</>}
-      </section>
       {!detail.parentTaskId && <section className="task-subtasks" aria-label="Subtasks"><h3>Subtasks</h3>
         {detail.subtasks.items.map((task) => <button className="subtask-row" key={task.id} disabled={busy} onClick={() => void session.openEditor({ kind: 'id', taskId: task.id })}>
           <span aria-hidden="true">↳</span><strong>{task.title}</strong><span className="work-key">{task.key}</span><AssigneeAvatar task={task} /><span aria-hidden="true">↗</span>
         </button>)}
-        {detail.subtasks.next && <button className="quiet-button" disabled={busy || dirty || state.pagesStale} onClick={() => void session.loadMoreSubtasks()}>Load more Subtasks</button>}
+        {detail.subtasks.next && <Button variant="secondary" disabled={busy || dirty || state.pagesStale} onClick={() => void session.loadMoreSubtasks()}>Load more Subtasks</Button>}
         {!detail.archived && <QuickCapture key={detail.id} label="Add a Subtask" disabled={readOnly || busy || Boolean(conflict)} onCapture={(title) => session.quickCapture(title, detail.id)} />}
       </section>}
+      <TaskActivity key={detail.id} session={session} state={state} disabled={readOnly || busy || detail.archived} />
     </TaskDialog>}
     {draft && !draft.taskId && <TaskDialog title={draft.parentTaskId ? 'New Subtask' : 'New Task'} focusTitle onClose={() => { if (!busy) session.cancelDraft() }}>
       <form className="task-editor" onSubmit={(event) => { event.preventDefault(); void session.saveDraft().then((saved) => { if (saved) session.beginEdit() }) }}>
         <fieldset disabled={readOnly || busy}>
           <label><span>Title</span><input name="title" value={draft.title} required onChange={(event) => session.updateDraft({ title: event.target.value })} /></label>
-          <label><span>Description</span><textarea name="description" rows={5} value={draft.description} onChange={(event) => session.updateDraft({ description: event.target.value })} /></label>
+          <label><span>Description</span><AutoTextarea name="description" rows={2} value={draft.description} onChange={(event) => session.updateDraft({ description: event.target.value })} /></label>
           {assignee}{tagEditor}
         </fieldset>
         {state.error && <p role="alert" className="team-error">{state.error}</p>}
@@ -226,96 +228,13 @@ function TagEditor({ tags, suggestions, onChange, onSearch }: { tags: string[]; 
   </div></div>
 }
 
-function TaskDialog({ title, onClose, actions, children, focusTitle = false }: { title: string; onClose: () => void; actions?: ReactNode; children: ReactNode; focusTitle?: boolean }) {
-  const element = useRef<HTMLDivElement>(null)
-  const close = useRef(onClose)
-  const titleId = useId()
-  useEffect(() => { close.current = onClose }, [onClose])
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null
-    const dialog = element.current!
-    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary'))
-      .filter((element) => !element.closest('fieldset:disabled') && !element.closest('details:not([open]) > div'))
-    const initial = focusTitle ? dialog.querySelector<HTMLElement>('[name="title"]:not(:disabled)') ?? dialog : dialog
-    initial.focus()
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); close.current() }
-      if (event.key === 'Tab') {
-        const targets = focusable(), first = targets[0], last = targets.at(-1)
-        if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) { event.preventDefault(); last?.focus() }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
-      }
-    }
-    const focusin = (event: FocusEvent) => { if (!dialog.contains(event.target as Node)) (focusable()[0] ?? dialog).focus() }
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    dialog.addEventListener('keydown', keydown)
-    document.addEventListener('focusin', focusin)
-    return () => {
-      dialog.removeEventListener('keydown', keydown); document.removeEventListener('focusin', focusin)
-      document.body.style.overflow = previousOverflow; previous?.focus()
-    }
-  }, [focusTitle])
-  return <div className="task-overlay" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}><div ref={element} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="task-dialog">
-    <header><h2 id={titleId}>{title}</h2><div className="task-dialog-actions">{actions}<button className="text-button" aria-label="Close Task dialog" onClick={onClose}>×</button></div></header>
-    {children}
-  </div></div>
-}
-
 function DescriptionLinks({ text }: { text: string }) {
   const links = [...new Set(text.match(/https?:\/\/[^\s<>]+/g) ?? [])]
   return links.length > 0 && <div className="description-links" aria-label="Description links">{links.map((link) => <a key={link} href={link} target="_blank" rel="noreferrer noopener">↗ {link}</a>)}</div>
 }
 
 
-function TaskMove({ task, overview, disabled, onMove }: { task: TaskSummary; overview: BoardOverview; disabled: boolean; onMove: (destination: TaskDestination) => Promise<boolean> }) {
-  const [columnId, setColumnId] = useState(task.columnId)
-  const [position, setPosition] = useState('last')
-  const column = overview.columns.find((column) => column.id === columnId)!
-  return <form className="task-move" onSubmit={(event) => {
-    event.preventDefault()
-    const place: TaskDestination['place'] = position === 'first' || position === 'last' ? { kind: position }
-      : { kind: 'before', taskId: position as TaskSummary['id'] }
-    void onMove({ columnId, expectedOrderRevision: column.orderRevision, place })
-  }}><fieldset disabled={disabled}>
-    <label>Move to Column<select value={columnId} onChange={(event) => { setColumnId(event.target.value as ColumnId); setPosition('last') }}>
-      {overview.columns.map((column) => <option key={column.id} value={column.id}>{column.name}</option>)}
-    </select></label>
-    <label>Position<select value={position} onChange={(event) => setPosition(event.target.value)}>
-      <option value="first">First</option><option value="last">Last</option>
-      {column.tasks.items.filter((item) => item.id !== task.id).map((item) => <option key={item.id} value={item.id}>Before {item.key}: {item.title}</option>)}
-    </select></label>
-    <button className="quiet-button" type="submit">Move Task</button>
-  </fieldset></form>
-}
-
 function outcomeName(kind: Outcome['kind']) { return kind[0].toUpperCase() + kind.slice(1) }
-
-function TaskClosure({ closed, current, disabled, onSave }: { closed: boolean; current: Outcome | null; disabled: boolean;
-  onSave: (kind: Outcome['kind'], duplicateKey: string, comment?: string) => Promise<boolean> }) {
-  const [kind, setKind] = useState<Outcome['kind']>(current?.kind ?? 'completed')
-  const [duplicateKey, setDuplicateKey] = useState('')
-  const [comment, setComment] = useState('')
-  return <form className="task-closure" onSubmit={(event) => { event.preventDefault(); void onSave(kind, duplicateKey, comment) }}>
-    <fieldset disabled={disabled}>
-      <label>{closed ? 'Outcome' : 'Close as'}<select value={kind} onChange={(event) => { setKind(event.target.value as Outcome['kind']); setComment('') }}>
-        {(['completed', 'rejected', 'duplicate', 'cancelled'] as const).map((outcome) => <option key={outcome} value={outcome}>{outcomeName(outcome)}</option>)}
-      </select></label>
-      {kind === 'duplicate' && <label>Duplicate of Task key<input required placeholder="DIG-123" value={duplicateKey} onChange={(event) => setDuplicateKey(event.target.value)} /></label>}
-      {!closed && (kind === 'rejected' || kind === 'cancelled') && <label>Closing comment<textarea value={comment} onChange={(event) => setComment(event.target.value)} /></label>}
-      <button className="quiet-button" type="submit">{closed ? 'Change Outcome' : 'Close Task'}</button>
-    </fieldset>
-  </form>
-}
-
-function HistoryEntry({ entry }: { entry: TaskHistoryEntry }) {
-  return <li><p><strong>{entry.actor.displayName}</strong> {entry.summary}
-    {entry.fromColumn && entry.toColumn && <> from {entry.fromColumn.name} to {entry.toColumn.name}</>}
-    {entry.outcome && <>: {outcomeName(entry.outcome.kind)}</>}
-    {entry.previousOutcome && <> · Previously {outcomeName(entry.previousOutcome.kind)}</>}
-  </p><time dateTime={entry.occurredAt} title={entry.occurredAt}>{new Date(entry.occurredAt).toLocaleString()}</time>
-    {entry.comment && <PlainText text={entry.comment} />}</li>
-}
 
 function Warnings({ warnings, overview }: { warnings: BoardWarning[]; overview: BoardOverview }) {
   return warnings.length > 0 && <div className="board-warnings" role="status">{warnings.map((warning) => <p key={warning.kind}>

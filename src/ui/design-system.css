@@ -1,0 +1,76 @@
+:root {
+  --dig-canvas: #101214;
+  --dig-surface: #191c20;
+  --dig-surface-raised: #22272d;
+  --dig-surface-hover: #2a3138;
+  --dig-border: #343c45;
+  --dig-border-strong: #596573;
+  --dig-text: #e8ecf0;
+  --dig-muted: #a4afbb;
+  --dig-accent: #a2dec0;
+  --dig-accent-surface: #253e33;
+  --dig-danger: #f2aaa7;
+  --dig-font-small: 11px;
+  --dig-font-label: 12px;
+  --dig-font-control: 13px;
+  --dig-font-body: 14px;
+  --dig-font-title: 24px;
+  --dig-space-1: 4px;
+  --dig-space-2: 8px;
+  --dig-space-3: 12px;
+  --dig-space-4: 16px;
+  --dig-space-6: 24px;
+  --dig-space-8: 32px;
+  --dig-radius: 8px;
+  --dig-radius-large: 14px;
+  --dig-shadow: 0 24px 80px #0008, 0 2px 8px #0004;
+}
+
+.dig-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--dig-space-2);
+  min-height: 34px; padding: 6px 12px; border: 1px solid var(--dig-border); border-radius: var(--dig-radius);
+  background: var(--dig-surface-raised); color: var(--dig-text); font: inherit; font-size: var(--dig-font-control); font-weight: 500;
+  line-height: 1.4; cursor: pointer; text-decoration: none;
+}
+.dig-button:hover:not(:disabled) { background: var(--dig-surface-hover); border-color: var(--dig-border-strong); }
+.dig-button-primary { background: var(--dig-accent); border-color: var(--dig-accent); color: #15291e; }
+.dig-button-primary:hover:not(:disabled) { background: #b9e9cf; border-color: #b9e9cf; }
+.dig-button-ghost, .dig-button-danger { background: transparent; border-color: transparent; }
+.dig-button-danger { color: var(--dig-danger); }
+.dig-button:disabled { opacity: .45; cursor: default; }
+.dig-icon-button { width: 34px; padding: 0; font-size: 22px; color: var(--dig-muted); }
+.dig-button:focus-visible, .dig-dialog :where(button, input, textarea, select, summary, a, [role="tabpanel"]):focus-visible {
+  outline: 2px solid var(--dig-accent); outline-offset: 3px;
+}
+
+.task-overlay { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 24px; background: #06080bad; backdrop-filter: blur(4px); }
+.dig-dialog { width: min(760px, 100%); max-height: 90dvh; overflow: auto; scrollbar-gutter: stable; overscroll-behavior: contain;
+  background: var(--dig-surface); color: var(--dig-text); border: 1px solid var(--dig-border); border-radius: var(--dig-radius-large); box-shadow: var(--dig-shadow); font-size: var(--dig-font-body); line-height: 1.5; }
+.dig-dialog:focus { outline: none; }
+.dig-dialog:has(.task-comparison) { width: min(1040px, 100%); }
+.dig-dialog-header { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 24px; border-bottom: 1px solid var(--dig-border); background: var(--dig-surface); }
+.dig-dialog-header h2 { margin: 0; font-size: var(--dig-font-label); font-weight: 500; letter-spacing: .04em; color: var(--dig-muted); }
+.dig-dialog-body { padding: var(--dig-space-8); }
+.dig-dialog :where(h2, h3, h4, p) { overflow-wrap: anywhere; }
+.dig-dialog :where(input, select, textarea) { min-width: 0; max-width: 100%; font: inherit; color: var(--dig-text); background: var(--dig-surface-raised);
+  border: 1px solid var(--dig-border); border-radius: var(--dig-radius); padding: 8px 10px; }
+.dig-dialog :where(input, textarea)::placeholder { color: var(--dig-muted); }
+.dig-dialog select { color-scheme: dark; }
+.dig-dialog option { background: var(--dig-surface-raised); color: var(--dig-text); }
+.dig-dialog :where(fieldset) { border: 0; padding: 0; margin: 0; min-width: 0; }
+.dig-dialog fieldset:disabled { opacity: .65; }
+.dig-auto-textarea { resize: none; overflow-y: hidden; width: 100%; }
+.dig-tabs [role="tablist"] { display: flex; gap: var(--dig-space-6); border-bottom: 1px solid var(--dig-border); }
+.dig-tabs [role="tab"] { position: relative; border: 0; padding: 12px 0; color: var(--dig-muted); background: transparent; font: inherit; font-size: var(--dig-font-control); cursor: pointer; }
+.dig-tabs [role="tab"][aria-selected="true"] { color: var(--dig-text); font-weight: 600; }
+.dig-tabs [role="tab"][aria-selected="true"]::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: var(--dig-accent); }
+.dig-tabs [role="tabpanel"] { padding-top: var(--dig-space-6); }
+@media (max-width: 650px) {
+  .task-overlay { padding: 8px; }
+  .dig-dialog { max-height: calc(100dvh - 16px); }
+  .dig-dialog-header { padding: 10px 16px; }
+  .dig-dialog-body { padding: 20px; }
+  .dig-button, .dig-dialog select, .dig-dialog summary { min-height: 40px; }
+}
+@media (prefers-reduced-motion: reduce) { .dig-dialog *, .dig-dialog *::before, .dig-dialog *::after { scroll-behavior: auto; transition: none; } }
