@@ -14,6 +14,7 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
   const readOnly = !connected || overview.space.lifecycle !== 'active' || Boolean(state.pendingAction)
   const dirty = session.hasUnsavedEdits()
   const dragged = useRef<TaskSummary | null>(null)
+  const [hoveredColumn, setHoveredColumn] = useState<ColumnId | null>(null)
   const canDrag = !readOnly && !busy && !detail && !draft && !state.archive && !state.inbox
 
   useEffect(() => {
@@ -38,6 +39,7 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
   }, [session, draft, dirty, readOnly, busy, conflict, state.error])
 
   const drop = (event: DragEvent, columnId: ColumnId, anchor?: TaskSummary) => {
+    setHoveredColumn(null)
     if (!canDrag || !dragged.current) return
     event.preventDefault(); event.stopPropagation()
     const task = dragged.current
@@ -51,8 +53,9 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
     draggable={canDrag && !task.archived} onDragStart={(event) => {
       if (!canDrag) { event.preventDefault(); return }
       dragged.current = task
+      setHoveredColumn(null)
       if (event.dataTransfer) { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', task.id) }
-    }} onDragEnd={() => { dragged.current = null }} onDrop={(event) => drop(event, task.columnId, task)}
+    }} onDragEnd={() => { dragged.current = null; setHoveredColumn(null) }} onDrop={(event) => drop(event, task.columnId, task)}
     onOpen={() => void session.openEditor({ kind: 'id', taskId: task.id })} />
   const reconnect = async () => { await session.refresh(); if (!session.getSnapshot().draft) session.beginEdit() }
   const tagEditor = draft && <TagEditor tags={draft.tags} suggestions={state.tagSuggestions.map((tag) => tag.name)}
@@ -76,7 +79,16 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
     {!connected && !detail && !draft && <p role="status">Connection lost. The Board is readable; editing is paused.</p>}
     {state.error && !detail && !draft && <p role="alert" className="team-error">{state.error}</p>}
     <div className="column-grid" aria-label={`${overview.space.displayName} Board`}>
-      {overview.columns.map((column) => <section className={`flow-column flow-${column.flowRole}`} key={column.id} onDragOver={(event) => { if (canDrag && dragged.current) event.preventDefault() }} onDrop={(event) => drop(event, column.id)} aria-labelledby={`column-${column.id}`}>
+      {overview.columns.map((column) => <section className={`flow-column flow-${column.flowRole}${canDrag && hoveredColumn === column.id ? ' drop-target' : ''}`} key={column.id}
+        onDragOver={(event) => {
+          if (!canDrag || !dragged.current) return
+          event.preventDefault()
+          if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+          setHoveredColumn(column.id)
+        }} onDragLeave={(event) => {
+          if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+          setHoveredColumn((current) => current === column.id ? null : current)
+        }} onDrop={(event) => drop(event, column.id)} aria-labelledby={`column-${column.id}`}>
         <header><h2 id={`column-${column.id}`}><span className="column-dot" aria-label={column.flowRole} />{column.name}<span className="column-count" title={`${column.counts.parentTasks} parent Tasks, ${column.counts.subtasks} Subtasks`}>{column.counts.tasks}</span></h2>
           {column.wipLimit !== null && <span className={`wip-limit${column.counts.tasks > column.wipLimit ? ' exceeded' : ''}`}>Limit {column.wipLimit}</span>}
         </header>
@@ -107,7 +119,7 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
       <div className={conflict ? 'task-comparison' : undefined}>
         <div>
           {draft ? <fieldset className="inline-task-editor" disabled={readOnly || (busy && !savingEdits)}>
-            <input className="task-title-input" name="title" aria-label="Title" autoFocus value={draft.title} onChange={(event) => session.updateDraft({ title: event.target.value })} />
+            <input className="task-title-input" name="title" aria-label="Title" value={draft.title} onChange={(event) => session.updateDraft({ title: event.target.value })} />
             <div className="task-properties">{assignee}<div className="task-property"><span>Column</span><span>{overview.columns.find((column) => column.id === detail.columnId)?.name}</span></div>{tagEditor}</div>
             <label className="task-description-label"><span>Description</span><textarea name="description" rows={5} placeholder="Add a description…" value={draft.description} onChange={(event) => session.updateDraft({ description: event.target.value })} /></label>
             <DescriptionLinks text={draft.description} />
@@ -145,7 +157,7 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
         {!detail.archived && <QuickCapture key={detail.id} label="Add a Subtask" disabled={readOnly || busy || Boolean(conflict)} onCapture={(title) => session.quickCapture(title, detail.id)} />}
       </section>}
     </TaskDialog>}
-    {draft && !draft.taskId && <TaskDialog title={draft.parentTaskId ? 'New Subtask' : 'New Task'} onClose={() => { if (!busy) session.cancelDraft() }}>
+    {draft && !draft.taskId && <TaskDialog title={draft.parentTaskId ? 'New Subtask' : 'New Task'} focusTitle onClose={() => { if (!busy) session.cancelDraft() }}>
       <form className="task-editor" onSubmit={(event) => { event.preventDefault(); void session.saveDraft().then((saved) => { if (saved) session.beginEdit() }) }}>
         <fieldset disabled={readOnly || busy}>
           <label><span>Title</span><input name="title" value={draft.title} required onChange={(event) => session.updateDraft({ title: event.target.value })} /></label>
@@ -208,7 +220,7 @@ function TagEditor({ tags, suggestions, onChange, onSearch }: { tags: string[]; 
   </div></div>
 }
 
-function TaskDialog({ title, onClose, actions, children }: { title: string; onClose: () => void; actions?: ReactNode; children: ReactNode }) {
+function TaskDialog({ title, onClose, actions, children, focusTitle = false }: { title: string; onClose: () => void; actions?: ReactNode; children: ReactNode; focusTitle?: boolean }) {
   const element = useRef<HTMLDivElement>(null)
   const close = useRef(onClose)
   const titleId = useId()
@@ -218,13 +230,13 @@ function TaskDialog({ title, onClose, actions, children }: { title: string; onCl
     const dialog = element.current!
     const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary'))
       .filter((element) => !element.closest('fieldset:disabled') && !element.closest('details:not([open]) > div'))
-    const initial = dialog.querySelector<HTMLElement>('[name="title"]:not(:disabled)') ?? focusable()[0]
-    initial?.focus()
+    const initial = focusTitle ? dialog.querySelector<HTMLElement>('[name="title"]:not(:disabled)') ?? dialog : dialog
+    initial.focus()
     const keydown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); close.current() }
       if (event.key === 'Tab') {
         const targets = focusable(), first = targets[0], last = targets.at(-1)
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) { event.preventDefault(); last?.focus() }
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
       }
     }
@@ -237,7 +249,7 @@ function TaskDialog({ title, onClose, actions, children }: { title: string; onCl
       dialog.removeEventListener('keydown', keydown); document.removeEventListener('focusin', focusin)
       document.body.style.overflow = previousOverflow; previous?.focus()
     }
-  }, [])
+  }, [focusTitle])
   return <div className="task-overlay" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}><div ref={element} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="task-dialog">
     <header><h2 id={titleId}>{title}</h2><div className="task-dialog-actions">{actions}<button className="text-button" aria-label="Close Task dialog" onClick={onClose}>×</button></div></header>
     {children}
