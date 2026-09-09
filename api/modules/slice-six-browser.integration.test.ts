@@ -3,7 +3,7 @@ import { createElement } from 'react'
 import { randomUUID } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createDatabase, type Database } from '../db.js'
 import { loadConfig } from '../config.js'
@@ -21,11 +21,11 @@ const run = process.env.DIG_DATABASE_TESTS === '1' ? describe : describe.skip
 const origin = 'https://dig.example.test'
 let db: Database
 
-run('Slice 3 browser through HTTP and PostgreSQL', () => {
+run('Slice 6 browser through HTTP and PostgreSQL', () => {
   beforeAll(() => { db = createDatabase(process.env.DATABASE_URL!) })
   afterAll(async () => { await db.end() })
 
-  it('captures by keyboard, reloads, and edits through the real BoardTransport', async () => {
+  it('receives another browser movement and comment, then recovers with its draft after a disconnect', async () => {
     await db.query('truncate team.identities, team.space_key_reservations cascade')
     const identity = new IdentityModuleImplementation(db, new MockOidcAdapter({
       issuer: 'https://identity.example.test', subject: 'admin', displayName: 'Ada',
@@ -58,33 +58,45 @@ run('Slice 3 browser through HTTP and PostgreSQL', () => {
       return nativeFetch(new URL(path, base), { ...init, headers })
     })
     try {
-      const overview = await (await fetch('/api/spaces/DIG/board')).json() as BoardOverview
       const transport = new HttpBoardTransport('DIG', browser.csrfToken)
+      const createdTask = await transport.change({ requestId: randomUUID() as RequestId,
+        command: { kind: 'capture-task', input: { title: 'Discuss this work' } } })
+      expect(createdTask.ok).toBe(true)
+      const overview = await (await fetch('/api/spaces/DIG/board')).json() as BoardOverview
       const user = userEvent.setup()
       const view = render(createElement(BoardWorkspace, { initialBoard: overview, transport }))
       await waitFor(() => expect(screen.getByRole('button', { name: 'New Task' })).toBeEnabled())
-      screen.getByRole('button', { name: 'New Task' }).focus()
-      await user.keyboard('{Enter}Browser work{Tab}First line{Enter}Second line')
-      expect(screen.getByLabelText('Title')).toHaveValue('Browser work')
-      expect(screen.getByLabelText('Description')).toHaveValue('First line\nSecond line')
-      screen.getByRole('button', { name: 'Create Task' }).focus()
-      await user.keyboard('{Enter}')
-      expect(await screen.findByRole('dialog', { name: 'DIG-1' })).toBeInTheDocument()
-      expect(screen.getByLabelText('Description')).toHaveValue('First line\nSecond line')
-      view.unmount()
-      const reloaded = await (await fetch('/api/spaces/DIG/board')).json() as BoardOverview
-      render(createElement(BoardWorkspace, { initialBoard: reloaded, transport: new HttpBoardTransport('DIG', browser.csrfToken) }))
-      await user.click(screen.getByRole('button', { name: /DIG-1/ }))
-      await waitFor(() => expect(screen.getByLabelText('Title')).toBeEnabled())
-      await user.clear(screen.getByLabelText('Title'))
-      await user.type(screen.getByLabelText('Title'), 'Revised in browser')
-      await screen.findByText('All changes saved')
-      const detail = await transport.read({ kind: 'task', task: { kind: 'key', taskKey: 'DIG-1' as never } })
-      expect(detail).toMatchObject({ ok: true, value: { value: { title: 'Revised in browser', revision: 2, description: 'First line\nSecond line' } } })
+      // A second browser has its own BoardSession and HTTP connection.
+      const other = new (await import('../../src/board-session/board-session.ts')).BoardSession(new HttpBoardTransport('DIG', browser.csrfToken), overview)
+      other.startLive()
+      try {
+        await waitFor(() => expect(other.getSnapshot().connected).toBe(true))
+        await act(async () => { await other.openEditor({ kind: 'key', taskKey: 'DIG-1' as never }) })
+        const active = overview.columns.find((column) => column.flowRole === 'active')!
+        await act(async () => { expect(await other.moveTask(other.getSnapshot().detail!, {
+          columnId: active.id, expectedOrderRevision: active.orderRevision, place: { kind: 'last' },
+        })).toBe(true) })
+        await waitFor(() => expect(within(screen.getByRole('region', { name: /In Progress/ })).getByRole('button', { name: /DIG-1/ })).toBeInTheDocument(), { timeout: 4000 })
+        await user.click(screen.getByRole('button', { name: /DIG-1/ }))
+        await waitFor(() => expect(screen.getByLabelText('Comment')).toBeEnabled())
+        await user.type(screen.getByLabelText('Comment'), 'My unposted draft')
+        await act(async () => {
+          other.updateCommentDraft({ text: 'Comment from the other browser' })
+          expect(await other.saveComment()).toBe(true)
+        })
+        await screen.findByText('Comment from the other browser', {}, { timeout: 4000 })
+        expect(screen.getByLabelText('Comment')).toHaveValue('My unposted draft')
+        await act(async () => { window.dispatchEvent(new Event('offline')) })
+        expect(screen.getByLabelText('Comment')).toBeDisabled()
+        await act(async () => { window.dispatchEvent(new Event('online')) })
+        await waitFor(() => expect(screen.getByLabelText('Comment')).toBeEnabled(), { timeout: 4000 })
+        expect(screen.getByLabelText('Comment')).toHaveValue('My unposted draft')
+      } finally { other.stopLive(); view.unmount() }
     } finally {
       cleanup()
       vi.unstubAllGlobals()
+      server.closeIdleConnections()
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
     }
-  })
+  }, 20000)
 })

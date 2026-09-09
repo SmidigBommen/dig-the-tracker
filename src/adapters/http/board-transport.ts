@@ -1,6 +1,7 @@
-import type { BoardFault, BoardQuery, BoardView, ChangeReceipt, ChangeRequest } from '../../../api/contracts/board.ts'
+import type { BoardFault, BoardQuery, BoardView, ChangeReceipt, ChangeRequest, FollowOptions } from '../../../api/contracts/board.ts'
 import type { Result } from '../../../api/modules/shared.ts'
-import type { BoardTransport } from '../../board-session/board-session.ts'
+import type { BoardTransport, BoardFeedObserver } from '../../board-session/board-session.ts'
+import { followBoard } from './board-feed.ts'
 
 export class HttpBoardTransport implements BoardTransport {
   private readonly path: string
@@ -19,6 +20,8 @@ export class HttpBoardTransport implements BoardTransport {
     return this.request<ChangeReceipt>(`${this.path}/changes`, { method: 'POST',
       headers: { 'content-type': 'application/json', 'x-csrf-token': this.csrfToken }, body: JSON.stringify(request) })
   }
+
+  follow(options: FollowOptions, observer: BoardFeedObserver) { return followBoard(this.path, options, observer) }
 
   private async request<T>(path: string, init?: RequestInit): Promise<Result<T, BoardFault>> {
     try {

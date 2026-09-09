@@ -3,7 +3,7 @@ import { createElement } from 'react'
 import { randomUUID } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { render, screen, within, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createDatabase, type Database } from '../db.js'
 import { loadConfig } from '../config.js'
@@ -101,6 +101,7 @@ run('Slice 4 browser through HTTP and PostgreSQL', () => {
         expect.objectContaining({ kind: 'reopened' }),
       ]) } } } })
     } finally {
+      cleanup()
       vi.unstubAllGlobals()
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
     }

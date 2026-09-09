@@ -1,12 +1,19 @@
 import type {
   NotificationView, CommentView, BoardWarning, Closure, Outcome, TaskDestination, TagView, BoardCommand, BoardFault, BoardOverview, BoardQuery, BoardUpdate, BoardView,
-  ChangeReceipt, ChangeRequest, Page, TaskDetail, TaskLocator, TaskSummary,
+  ChangeReceipt, ChangeRequest, Page, TaskDetail, TaskLocator, TaskSummary, BoardFeedItem, FollowOptions,
 } from '../../api/contracts/board.ts'
 import type { NotificationId, CommentId, ColumnId, MemberId, RequestId, Result, Revision, TaskId, TaskKey } from '../../api/modules/shared.ts'
 
 export interface BoardTransport {
   read(query: BoardQuery): Promise<Result<BoardView, BoardFault>>
   change(request: ChangeRequest): Promise<Result<ChangeReceipt, BoardFault>>
+  follow(options: FollowOptions, observer: BoardFeedObserver): () => void
+}
+
+export interface BoardFeedObserver {
+  open(): void
+  item(item: BoardFeedItem): void
+  disconnected(): void
 }
 
 export interface TaskDraft {
@@ -60,6 +67,16 @@ export class BoardSession {
   private readonly commentDrafts = new Map<TaskId, CommentDraft>()
   private editBaseline?: TaskDraft
   private editSave?: Promise<boolean>
+  private live = false
+  private feedReady = false
+  private closeFeed?: () => void
+  private liveGeneration = 0
+  private reconnectTimer?: ReturnType<typeof setTimeout>
+  private syncTimer?: ReturnType<typeof setTimeout>
+  private liveRefreshing = false
+  private liveDirty = false
+  private retryMilliseconds = 1000
+  private accessDenied = false
 
   constructor(transport: BoardTransport, overview: BoardOverview) {
     this.transport = transport
@@ -72,6 +89,143 @@ export class BoardSession {
   private set(changes: Partial<BoardSessionState>) {
     this.state = { ...this.state, ...changes }
     for (const listener of this.listeners) listener()
+    if (this.live && this.liveDirty && this.feedReady && !this.state.busy && !this.state.savingEdits) this.scheduleLiveSync()
+  }
+
+  startLive() {
+    if (this.live) return
+    this.live = true
+    if (this.state.overview.space.lifecycle === 'active') this.connectFeed()
+  }
+
+  stopLive() {
+    this.live = false
+    this.liveGeneration++
+    this.feedReady = false
+    this.closeFeed?.()
+    this.closeFeed = undefined
+    clearTimeout(this.reconnectTimer)
+    clearTimeout(this.syncTimer)
+    this.reconnectTimer = this.syncTimer = undefined
+  }
+
+  async reconnect() {
+    if (!this.live) { await this.refresh(); return }
+    this.accessDenied = false
+    this.disconnectLive(0)
+  }
+
+  private connectFeed() {
+    const generation = ++this.liveGeneration
+    this.closeFeed?.()
+    this.feedReady = false
+    this.set({ connected: false })
+    this.closeFeed = this.transport.follow({ after: this.state.overview.board.changeSequence }, {
+      open: () => {
+        if (!this.live || generation !== this.liveGeneration) return
+        this.feedReady = true
+        this.retryMilliseconds = 1000
+        this.set({ connected: true, error: this.state.conflict || this.state.commentConflict ? this.state.error : undefined })
+      },
+      disconnected: () => { if (this.live && generation === this.liveGeneration) this.disconnectLive() },
+      item: (item) => {
+        if (!this.live || generation !== this.liveGeneration) return
+        if (item.kind !== 'update') { this.disconnectLive(item.kind === 'snapshot-required' ? 0 : 1000); return }
+        if (item.update.sequence <= this.state.overview.board.changeSequence) return
+        if (item.update.sequence !== this.state.overview.board.changeSequence + 1) { this.disconnectLive(0); return }
+        this.liveDirty = true
+        if (!this.state.busy && !this.state.savingEdits && !this.liveRefreshing) this.applyUpdate(item.update)
+        this.scheduleLiveSync()
+      },
+    })
+  }
+
+  private disconnectLive(delay = this.retryMilliseconds) {
+    if (!this.live) return
+    this.liveGeneration++
+    this.closeFeed?.()
+    this.closeFeed = undefined
+    this.feedReady = false
+    clearTimeout(this.reconnectTimer)
+    clearTimeout(this.syncTimer)
+    this.syncTimer = undefined
+    this.set({ connected: false, error: 'Connection lost. Your drafts are kept while the Board reconnects.' })
+    this.retryMilliseconds = Math.min(this.retryMilliseconds * 2, 10000)
+    this.reconnectTimer = setTimeout(() => { this.reconnectTimer = undefined; void this.recoverLive() }, delay)
+  }
+
+  private async recoverLive() {
+    if (!this.live) return
+    if (this.state.busy || this.state.savingEdits || this.liveRefreshing) { this.disconnectLive(100); return }
+    if (!await this.refreshLiveSnapshot()) {
+      if (this.live && !this.accessDenied && !this.reconnectTimer) this.disconnectLive(100)
+      return
+    }
+    if (!this.live) return
+    if (this.state.overview.space.lifecycle === 'active') this.connectFeed()
+    else this.set({ connected: true, error: undefined })
+  }
+
+  private scheduleLiveSync() {
+    if (this.syncTimer || this.liveRefreshing || !this.feedReady || !this.live) return
+    this.syncTimer = setTimeout(() => {
+      this.syncTimer = undefined
+      if (!this.live || !this.feedReady || this.state.busy || this.state.savingEdits) return
+      void this.refreshLiveSnapshot()
+    }, 0)
+  }
+
+  private async refreshLiveSnapshot(): Promise<boolean> {
+    const generation = this.liveGeneration, detailRequest = this.detailRequest
+    const detail = this.state.detail, inbox = this.state.inbox, archive = this.state.archive
+    this.liveRefreshing = true
+    this.liveDirty = false
+    try {
+      const overview = await this.transport.read({ kind: 'overview' })
+      if (!this.live || generation !== this.liveGeneration) return false
+      if (!overview.ok) {
+        this.accessDenied = overview.fault.kind === 'forbidden' || overview.fault.kind === 'not-found'
+        this.fail(overview.fault)
+        if (overview.fault.kind !== 'forbidden' && overview.fault.kind !== 'not-found') this.disconnectLive()
+        return false
+      }
+      if (overview.value.kind !== 'overview') { this.disconnectLive(); return false }
+      const [task, notices, archived] = await Promise.all([
+        detail ? this.transport.read({ kind: 'task', task: { kind: 'id', taskId: detail.id }, comments: {}, ...(detail.history ? { history: {} } : {}) }) : undefined,
+        inbox ? this.transport.read({ kind: 'inbox' }) : undefined,
+        archive ? this.transport.read({ kind: 'tasks', selection: { kind: 'archive' } }) : undefined,
+      ])
+      if (!this.live || generation !== this.liveGeneration) return false
+      if (this.state.busy || this.state.savingEdits || detailRequest !== this.detailRequest
+        || overview.value.sequence < this.state.overview.board.changeSequence) { this.liveDirty = true; return false }
+      for (const result of [task, notices, archived]) {
+        if (result && !result.ok) { this.fail(result.fault); this.disconnectLive(); return false }
+      }
+      const current = task?.ok && task.value.kind === 'task' ? task.value.value : undefined
+      const dirty = this.hasUnsavedEdits()
+      this.pageGeneration++
+      this.set({ overview: overview.value.value, pagesStale: false,
+        ...(current ? { detail: current } : {}),
+        ...(notices?.ok && notices.value.kind === 'inbox' && this.state.inbox ? { inbox: notices.value.value } : {}),
+        ...(archived?.ok && archived.value.kind === 'tasks' && this.state.archive ? { archive: archived.value.value } : {}),
+      })
+      if (current && this.state.draft?.taskId === current.id) {
+        if (dirty && this.state.draft.expectedRevision !== current.revision && !this.pending) {
+          this.set({ conflict: current, error: 'Someone changed this Task. Compare your draft with the current version.' })
+        } else if (!dirty && !this.state.conflict) {
+          this.editBaseline = { taskId: current.id, expectedRevision: current.revision, title: current.title, description: current.description,
+            assigneeId: current.assignee?.id ?? null, tags: current.tags.map((tag) => tag.name) }
+          this.set({ draft: current.archived ? undefined : this.editBaseline })
+        }
+      }
+      const editedComment = current?.comments?.items.find((comment) => comment.id === this.state.commentDraft?.commentId)
+      if (editedComment && editedComment.revision !== this.state.commentDraft?.expectedRevision) this.set({ commentConflict: editedComment })
+      return true
+    } catch { this.disconnectLive(); return false }
+    finally {
+      this.liveRefreshing = false
+      if (this.liveDirty) this.scheduleLiveSync()
+    }
   }
 
   beginCapture(parentTaskId?: TaskId) {
@@ -89,6 +243,7 @@ export class BoardSession {
 
   updateDraft(changes: Partial<Pick<TaskDraft, 'title' | 'description' | 'assigneeId' | 'tags'>>) {
     if (this.state.draft && !this.state.pendingAction && this.state.connected && this.state.overview.space.lifecycle === 'active'
+      && !(this.state.draft.taskId && this.state.detail?.archived)
       && (!this.state.busy || this.state.savingEdits)) {
       this.set({ draft: { ...this.state.draft, ...changes }, error: this.state.conflict ? this.state.error : undefined })
     }
@@ -120,6 +275,7 @@ export class BoardSession {
   saveEdits(): Promise<boolean> {
     if (this.editSave) return this.editSave
     if (!this.hasUnsavedEdits()) return Promise.resolve(true)
+    if (this.state.detail?.archived) return Promise.resolve(false)
     if (!this.canChange() || this.state.conflict) return Promise.resolve(false)
     this.set({ savingEdits: true })
     this.editSave = this.flushEdits().finally(() => {
@@ -169,7 +325,10 @@ export class BoardSession {
 
   cancelDraft() { this.set({ draft: undefined, conflict: undefined, error: undefined }) }
   closeDetail() { this.detailRequest++; this.detailLocator = undefined; this.set({ detail: undefined, draft: undefined, conflict: undefined }) }
-  setConnected(connected: boolean) { this.set({ connected }) }
+  setConnected(connected: boolean) {
+    if (this.live && !connected) this.disconnectLive()
+    else this.set({ connected })
+  }
 
   private canChange() { return !this.state.pendingAction && this.state.connected && !this.state.busy && this.state.overview.space.lifecycle === 'active' }
 
@@ -211,6 +370,7 @@ export class BoardSession {
   }
 
   useCurrentRevision() {
+    if (this.state.detail?.archived) return
     if (this.state.draft && this.state.conflict) this.set({ draft: { ...this.state.draft, expectedRevision: this.state.conflict.revision }, conflict: undefined, error: undefined })
   }
 
@@ -287,6 +447,7 @@ export class BoardSession {
       } else if (change.kind === 'column-order-revised') {
         overview = { ...overview, columns: overview.columns.map((column) => column.id === change.columnId ? { ...column, orderRevision: change.revision } : column) }
       } else if (change.kind === 'tasks-archived') {
+        if (detail && change.taskIds.includes(detail.id)) detail = { ...detail, archived: true }
         overview = { ...overview, columns: overview.columns.map((column) => ({ ...column,
           tasks: { ...column.tasks, items: column.tasks.items.filter((task) => !change.taskIds.includes(task.id)) } })) }
       } else if (change.kind === 'board-counts-revised' && change.counts.columns) {
@@ -312,7 +473,7 @@ export class BoardSession {
     this.pageGeneration++
     this.archiveRequest++
     this.detailRequest++
-    this.set({ overview: result.value.value, connected: true, pagesStale: false, archive: undefined,
+    this.set({ overview: result.value.value, connected: !this.live || this.feedReady, pagesStale: false, archive: undefined,
       detail: this.state.draft?.taskId ? this.state.detail : undefined, error: undefined })
     if (this.detailLocator) await this.openTask(this.detailLocator)
   }
@@ -454,7 +615,7 @@ export class BoardSession {
   hasUnsavedComments = () => this.commentDrafts.size > 0
 
   updateCommentDraft(changes: Partial<Pick<CommentDraft, 'text' | 'mentions'>>) {
-    if (!this.canChange() || !this.state.detail) return
+    if (!this.canChange() || !this.state.detail || this.state.detail.archived) return
     const draft = { ...this.state.commentDraft ?? { text: '', mentions: [] }, ...changes }
     if (draft.text || draft.mentions.length || draft.commentId) this.commentDrafts.set(this.state.detail.id, draft)
     else this.commentDrafts.delete(this.state.detail.id)
@@ -565,5 +726,6 @@ export class BoardSession {
     if (fault.kind === 'forbidden') { error = 'Your access changed. Reopen the Space.'; this.set({ connected: false }) }
     if (fault.kind === 'temporarily-unavailable') { error = 'Connection lost. Your draft is kept. Reconnect before saving.'; this.set({ connected: false }) }
     this.set({ error })
+    if (this.live && this.feedReady && (fault.kind === 'temporarily-unavailable' || fault.kind === 'forbidden')) this.disconnectLive()
   }
 }

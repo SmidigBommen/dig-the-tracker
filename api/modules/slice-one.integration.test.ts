@@ -23,7 +23,7 @@ run('Slice 1 Module Interfaces', () => {
   })
 
   beforeEach(async () => {
-    now = new Date('2026-09-04T08:00:00.000Z')
+    now = new Date()
     await db.query(`truncate table
       team.space_request_receipts,
       team.board_columns,
@@ -328,7 +328,7 @@ run('Slice 1 Module Interfaces', () => {
     })
     expect(stream.ok).toBe(true)
 
-    now = new Date('2026-09-09T08:00:00.001Z')
+    now = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000 + 1)
     const idle = await identity.session({
       kind: 'resolve', use: 'read', evidence: { sessionSecret: completed.session.sessionSecret },
     })
@@ -339,23 +339,16 @@ run('Slice 1 Module Interfaces', () => {
 
   it('expires after 30 days even when recent activity keeps the idle window alive', async () => {
     const signedIn = await signIn()
-    for (const instant of [
-      '2026-09-08T08:00:00.000Z',
-      '2026-09-12T08:00:00.000Z',
-      '2026-09-16T08:00:00.000Z',
-      '2026-09-20T08:00:00.000Z',
-      '2026-09-24T08:00:00.000Z',
-      '2026-09-28T08:00:00.000Z',
-      '2026-10-02T08:00:00.000Z',
-    ]) {
-      now = new Date(instant)
+    const startedAt = now.getTime()
+    for (const day of [4, 8, 12, 16, 20, 24, 28]) {
+      now = new Date(startedAt + day * 24 * 60 * 60 * 1000)
       const active = await signedIn.identity.session({
         kind: 'resolve', use: 'read', evidence: { sessionSecret: signedIn.completed.session.sessionSecret },
       })
       expect(active.ok).toBe(true)
     }
 
-    now = new Date('2026-10-04T08:00:00.001Z')
+    now = new Date(startedAt + 30 * 24 * 60 * 60 * 1000 + 1)
     const expired = await signedIn.identity.session({
       kind: 'resolve', use: 'read', evidence: { sessionSecret: signedIn.completed.session.sessionSecret },
     })

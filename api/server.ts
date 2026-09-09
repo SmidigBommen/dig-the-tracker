@@ -1,5 +1,7 @@
 import { InvalidBoardRequest, parseBoardChange, parseBoardQuery } from './adapters/http/board-requests.js'
+import { sendBoardFeed } from './adapters/http/board-feed.js'
 import { createReadStream } from 'node:fs'
+import { setMaxListeners } from 'node:events'
 import { stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { extname, resolve, sep } from 'node:path'
@@ -34,6 +36,7 @@ import type {
   Revision,
   SpaceId,
   SpaceKey,
+  ChangeSequence,
 } from './modules/shared.js'
 
 const SESSION_COOKIE = 'dig_session'
@@ -118,6 +121,7 @@ export function createTeamServer(
   modules: ServerModules,
   config: AppConfig,
   isReady: () => Promise<boolean> = async () => false,
+  shutdown?: AbortSignal,
 ) {
   return createServer(async (request, response) => {
     setSecurityHeaders(response)
@@ -423,6 +427,23 @@ export function createTeamServer(
         })
         return
       }
+      const boardFeed = pathname.match(/^\/api\/spaces\/([^/]+)\/board\/events$/)
+      if (method === 'GET' && boardFeed) {
+        const identity = await requireIdentity(request, response, modules.identity, 'read')
+        if (!identity) return
+        const after = url.searchParams.get('after') ?? request.headers['last-event-id']
+        if (after !== undefined && (typeof after !== 'string' || !/^\d+$/.test(after) || !Number.isSafeInteger(Number(after)))) {
+          throw new InvalidBoardRequest('Invalid change sequence')
+        }
+        const authorized = await modules.space.authorize(identity, {
+          space: { kind: 'key', spaceKey: decodeURIComponent(boardFeed[1]) as SpaceKey }, use: 'board-follow',
+        })
+        if (!authorized.ok) { sendFault(response, authorized.fault); return }
+        const result = await modules.board.follow(authorized.value, { after: after === undefined ? undefined : Number(after) as ChangeSequence })
+        if (!result.ok) { sendFault(response, result.fault); return }
+        await sendBoardFeed(response, result.value, shutdown)
+        return
+      }
       const boardOperation = pathname.match(/^\/api\/spaces\/([^/]+)\/board\/(views|changes)$/)
       if (boardOperation && ((method === 'GET' && boardOperation[2] === 'views') || (method === 'POST' && boardOperation[2] === 'changes'))) {
         const changing = method === 'POST'
@@ -646,6 +667,8 @@ async function main() {
     sessionHmacSecret: config.sessionHmacSecret,
   })
   const board = new BoardModuleImplementation(db)
+  const feedShutdown = new AbortController()
+  setMaxListeners(0, feedShutdown.signal)
   let draining = false
   const server = createTeamServer({ identity, space, board }, config, async () => {
     if (draining) return false
@@ -653,7 +676,7 @@ async function main() {
     const probe = { text: 'select 1', query_timeout: 2_000 }
     await db.query(probe)
     return !draining
-  })
+  }, feedShutdown.signal)
   server.listen(config.port, config.host, () => {
     console.log(JSON.stringify({ event: 'server-listening', host: config.host, port: config.port }))
   })
@@ -661,6 +684,7 @@ async function main() {
   const shutdown = () => {
     if (draining) return
     draining = true
+    feedShutdown.abort()
     const deadline = setTimeout(() => process.exit(1), 30_000)
     deadline.unref()
     server.close(async () => {

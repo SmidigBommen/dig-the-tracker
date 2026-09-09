@@ -24,7 +24,7 @@ run('Slice 2 membership and Space lifecycle', () => {
   })
 
   beforeEach(async () => {
-    now = new Date('2026-09-04T08:00:00.000Z')
+    now = new Date()
     await db.query(`truncate table
       team.space_request_receipts,
       team.board_columns,
@@ -174,7 +174,7 @@ run('Slice 2 membership and Space lifecycle', () => {
     expect(retry).toEqual(issued)
     if (!issued.ok || issued.value.result.kind !== 'invitation-issued') throw new Error('Invitation was not issued')
 
-    now = new Date('2026-09-11T08:00:00.000Z')
+    now = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
     const recipient = await signIn('member')
     const expired = await recipient.space.change(recipient.session.identity, {
       requestId: 'expired-acceptance' as RequestId,
@@ -182,7 +182,7 @@ run('Slice 2 membership and Space lifecycle', () => {
     })
     expect(expired).toEqual({ ok: false, fault: { kind: 'invalid-invitation' } })
 
-    now = new Date('2026-09-11T08:00:01.000Z')
+    now = new Date(now.getTime() + 1000)
     const fresh = await admin.space.change(admin.session.identity, {
       requestId: 'fresh-invitation' as RequestId,
       command: { kind: 'issue-invitation', space: { kind: 'key', spaceKey: 'DIG' as SpaceKey } },
@@ -595,7 +595,7 @@ run('Slice 2 membership and Space lifecycle', () => {
     })
     expect(scheduled.ok && scheduled.value.result.kind === 'space-deletion-scheduled'
       && scheduled.value.result.space).toMatchObject({
-        lifecycle: 'deletion_scheduled', deletionScheduledFor: '2026-09-11T08:00:00.000Z',
+        lifecycle: 'deletion_scheduled', deletionScheduledFor: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       })
     if (!scheduled.ok || scheduled.value.result.kind !== 'space-deletion-scheduled') throw new Error('Deletion was not scheduled')
     expect(await admin.space.authorize(admin.session.identity, {
@@ -997,7 +997,7 @@ run('Slice 2 membership and Space lifecycle', () => {
       const scheduled = await manage('http-schedule', 'schedule-space-deletion', { expectedRevision: current.revision })
       expect(scheduled.result).toMatchObject({
         kind: 'space-deletion-scheduled',
-        space: { lifecycle: 'deletion_scheduled', deletionScheduledFor: '2026-09-11T08:00:00.000Z' },
+        space: { lifecycle: 'deletion_scheduled', deletionScheduledFor: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() },
       })
       current = scheduled.result.space!
       const cancelled = await manage('http-cancel', 'cancel-space-deletion', { expectedRevision: current.revision })

@@ -1,6 +1,6 @@
 # Dig team Kanban
 
-Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 through 5 of the team MVP: authenticated Spaces, membership administration, Space lifecycle, Task capture and editing, work movement and closure, comments, and the in-app inbox.
+Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 through 6 of the team MVP: authenticated Spaces, membership administration, Space lifecycle, Task capture and editing, work movement and closure, comments, the in-app inbox, and live collaboration.
 
 Members can create, open, edit, assign, tag, archive, and restore Tasks and one-level Subtasks. They can drag or explicitly move work, close with an Outcome, reopen, and inspect immutable Task history.
 
@@ -27,9 +27,11 @@ Members can create, open, edit, assign, tag, archive, and restore Tasks and one-
 - Authored comments with revisions, stable Member mentions, tombstones, and administrator moderation
 - Assignment, mention, and assigned-Task comment Notifications with read state and 90-day expiry
 - Bounded lane, Subtask, Archive, comment, history, inbox, and Tag autocomplete pages
+- Live Board updates with automatic reconnect and snapshot recovery
+- Draft preservation and paused editing while disconnected
 - PostgreSQL persistence and checksummed migrations
 
-Live updates, reports, permanent Space deletion, and export remain planned. Coolify setup for real-provider sign-in validation is the current deployment step; the remaining team-release gates still apply.
+Workflow configuration, scheduled retention, reports, permanent Space deletion, and export remain planned. Coolify setup for real-provider sign-in validation is the current deployment step; the remaining team-release gates still apply.
 
 ## Coolify setup
 
@@ -123,3 +125,4 @@ Open http://127.0.0.1:5173.
 - [Slice 3 implementation notes](docs/implementation/slice-03-capture-and-shape-work.md)
 - [Slice 4 implementation notes](docs/implementation/slice-04-move-work-and-record-flow.md)
 - [Slice 5 implementation notes](docs/implementation/slice-05-discuss-and-notify.md)
+- [Slice 6 implementation notes](docs/implementation/slice-06-collaborate-live.md)

@@ -1,6 +1,7 @@
 import type { DbClient } from '../../db.js'
 import type { BoardUpdate } from '../../contracts/board.js'
 import type { ChangeSequence, Instant, MemberId, Revision, SpaceId } from '../shared.js'
+import { retainRecentUpdates } from './private-receipts.js'
 
 // Called only while SpaceModule holds the Space lock in its membership transaction.
 export async function unassignEndedMember(client: DbClient, spaceId: SpaceId, memberId: MemberId, actorMemberId: MemberId, now: Date) {
@@ -23,4 +24,5 @@ export async function unassignEndedMember(client: DbClient, spaceId: SpaceId, me
   ] }
   await client.query('insert into team.board_updates (space_id, sequence, update, occurred_at) values ($1,$2,$3,$4)',
     [spaceId, sequence, update, now])
+  await retainRecentUpdates(client, spaceId, sequence)
 }

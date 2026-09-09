@@ -19,5 +19,10 @@ export async function appendUpdate(client: DbClient, spaceId: string, changes: B
   const update: BoardUpdate = { sequence: sequence as ChangeSequence, ...(requestId ? { requestId } : {}), occurredAt: advanced.rows[0].occurred_at.toISOString() as Instant,
     changes: [...changes, { kind: 'query-revisions-changed', revisions: { tasks: sequence as Revision, inbox: sequence as Revision } }] }
   await client.query('insert into team.board_updates (space_id, sequence, update) values ($1,$2,$3)', [spaceId, update.sequence, update])
+  await retainRecentUpdates(client, spaceId, sequence)
   return update
+}
+
+export async function retainRecentUpdates(client: DbClient, spaceId: string, sequence: number) {
+  await client.query('delete from team.board_updates where space_id = $1 and sequence <= $2', [spaceId, sequence - 1000])
 }

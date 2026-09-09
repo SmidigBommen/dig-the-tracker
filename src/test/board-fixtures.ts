@@ -1,4 +1,5 @@
-import type { BoardTransport } from '../board-session/board-session.ts'
+import type { BoardTransport, BoardFeedObserver } from '../board-session/board-session.ts'
+import type { FollowOptions } from '../../api/contracts/board.ts'
 import type { BoardFault, BoardOverview, BoardView, ChangeReceipt, ChangeRequest, TaskDetail } from '../../api/contracts/board.ts'
 
 export const emptyBoard = {
@@ -15,6 +16,7 @@ export const capturedTask = {
 } as unknown as TaskDetail
 
 export class MemoryBoardTransport implements BoardTransport {
+  follow(_options: FollowOptions, observer: BoardFeedObserver) { observer.open(); return () => {} }
   requests: ChangeRequest[] = []
   fault?: BoardFault
   view: BoardView = { kind: 'task', sequence: 1 as never, value: capturedTask }

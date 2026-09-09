@@ -18,8 +18,9 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
   const canDrag = !readOnly && !busy && !detail && !draft && !state.archive && !state.inbox
 
   useEffect(() => {
+    session.startLive()
     const offline = () => session.setConnected(false)
-    const online = () => { void session.refresh() }
+    const online = () => { void session.reconnect() }
     const leaving = (event: BeforeUnloadEvent) => {
       if (session.hasUnsavedComments() || session.hasUnsavedEdits() || session.getSnapshot().draft && !session.getSnapshot().draft?.taskId) event.preventDefault()
     }
@@ -27,6 +28,7 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
     window.addEventListener('online', online)
     window.addEventListener('beforeunload', leaving)
     return () => {
+      session.stopLive()
       window.removeEventListener('offline', offline); window.removeEventListener('online', online)
       window.removeEventListener('beforeunload', leaving)
     }
@@ -57,7 +59,11 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
       if (event.dataTransfer) { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', task.id) }
     }} onDragEnd={() => { dragged.current = null; setHoveredColumn(null) }} onDrop={(event) => drop(event, task.columnId, task)}
     onOpen={() => void session.openEditor({ kind: 'id', taskId: task.id })} />
-  const reconnect = async () => { await session.refresh(); if (!session.getSnapshot().draft) session.beginEdit() }
+  const reconnect = async () => {
+    if (!connected) await session.reconnect()
+    else await session.refresh()
+    if (!session.getSnapshot().draft) session.beginEdit()
+  }
   const tagEditor = draft && <TagEditor tags={draft.tags} suggestions={state.tagSuggestions.map((tag) => tag.name)}
     onSearch={session.suggestTags} onChange={(tags) => session.updateDraft({ tags })} />
   const assignee = draft && <label className="task-property"><span>Assignee</span><select value={draft.assigneeId ?? ''} onChange={(event) => session.updateDraft({ assigneeId: event.target.value as MemberId || null })}>
@@ -118,7 +124,7 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
       {detail.archived && <p className="lifecycle-badge">Archived Task</p>}
       <div className={conflict ? 'task-comparison' : undefined}>
         <div>
-          {draft ? <fieldset className="inline-task-editor" disabled={readOnly || (busy && !savingEdits)}>
+          {draft ? <fieldset className="inline-task-editor" disabled={readOnly || detail.archived || (busy && !savingEdits)}>
             <input className="task-title-input" name="title" aria-label="Title" value={draft.title} onChange={(event) => session.updateDraft({ title: event.target.value })} />
             <div className="task-properties">{assignee}<div className="task-property"><span>Column</span><span>{overview.columns.find((column) => column.id === detail.columnId)?.name}</span></div>{tagEditor}</div>
             <label className="task-description-label"><span>Description</span><textarea name="description" rows={5} placeholder="Add a description…" value={draft.description} onChange={(event) => session.updateDraft({ description: event.target.value })} /></label>
@@ -134,8 +140,8 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
         {conflict && <section className="current-task" aria-label="Current version">
           <h3>Current version</h3><h4>{conflict.title}</h4><PlainText text={conflict.description} />
           <p>Assignee: {conflict.assignee?.displayName ?? 'Unassigned'}</p><Tags tags={conflict.tags.map((tag) => tag.name)} />
-          <button className="quiet-button" onClick={() => session.useCurrentRevision()}>Keep my draft and edit from this version</button>
-          <button className="text-button" onClick={() => session.beginEdit()}>Use current version</button>
+          <button className="quiet-button" disabled={readOnly || detail.archived} onClick={() => session.useCurrentRevision()}>Keep my draft and edit from this version</button>
+          <button className="text-button" onClick={() => { session.cancelDraft(); session.beginEdit() }}>Use current version</button>
         </section>}
       </div>
       {!detail.archived && <TaskMove key={`move-${detail.id}`} task={detail} overview={overview} disabled={readOnly || busy || Boolean(conflict)}
