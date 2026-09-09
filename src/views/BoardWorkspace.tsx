@@ -89,10 +89,9 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
     </div>
     {!detail && <Warnings warnings={state.warnings} overview={overview} />}
     {!detail && state.pendingAction && <Button variant="secondary" disabled={!connected || busy} onClick={() => void session.retryPendingChange()}>Retry pending change</Button>}
-    {state.pagesStale && <p role="status">The loaded pages changed. Refresh the Board to continue.</p>}
     {!connected && !detail && !draft && <p role="status">Connection lost. The Board is readable; editing is paused.</p>}
     {state.error && !detail && !draft && <p role="alert" className="team-error">{state.error}</p>}
-    <div className="column-grid" aria-label={`${overview.space.displayName} Board`}>
+    <div className="column-grid" aria-label={`${overview.space.displayName} Board`} aria-busy={state.pagesStale}>
       {overview.columns.map((column) => <section className={`flow-column flow-${column.flowRole}${canDrag && hoveredColumn === column.id ? ' drop-target' : ''}`} key={column.id}
         onDragOver={(event) => {
           if (!canDrag || !dragged.current) return

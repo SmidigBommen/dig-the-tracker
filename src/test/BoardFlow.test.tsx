@@ -3,10 +3,46 @@ import userEvent from '@testing-library/user-event'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { BoardWorkspace } from '../views/BoardWorkspace.tsx'
 import { capturedTask, emptyBoard, MemoryBoardTransport } from './board-fixtures.ts'
+import type { BoardTransport } from '../board-session/board-session.ts'
 
 const active = { ...emptyBoard.columns[0], id: 'active' as never, name: 'In Progress', intake: false, flowRole: 'active' as const, wipLimit: 3, orderRevision: 4 as never }
 
 describe('Board movement', () => {
+  it('refreshes after a drag without asking the user to refresh the Board', async () => {
+    const transport = new MemoryBoardTransport()
+    const moved = { ...capturedTask, columnId: active.id }
+    transport.receipt = { ...transport.receipt, result: { kind: 'place-task', taskId: capturedTask.id },
+      update: { ...transport.receipt.update, changes: [
+        { kind: 'task-upserted', task: moved, placement: { columnId: active.id } },
+        { kind: 'query-revisions-changed', revisions: { tasks: 1 as never, inbox: 1 as never } },
+      ] } }
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => { release = resolve })
+    let refreshing = false
+    const port: BoardTransport = {
+      follow: transport.follow.bind(transport), change: transport.change.bind(transport),
+      read: async () => {
+        refreshing = true
+        await waiting
+        return { ok: true, value: { kind: 'overview', sequence: 1 as never, value: { ...emptyBoard,
+          board: { ...emptyBoard.board, changeSequence: 1 as never },
+          columns: [emptyBoard.columns[0], { ...active, tasks: { items: [moved] } }],
+        } } }
+      },
+    }
+    render(<BoardWorkspace initialBoard={{ ...emptyBoard, columns: [{ ...emptyBoard.columns[0], tasks: { items: [capturedTask] } }, active] }} transport={port} />)
+    fireEvent.dragStart(screen.getByRole('button', { name: /DIG-1/ }))
+    fireEvent.drop(screen.getByRole('region', { name: /In Progress/ }))
+    try {
+      await waitFor(() => expect(refreshing).toBe(true))
+      expect(within(screen.getByRole('region', { name: /In Progress/ })).getByRole('button', { name: /DIG-1/ })).toBeInTheDocument()
+      expect(screen.queryByText(/Refresh the Board to continue/)).not.toBeInTheDocument()
+    } finally { release() }
+    await waitFor(() => expect(screen.getByRole('button', { name: 'New Task' })).toBeEnabled())
+    expect(within(screen.getByRole('region', { name: /Backlog/ })).queryByRole('button', { name: /DIG-1/ })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: /In Progress/ })).getByRole('button', { name: /DIG-1/ })).toHaveAttribute('draggable', 'true')
+  })
+
   it('drags a Task into a Column and shows the committed WIP warning', async () => {
     const transport = new MemoryBoardTransport()
     transport.receipt = { ...transport.receipt, result: { kind: 'place-task', taskId: capturedTask.id },
