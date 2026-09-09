@@ -1,9 +1,13 @@
+import { readReferences } from './private-references.js'
+import { readFlow, readWorkload } from './private-reports.js'
+import { taskSummary, type TaskRow } from './private-task-summary.js'
+import { searchTasks } from './private-search.js'
 import { readWorkflow, setWorkflow } from './private-workflow.js'
 import { inboxPage, unreadCount, markNotificationsRead, notify } from './private-notifications.js'
 import { changeComment, commentPage, commentForClosure } from './private-comments.js'
 import { commitChange, appendUpdate } from './private-receipts.js'
 import { restoreFamily } from './private-family.js'
-import { transitionTask, changeOutcome, currentOutcome, type FlowTask } from './private-flow.js'
+import { transitionTask, changeOutcome } from './private-flow.js'
 import { historyPage } from './private-history.js'
 import { placeTask, appendRank, taskPlacement } from './private-placement.js'
 import { BoardRejection, decodeCursor, encodeCursor, pageSize } from './private-cursors.js'
@@ -13,7 +17,7 @@ import { inTransaction } from '../../db.js'
 import { inspectAuthorizedSpace } from '../private-capabilities.js'
 import { recheckAccess } from './private-access.js'
 import { followBoard } from './private-feed.js'
-import { isDatabaseError, type BoardId, type ChangeSequence, type ColumnId, type MemberId, type Result, type Revision, type SpaceId, type SpaceKey, type PageRequest, type TaskId, type TaskKey } from '../shared.js'
+import { isDatabaseError, type BoardId, type ChangeSequence, type ColumnId, type MemberId, type Result, type Revision, type SpaceId, type SpaceKey, type PageRequest, type TaskId } from '../shared.js'
 import type { AuthorizedSpace } from '../space/space-module.js'
 
 export type * from '../../contracts/board.js'
@@ -57,13 +61,13 @@ interface MemberRow {
 }
 
 export class BoardModuleImplementation implements BoardModule {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly db: Database, private readonly config: { now?: () => Date } = {}) {}
 
   async read(
     access: AuthorizedSpace<'board-read'>,
     query: BoardQuery,
   ): Promise<Result<BoardView, BoardFault>> {
-    if (query.kind !== 'workflow' && query.kind !== 'overview' && query.kind !== 'task' && query.kind !== 'tasks' && query.kind !== 'tags' && query.kind !== 'inbox') return { ok: false, fault: { kind: 'temporarily-unavailable' } }
+    if (query.kind !== 'references' && query.kind !== 'workload' && query.kind !== 'flow' && query.kind !== 'workflow' && query.kind !== 'overview' && query.kind !== 'task' && query.kind !== 'tasks' && query.kind !== 'tags' && query.kind !== 'inbox') return { ok: false, fault: { kind: 'temporarily-unavailable' } }
     if (query.kind === 'overview' && query.firstPageSize !== undefined
       && (!Number.isInteger(query.firstPageSize) || query.firstPageSize < 1 || query.firstPageSize > 200)) {
       return {
@@ -88,6 +92,9 @@ export class BoardModuleImplementation implements BoardModule {
         if (!board) return { ok: false as const, fault: { kind: 'not-found' as const } }
 
         let sequence = Number(board.change_sequence) as ChangeSequence
+        if (query.kind === 'references') return { ok: true as const,value: { kind: 'references' as const,sequence,value: await readReferences(client,claims.spaceId,permitted.space.space_key,query.keys) } }
+        if (query.kind === 'workload') return { ok: true as const, value: { kind: 'workload' as const, sequence, value: await readWorkload(client,claims.spaceId,permitted.space.space_key,sequence,query.memberId,query.page) } }
+        if (query.kind === 'flow') return { ok: true as const, value: { kind: 'flow' as const, sequence, value: await readFlow(client,claims.spaceId,permitted.space.space_key,permitted.space.time_zone,sequence,query.page,this.config.now?.() ?? new Date()) } }
         if (query.kind === 'workflow') return { ok: true as const, value: { kind: 'workflow' as const, sequence, value: await readWorkflow(client, claims.spaceId) } }
         if (query.kind === 'inbox') return { ok: true as const, value: { kind: 'inbox' as const, sequence, value: await inboxPage(client, claims.spaceId, claims.memberId, query.page), unreadNotifications: await unreadCount(client, claims.spaceId, claims.memberId) } }
         if (query.kind === 'tags') {
@@ -110,7 +117,8 @@ export class BoardModuleImplementation implements BoardModule {
           } } }
         }
         if (query.kind === 'tasks') {
-          if (query.selection.kind === 'search') return { ok: false as const, fault: { kind: 'temporarily-unavailable' as const } }
+          if (query.selection.kind === 'search') return { ok: true as const, value: { kind: 'tasks' as const, sequence,
+            value: await searchTasks(client, claims.spaceId, permitted.space.space_key, sequence, query.selection, query.page) } }
           if (query.selection.kind === 'column') {
           const column = await client.query('select id from team.board_columns where space_id = $1 and id::text = $2 and archived_at is null',
             [claims.spaceId, query.selection.columnId])
@@ -426,39 +434,6 @@ export class BoardModuleImplementation implements BoardModule {
   }
 }
 
-
-interface TaskRow extends FlowTask {
-  started_at: Date | null
-  column_entered_at: Date
-  space_id: string
-  rank: string
-  archived_at: Date | null
-  parent_task_id: string | null
-  assignee_id: string | null
-  id: string
-  space_key: string
-  number: string
-  title: string
-  description: string
-  column_id: string
-  revision: number
-  created_at: Date
-  updated_at: Date
-}
-
-async function taskSummary(client: DbClient, task: TaskRow): Promise<TaskSummary> {
-  const assignee = task.assignee_id ? await client.query<{ id: MemberId; displayName: string }>(
-    `select member.id, identity.display_name as "displayName" from team.members member
-     join team.identities identity on identity.id = member.identity_id where member.id = $1 and member.space_id = $2`,
-    [task.assignee_id, task.space_id],
-  ) : undefined
-  const tags = await client.query<TagView>(
-    `select tag.id, tag.name from team.task_tags link join team.tags tag on tag.id = link.tag_id and tag.space_id = link.space_id
-     where link.space_id = $1 and link.task_id = $2 order by lower(tag.name), tag.id`, [task.space_id, task.id],
-  )
-  return { outcome: currentOutcome(task), closedAt: task.closed_at?.toISOString() as import('../shared.js').Instant ?? null, archived: Boolean(task.archived_at), parentTaskId: task.parent_task_id as TaskId | null, tags: tags.rows, id: task.id as TaskId, key: `${task.space_key}-${task.number}` as TaskKey,
-    title: task.title, assignee: assignee?.rows[0] ?? null, columnId: task.column_id as ColumnId, revision: task.revision as Revision }
-}
 
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`

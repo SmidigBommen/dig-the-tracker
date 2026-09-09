@@ -1,6 +1,6 @@
 # Dig team Kanban
 
-Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 through 7 of the team MVP: authenticated Spaces, membership administration, Space lifecycle, Task capture and editing, work movement and closure, comments, the in-app inbox, and live collaboration.
+Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 through 8 of the team MVP: authenticated Spaces, membership administration, Space lifecycle, Task capture and editing, work movement and closure, comments, the in-app inbox, and live collaboration.
 
 Members can create, open, edit, assign, tag, archive, and restore Tasks and one-level Subtasks. They can drag or explicitly move work, close with an Outcome, reopen, and inspect immutable Task history.
 
@@ -31,7 +31,7 @@ Members can create, open, edit, assign, tag, archive, and restore Tasks and one-
 - Draft preservation and paused editing while disconnected
 - PostgreSQL persistence and checksummed migrations
 
-Workflow configuration, scheduled retention, reports, permanent Space deletion, and export remain planned. Coolify setup for real-provider sign-in validation is the current deployment step; the remaining team-release gates still apply.
+Administrators can edit workflows; scheduled retention archives Closed Tasks and deletes Spaces after their grace period. Members can search their Space and open Flow and Workload views. See [Slice 8 notes](docs/implementation/slice-08-search-flow-workload.md) for report definitions. Export and the remaining release gates are planned for Slice 9.
 
 ## Coolify setup
 

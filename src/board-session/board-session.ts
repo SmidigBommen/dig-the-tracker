@@ -1,5 +1,6 @@
+import { referenceKeys } from './task-reference-text.ts'
 import type {
-  WorkflowView, WorkflowPlan, NotificationView, CommentView, BoardWarning, Closure, Outcome, TaskDestination, TagView, BoardCommand, BoardFault, BoardOverview, BoardQuery, BoardUpdate, BoardView,
+  TaskReference, FlowView, WorkloadView, TaskSelection, WorkflowView, WorkflowPlan, NotificationView, CommentView, BoardWarning, Closure, Outcome, TaskDestination, TagView, BoardCommand, BoardFault, BoardOverview, BoardQuery, BoardUpdate, BoardView,
   ChangeReceipt, ChangeRequest, Page, TaskDetail, TaskLocator, TaskSummary, BoardFeedItem, FollowOptions,
 } from '../../api/contracts/board.ts'
 import type { NotificationId, CommentId, ColumnId, MemberId, RequestId, Result, Revision, TaskId, TaskKey } from '../../api/modules/shared.ts'
@@ -33,7 +34,16 @@ export interface CommentDraft {
   expectedRevision?: Revision
 }
 
+export type SearchScope = NonNullable<Extract<TaskSelection, { kind: 'search' }>['include']>
+export type BoardExploration =
+  | { kind: 'search'; text: string; include: SearchScope; results?: Page<TaskSummary> }
+  | { kind: 'flow'; value?: FlowView }
+  | { kind: 'workload'; value?: WorkloadView }
+
 export interface BoardSessionState {
+  references?: TaskReference[]
+  exploration?: BoardExploration
+  explorationLoading?: boolean
   workflow?: WorkflowView
   workflowLoad?: number
   commentDraft?: CommentDraft
@@ -66,6 +76,8 @@ export class BoardSession {
   private archiveRequest = 0
   private inboxRequest = 0
   private workflowRequest = 0
+  private explorationRequest = 0
+  private referenceRequest = 0
   private pageGeneration = 0
   private readonly commentDrafts = new Map<TaskId, CommentDraft>()
   private editBaseline?: TaskDraft
@@ -102,6 +114,7 @@ export class BoardSession {
   }
 
   stopLive() {
+    this.referenceRequest++
     this.live = false
     this.liveGeneration++
     this.feedReady = false
@@ -129,6 +142,7 @@ export class BoardSession {
         this.feedReady = true
         this.retryMilliseconds = 1000
         this.set({ connected: true, error: this.state.conflict || this.state.commentConflict ? this.state.error : undefined })
+        if (this.state.detail && !this.state.draft && !this.state.busy) this.beginEdit()
       },
       disconnected: () => { if (this.live && generation === this.liveGeneration) this.disconnectLive() },
       item: (item) => {
@@ -223,6 +237,7 @@ export class BoardSession {
       }
       const editedComment = current?.comments?.items.find((comment) => comment.id === this.state.commentDraft?.commentId)
       if (editedComment && editedComment.revision !== this.state.commentDraft?.expectedRevision) this.set({ commentConflict: editedComment })
+      if (this.state.exploration) await this.refreshExploration()
       return true
     } catch { this.disconnectLive(); return false }
     finally {
@@ -486,6 +501,7 @@ export class BoardSession {
     this.set({ overview: result.value.value, connected: !this.live || this.feedReady, pagesStale: false, archive: undefined,
       detail: this.state.draft?.taskId ? this.state.detail : undefined, error: undefined })
     if (this.detailLocator) await this.openTask(this.detailLocator)
+    if (this.state.exploration) await this.refreshExploration()
   }
 
   async loadMore(columnId: ColumnId) {
@@ -507,6 +523,75 @@ export class BoardSession {
           ? { ...current, tasks: { items: [...current.tasks.items, ...page.items], next: page.next } } : current) } })
       }
     } finally { this.set({ busy: false }) }
+  }
+
+  async resolveReferences(text: string) {
+    const request = ++this.referenceRequest
+    const keys = referenceKeys(text) as TaskKey[]
+    const references: TaskReference[] = []
+    if (!keys.length) { this.set({ references }); return }
+    for (let offset=0;offset<keys.length;offset+=50) {
+      try {
+        const result = await this.transport.read({ kind: 'references',keys: keys.slice(offset,offset+50) })
+        if (request !== this.referenceRequest) return
+        if (result.ok && result.value.kind === 'references') references.push(...result.value.value)
+      } catch { /* Failed or inaccessible lookups leave the original text unlinked. */ }
+      if (request !== this.referenceRequest) return
+    }
+    this.set({ references })
+  }
+
+  async explore(kind: 'board' | BoardExploration['kind']) {
+    this.explorationRequest++
+    this.set({ exploration: kind === 'board' ? undefined : kind === 'search' ? { kind, text: '', include: 'open' } : { kind }, explorationLoading: false, error: undefined })
+    if (kind !== 'board') await this.refreshExploration()
+  }
+
+  async search(text: string, include: SearchScope) {
+    this.set({ exploration: { kind: 'search',text,include },error: undefined })
+    await this.refreshExploration()
+  }
+
+  async loadExplorationMore(memberId?: MemberId) {
+    if (this.state.explorationLoading || this.state.pagesStale) return
+    const view = this.state.exploration
+    const after = view?.kind === 'search' ? view.results?.next : view?.kind === 'flow' ? view.value?.oldest.next
+      : view?.kind === 'workload' ? view.value?.members.find((row) => row.member.id === memberId)?.tasks.next : undefined
+    if (after) await this.refreshExploration(after,memberId)
+  }
+
+  private async refreshExploration(after?: import('../../api/modules/shared.ts').OpaqueCursor, memberId?: MemberId): Promise<void> {
+    const view = this.state.exploration
+    if (!view) return
+    const request = ++this.explorationRequest
+    const query: BoardQuery = view.kind === 'search' ? { kind: 'tasks',selection: { kind: 'search',text: view.text,include: view.include },page: { after } }
+      : view.kind === 'flow' ? { kind: 'flow',page: { after } } : { kind: 'workload',memberId,page: { after } }
+    this.set({ explorationLoading: true })
+    try {
+      const result = await this.transport.read(query)
+      if (request !== this.explorationRequest) return
+      if (!result.ok) {
+        if (result.fault.kind === 'cursor-expired') { await this.refreshExploration(); return }
+        this.fail(result.fault); return
+      }
+      if (result.value.sequence < this.state.overview.board.changeSequence) {
+        this.liveDirty = true; this.scheduleLiveSync(); return
+      }
+      if (view.kind === 'search' && result.value.kind === 'tasks') this.set({ exploration: { ...view, results: {
+        ...result.value.value,items: after ? [...(view.results?.items ?? []),...result.value.value.items] : result.value.value.items,
+      } } })
+      if (view.kind === 'flow' && result.value.kind === 'flow') this.set({ exploration: { kind: 'flow',value: { ...result.value.value,
+        oldest: { ...result.value.value.oldest,items: after ? [...(view.value?.oldest.items ?? []),...result.value.value.oldest.items] : result.value.value.oldest.items },
+      } } })
+      if (view.kind === 'workload' && result.value.kind === 'workload') {
+        const value = result.value.value
+        this.set({ exploration: { kind: 'workload', value: after && view.value ? { ...value,members: view.value.members.map((row) => {
+          const next = value.members.find((item) => item.member.id === row.member.id)
+          return next ? { ...next,tasks: { ...next.tasks,items: [...row.tasks.items,...next.tasks.items] } } : row
+        }) } : value } })
+      }
+    } catch { if (request === this.explorationRequest) this.fail({ kind: 'temporarily-unavailable' }) }
+    finally { if (request === this.explorationRequest) this.set({ explorationLoading: false }) }
   }
 
   async openWorkflow() {

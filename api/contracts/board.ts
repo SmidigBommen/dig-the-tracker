@@ -61,6 +61,7 @@ export interface Page<T> {
 }
 
 export interface TagView { id: TagId; name: string }
+export interface TaskReference { id: TaskId; key: TaskKey; spaceKey: SpaceKey }
 
 export interface TaskSummary {
   outcome: Outcome | null
@@ -86,8 +87,26 @@ export interface TaskDetail extends TaskSummary {
   subtasks: Page<TaskSummary>
 }
 
-export interface FlowView { columns: BoardColumnView[] }
-export interface WorkloadView { members: BoardMemberView[] }
+export interface AgedTask extends TaskSummary { columnEnteredAt: Instant; ageMilliseconds: number }
+export interface FlowColumn { id: ColumnId; name: string; archived: boolean; flowRole: BoardColumnView['flowRole']; tasks: number; limit: number | null }
+export interface ThroughputWeek { startDate: string; completed: number; rejected: number; cancelled: number; duplicate: number }
+export interface FlowView {
+  generatedAt: Instant
+  timeZone: string
+  startDate: string
+  endDate: string
+  columns: FlowColumn[]
+  oldest: Page<AgedTask>
+  medianCycleTimeMilliseconds: number | null
+  cycleTimeSampleSize: number
+  throughput: ThroughputWeek[]
+  history: Array<{ date: string; columns: Array<{ columnId: ColumnId; tasks: number }> }>
+}
+export interface WorkloadView {
+  generatedAt: Instant
+  members: Array<{ member: BoardMemberView; activeTasks: number; tasks: Page<AgedTask> }>
+  unassignedActiveTasks: number
+}
 export interface NotificationView {
   id: NotificationId
   read: boolean
@@ -108,16 +127,18 @@ export type TaskSelection =
   | { kind: 'archive' }
 
 export type BoardQuery =
+  | { kind: 'references'; keys: TaskKey[] }
   | { kind: 'workflow' }
   | { kind: 'tags'; text?: string; page?: PageRequest }
   | { kind: 'overview'; firstPageSize?: number }
   | { kind: 'tasks'; selection: TaskSelection; page?: PageRequest }
   | { kind: 'task'; task: TaskLocator; markNotificationsRead?: boolean; subtasks?: PageRequest; comments?: PageRequest; history?: PageRequest }
-  | { kind: 'flow' }
-  | { kind: 'workload' }
+  | { kind: 'flow'; page?: PageRequest }
+  | { kind: 'workload'; memberId?: MemberId; page?: PageRequest }
   | { kind: 'inbox'; page?: PageRequest }
 
 export type BoardView =
+  | { kind: 'references'; value: TaskReference[]; sequence: ChangeSequence }
   | { kind: 'workflow'; value: WorkflowView; sequence: ChangeSequence }
   | { kind: 'tags'; value: Page<TagView>; sequence: ChangeSequence }
   | { kind: 'overview'; value: BoardOverview; sequence: ChangeSequence }

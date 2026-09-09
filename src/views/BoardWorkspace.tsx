@@ -1,3 +1,5 @@
+import { BoardExploration } from './BoardExploration.tsx'
+import { Tabs } from '../ui/Tabs.tsx'
 import { WorkflowEditor } from './WorkflowEditor.tsx'
 import { Button } from '../ui/Button.tsx'
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type DragEvent } from 'react'
@@ -5,7 +7,7 @@ import type { BoardOverview, BoardWarning, Outcome, TaskSummary } from '../../ap
 import type { ColumnId, MemberId } from '../../api/modules/shared.ts'
 import { BoardSession, type BoardTransport } from '../board-session/board-session.ts'
 import { InboxPanel } from './InboxPanel.tsx'
-import { PlainText } from './PlainText.tsx'
+import { PlainText,DescriptionLinks } from './PlainText.tsx'
 import { Dialog as TaskDialog } from '../ui/Dialog.tsx'
 import { AutoTextarea } from '../ui/AutoTextarea.tsx'
 import { TaskActions } from './TaskActions.tsx'
@@ -13,7 +15,7 @@ import { TaskActivity } from './TaskActivity.tsx'
 import '../ui/design-system.css'
 import './BoardWorkspace.css'
 
-export function BoardWorkspace({ initialBoard, transport }: { initialBoard: BoardOverview; transport: BoardTransport }) {
+export function BoardWorkspace({ initialBoard, transport, initialTask }: { initialBoard: BoardOverview; transport: BoardTransport; initialTask?: string }) {
   const [session] = useState(() => new BoardSession(transport, initialBoard))
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot)
   const { overview, draft, detail, busy, connected, conflict, savingEdits } = state
@@ -21,10 +23,11 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
   const dirty = session.hasUnsavedEdits()
   const dragged = useRef<TaskSummary | null>(null)
   const [hoveredColumn, setHoveredColumn] = useState<ColumnId | null>(null)
-  const canDrag = !readOnly && !busy && !detail && !draft && !state.archive && !state.inbox && !state.workflow
+  const canDrag = !readOnly && !busy && !detail && !draft && !state.archive && !state.inbox && !state.workflow && !state.exploration
 
   useEffect(() => {
     session.startLive()
+    if (initialTask) void session.openEditor({ kind: 'key',taskKey: initialTask as import('../../api/modules/shared.ts').TaskKey })
     const offline = () => session.setConnected(false)
     const online = () => { void session.reconnect() }
     const leaving = (event: BeforeUnloadEvent) => {
@@ -38,13 +41,21 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
       window.removeEventListener('offline', offline); window.removeEventListener('online', online)
       window.removeEventListener('beforeunload', leaving)
     }
-  }, [session])
+  }, [session,initialTask])
 
   useEffect(() => {
     if (!draft?.taskId || !dirty || readOnly || busy || conflict || state.error) return
     const timer = window.setTimeout(() => { void session.saveEdits() }, 700)
     return () => window.clearTimeout(timer)
   }, [session, draft, dirty, readOnly, busy, conflict, state.error])
+
+  const referenceText = [draft?.description,detail?.description,conflict?.description,state.commentConflict?.text,
+    ...(detail?.comments?.items.filter(comment => !comment.removedAt).map(comment => comment.text) ?? []),
+    ...(detail?.history?.items.map(entry => entry.comment ?? '') ?? [])].filter(Boolean).join('\n')
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void session.resolveReferences(referenceText) },200)
+    return () => window.clearTimeout(timer)
+  },[session,referenceText])
 
   const drop = (event: DragEvent, columnId: ColumnId, anchor?: TaskSummary) => {
     setHoveredColumn(null)
@@ -91,7 +102,8 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
     {!detail && state.pendingAction && <Button variant="secondary" disabled={!connected || busy} onClick={() => void session.retryPendingChange()}>Retry pending change</Button>}
     {!connected && !detail && !draft && <p role="status">Connection lost. The Board is readable; editing is paused.</p>}
     {state.error && !detail && !draft && <p role="alert" className="team-error">{state.error}</p>}
-    <div className="column-grid" aria-label={`${overview.space.displayName} Board`} aria-busy={state.pagesStale}>
+    <Tabs label="Space views" options={['Board','Search','Flow','Workload']} value={state.exploration ? state.exploration.kind[0].toUpperCase()+state.exploration.kind.slice(1) : 'Board'} onChange={value => void session.explore(value.toLowerCase() as 'board' | 'search' | 'flow' | 'workload')}>
+    {state.exploration ? <BoardExploration session={session} state={state} /> : <div className="column-grid" aria-label={`${overview.space.displayName} Board`} aria-busy={state.pagesStale}>
       {overview.columns.map((column) => <section className={`flow-column flow-${column.flowRole}${canDrag && hoveredColumn === column.id ? ' drop-target' : ''}`} key={column.id}
         onDragOver={(event) => {
           if (!canDrag || !dragged.current) return
@@ -111,7 +123,8 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
         </div>
         {column.tasks.next && <Button variant="secondary" disabled={busy || state.pagesStale} onClick={() => void session.loadMore(column.id)}>Load more in {column.name}</Button>}
       </section>)}
-    </div>
+    </div>}
+    </Tabs>
     {state.workflow && !detail && !draft && <WorkflowEditor key={state.workflowLoad} session={session} state={state} />}
     {state.inbox && !detail && !draft && <TaskDialog title="Inbox" onClose={() => session.closeInbox()}><InboxPanel session={session} state={state} readOnly={readOnly} /></TaskDialog>}
     {state.archive && !state.inbox && !detail && !draft && <TaskDialog title="Task Archive" onClose={() => session.closeArchive()}>
@@ -139,12 +152,12 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
               void session.moveTask(detail, { columnId: column.id, expectedOrderRevision: column.orderRevision, place: { kind: 'last' } })
             }}>{overview.columns.map((column) => <option key={column.id} value={column.id}>{column.name}</option>)}</select></label>{tagEditor}</div>
             <label className="task-description-label"><span>Description</span><AutoTextarea name="description" rows={2} placeholder="Add a description…" value={draft.description} onChange={(event) => session.updateDraft({ description: event.target.value })} /></label>
-            <DescriptionLinks text={draft.description} />
+            <DescriptionLinks session={session} references={state.references} text={draft.description} />
           </fieldset> : <><h2 className="task-read-title">{detail.title}</h2>
             <div className="task-properties"><div className="task-property"><span>Assignee</span><span>{detail.assignee?.displayName ?? 'Unassigned'}</span></div>
               <div className="task-property"><span>Column</span><span>{overview.columns.find((column) => column.id === detail.columnId)?.name}</span></div>
               <div className="task-property"><span>Tags</span><Tags tags={detail.tags.map((tag) => tag.name)} /></div></div>
-            <div className="task-description-label"><span>Description</span></div><PlainText text={detail.description || 'No description.'} /></>}
+            <div className="task-description-label"><span>Description</span></div><PlainText session={session} references={state.references} text={detail.description || 'No description.'} /></>}
           <div className="task-save-status" role="status">{savingEdits ? 'Saving…' : dirty ? 'Unsaved changes' : draft ? 'All changes saved' : 'Read-only'}
             {dirty && !busy && !conflict && <Button variant="ghost" disabled={readOnly} onClick={() => void session.saveEdits()}>{state.error ? 'Retry save' : 'Save now'}</Button>}
           </div>
@@ -153,7 +166,7 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
           {dirty && <button className="text-button discard-draft" disabled={busy} onClick={() => session.closeDetail()}>Discard unsaved changes</button>}
         </div>
         {conflict && <section className="current-task" aria-label="Current version">
-          <h3>Current version</h3><h4>{conflict.title}</h4><PlainText text={conflict.description} />
+          <h3>Current version</h3><h4>{conflict.title}</h4><PlainText session={session} references={state.references} text={conflict.description} />
           <p>Assignee: {conflict.assignee?.displayName ?? 'Unassigned'}</p><Tags tags={conflict.tags.map((tag) => tag.name)} />
           <Button variant="secondary" disabled={readOnly || detail.archived} onClick={() => session.useCurrentRevision()}>Keep my draft and edit from this version</Button>
           <Button variant="ghost" onClick={() => { session.cancelDraft(); session.beginEdit() }}>Use current version</Button>
@@ -230,12 +243,6 @@ function TagEditor({ tags, suggestions, onChange, onSearch }: { tags: string[]; 
     <datalist id={listId}>{suggestions.map((name) => <option key={name} value={name} />)}</datalist>
   </div></div>
 }
-
-function DescriptionLinks({ text }: { text: string }) {
-  const links = [...new Set(text.match(/https?:\/\/[^\s<>]+/g) ?? [])]
-  return links.length > 0 && <div className="description-links" aria-label="Description links">{links.map((link) => <a key={link} href={link} target="_blank" rel="noreferrer noopener">↗ {link}</a>)}</div>
-}
-
 
 function outcomeName(kind: Outcome['kind']) { return kind[0].toUpperCase() + kind.slice(1) }
 

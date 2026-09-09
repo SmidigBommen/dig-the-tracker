@@ -52,6 +52,16 @@ export default function TeamApp() {
         const session = await teamApi.session()
         const result = await teamApi.spaces('active')
         if (!active) return
+        const target = taskFromPath(window.location.pathname)
+        if (target) {
+          if (!result.spaces.some(space => space.key === target.spaceKey)) {
+            const archived = await teamApi.spaces('archived')
+            const match = archived.spaces.find(space => space.key === target.spaceKey)
+            if (match) result.spaces.push(match)
+          }
+          if (active) await openBoard(session,result.spaces,target.spaceKey)
+          return
+        }
         const remembered = localStorage.getItem(LAST_SPACE_KEY)
         const selected = result.spaces.find((space) => space.key === remembered) ?? result.spaces[0]
         if (selected) await openBoard(session, result.spaces, selected.key)
@@ -399,7 +409,7 @@ export default function TeamApp() {
               onLoadMore={loadMoreManagement}
               onClose={closeManagement}
             />
-          : state.spaces.length === 0
+          : state.spaces.length === 0 && !state.board
             ? showingArchived
               ? <NoArchivedSpaces />
               : state.session.identity.installationAdministrator
@@ -569,7 +579,7 @@ function Board({
           <input aria-label="Invitation link" value={invitationLink} readOnly onFocus={(event) => event.currentTarget.select()} />
         </label>
       )}
-      <BoardWorkspace key={`${board.board.id}:${csrfToken}`} initialBoard={board} transport={transport} />
+      <BoardWorkspace key={`${board.board.id}:${csrfToken}`} initialBoard={board} transport={transport} initialTask={taskFromPath(window.location.pathname)?.spaceKey === board.space.key ? taskFromPath(window.location.pathname)?.taskKey : undefined} />
     </main>
   )
 }
@@ -775,4 +785,9 @@ function status(error: unknown): number | undefined {
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : 'Something went wrong'
+}
+
+function taskFromPath(path: string): { spaceKey: string; taskKey: string } | undefined {
+  const match = path.match(/^\/spaces\/([A-Z][A-Z0-9]{1,9})\/tasks\/([A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,17})$/)
+  return match && match[2].startsWith(`${match[1]}-`) ? { spaceKey: match[1],taskKey: match[2] } : undefined
 }

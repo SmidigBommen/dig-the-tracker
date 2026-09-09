@@ -1,3 +1,4 @@
+import { foreignReferences } from './adapters/http/task-references.js'
 import { startMaintenance } from './runtime/maintenance.js'
 import { InvalidBoardRequest, parseBoardChange, parseBoardQuery } from './adapters/http/board-requests.js'
 import { sendBoardFeed } from './adapters/http/board-feed.js'
@@ -463,7 +464,11 @@ export function createTeamServer(
           let query: unknown
           try { query = JSON.parse(url.searchParams.get('query') ?? '{}') }
           catch { throw new InvalidBoardRequest('Invalid Board query') }
-          const result = await modules.board.read(authorized.value, parseBoardQuery(query))
+          const parsed = parseBoardQuery(query)
+          const result = await modules.board.read(authorized.value, parsed)
+          if (result.ok && result.value.kind === 'references' && parsed.kind === 'references') {
+            result.value.value.push(...await foreignReferences(modules,identity,space.spaceKey,parsed.keys))
+          }
           if (!result.ok) sendFault(response, result.fault)
           else sendJson(response, 200, result.value)
         }

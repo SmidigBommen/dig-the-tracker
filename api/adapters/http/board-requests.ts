@@ -105,8 +105,21 @@ export function parseBoardChange(value: unknown): ChangeRequest {
 }
 
 export function parseBoardQuery(value: unknown): BoardQuery {
-  const input = object(value, ['kind', 'firstPageSize', 'selection', 'page', 'task', 'subtasks', 'history', 'comments', 'text', 'markNotificationsRead'])
+  const input = object(value, ['kind', 'firstPageSize', 'selection', 'page', 'task', 'subtasks', 'history', 'comments', 'text', 'markNotificationsRead', 'memberId', 'keys'])
   switch (input.kind) {
+    case 'references':
+      object(input,['kind','keys'])
+      if (!Array.isArray(input.keys) || input.keys.length > 50 || input.keys.some(key => typeof key !== 'string' || !/^[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,17}$/.test(key))) throw new InvalidBoardRequest('Invalid Task keys')
+      return input as BoardQuery
+    case 'flow':
+      object(input, ['kind','page'])
+      page(input.page)
+      return input as BoardQuery
+    case 'workload':
+      object(input, ['kind','page','memberId'])
+      if (input.memberId !== undefined) string(input.memberId)
+      page(input.page)
+      return input as BoardQuery
     case 'workflow':
       object(input, ['kind'])
       return { kind: 'workflow' }
@@ -125,8 +138,13 @@ export function parseBoardQuery(value: unknown): BoardQuery {
       return input as BoardQuery
     case 'tasks': {
       object(input, ['kind', 'selection', 'page'])
-      const selection = object(input.selection, ['kind', 'columnId'])
-      if (selection.kind === 'column') string(selection.columnId)
+      const selection = object(input.selection, ['kind', 'columnId', 'text', 'include'])
+      if (selection.kind === 'column') { object(selection, ['kind','columnId']); string(selection.columnId) }
+      else if (selection.kind === 'search') {
+        object(selection, ['kind', 'text', 'include'])
+        string(selection.text)
+        if (selection.include !== undefined && !['open', 'closed', 'archived', 'all'].includes(String(selection.include))) throw new InvalidBoardRequest('Invalid search scope')
+      }
       else if (selection.kind === 'archive') object(selection, ['kind'])
       else throw new InvalidBoardRequest('Unknown Task selection')
       page(input.page)

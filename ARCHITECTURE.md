@@ -1,6 +1,6 @@
 # Architecture
 
-Dig is a React, Node, and PostgreSQL modular monolith. Slices 1 through 7 run authentication, Space membership, lifecycle controls, and Task capture, editing, movement, closure, history, comments, and Notifications through three server Modules. OpenID Connect is the only true-external dependency.
+Dig is a React, Node, and PostgreSQL modular monolith. Slices 1 through 8 run authentication, Space membership, lifecycle controls, and Task capture, editing, movement, closure, history, comments, and Notifications through three server Modules. OpenID Connect is the only true-external dependency.
 
 ## Running path
 
@@ -119,3 +119,13 @@ The app still binds to host loopback in repository Compose. Coolify setup for re
 Slice 7 implements atomic administrator workflow changes through `BoardModule.change(set-workflow)` and a bounded `read(workflow)`. Workflow projections update open Boards while settings drafts retain their base revision. Column archive preserves identity, and restoration restores the previous non-terminal role and WIP limit.
 
 `api/runtime/maintenance.ts` runs private Board archive and Space deletion operations on startup and every minute. Each operation owns its PostgreSQL transaction and follows the established lock order. Automatic archive uses Space-local dates and preserves families and history; system actors have null Member IDs. Permanent deletion cascades scoped receipts and clears the key reservation's identity reference. Shutdown awaits maintenance before closing the pool. [Slice 7 notes](docs/implementation/slice-07-workflow-retention.md) define batch limits, retry behavior, and the restored-Task retention window.
+
+## Search and flow evidence
+
+Slice 8 adds Space-scoped search, Flow, and Workload to `BoardModule.read`. Indexed Task text, tags, and assignee names feed bounded search pages. Oldest-work and Member pages preserve full database timestamp precision in encrypted cursors. Workload includes assigned Active work and alphabetical Members.
+
+Flow reads use current WIP, indexed closure and Cycle-time ranges, and recent occupancy deltas. `board_wip_deltas` is a Space-owned derived projection, backfilled from immutable transitions and archive events. A Task-table trigger maintains it inside existing transactions, including family and scheduled operations and old instances during rolling deployment. Reports convert timestamps using the current Space time zone. [Slice 8 notes](docs/implementation/slice-08-search-flow-workload.md) define windows, Outcomes, rework, paging, and migration behavior.
+
+Browser tabs reuse the UI foundations. `BoardSession` retains the selected search or report, rejects superseded responses, and refreshes it after committed or live changes. Search and report Tasks open the shared detail dialog. Charts have accessible tables; report reads expose no Member productivity rankings.
+
+Task-reference reads return only accessible IDs and keys. The HTTP Adapter resolves foreign keys through separate Space authorization and Board transactions; inaccessible or missing targets produce no link. Same-Space links reuse the editor, while foreign links open a new tab. `TeamApp` resolves direct Task paths after sign-in, including accessible archived Spaces.

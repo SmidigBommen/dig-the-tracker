@@ -1,6 +1,6 @@
 # BoardModule Interface contract
 
-Status: frozen as the implementation baseline on 2026-09-04. Slices 1 through 7 implement overview, Task/detail and history pages, Tag autocomplete, capture, revision, family archive/restore, movement, closure Outcomes, warnings, comments, mentions, Notifications, and live delivery through `follow`. Workflow configuration and scheduled lifecycle work are implemented; Slice 8 adds search and reports.
+Status: frozen as the implementation baseline on 2026-09-04. Slices 1 through 8 implement overview, Task/detail and history pages, Tag autocomplete, capture, revision, family archive/restore, movement, closure Outcomes, warnings, comments, mentions, Notifications, and live delivery through `follow`. Workflow configuration and scheduled lifecycle work are implemented; Space search, Flow, and Workload are implemented.
 
 This document makes the selected `BoardModule` Interface precise enough to plan and test vertical slices. Names describe domain intent, not HTTP routes, database tables, or React state.
 
@@ -76,8 +76,9 @@ export type BoardQuery =
       comments?: PageRequest
       history?: PageRequest
     }
-  | { kind: 'flow' }
-  | { kind: 'workload' }
+  | { kind: 'flow'; page?: PageRequest }
+  | { kind: 'workload'; memberId?: MemberId; page?: PageRequest }
+  | { kind: 'references'; keys: TaskKey[] }
   | { kind: 'inbox'; page?: PageRequest }
 
 export type TaskSelection =
@@ -96,6 +97,7 @@ export type BoardView =
   | { kind: 'task'; value: TaskDetail }
   | { kind: 'flow'; value: FlowView }
   | { kind: 'workload'; value: WorkloadView }
+  | { kind: 'references'; value: TaskReference[] }
   | { kind: 'inbox'; value: Page<NotificationView> }
 ```
 
@@ -358,3 +360,10 @@ The owned HTTP Adapter uses authenticated GET `/api/spaces/:key/board/events`, `
 The `workflow` read returns the current workflow revision and up to 200 retained Columns, including archived Columns, current unarchived Task counts, and order revisions. `set-workflow` supplies the desired unarchived Columns. Omitted existing Columns archive; an archived ID restores with its previous non-terminal role and WIP limit. New Columns receive IDs in the `workflow-replaced` projection, which also carries the committed workflow revision.
 
 Task history permits a null actor Member ID for automatic archive, displayed as Dig. The runtime uses Space-local date boundaries for the 30-day archive window. Restoring a Closed Task restarts that window while preserving Closed at and Outcome. See [Slice 7 implementation notes](../implementation/slice-07-workflow-retention.md) for worker bounds, cancellation, deletion, and receipt retention.
+
+
+## Slice 8 report projections
+
+`references` accepts at most 50 Task keys and returns accessible local targets as `{ id, key, spaceKey }`. The HTTP Adapter separately authorizes and reads any foreign target Spaces before combining results. Missing and inaccessible targets are omitted uniformly. This read supports description and comment links; it does not widen search or report scope.
+
+`FlowView` includes the generation instant, Space time zone, 30-date window, Column WIP, a bounded oldest-Active page, median Cycle time with sample count, 12 weeks of closure events by Outcome, and daily WIP history by stable Column ID. `WorkloadView` contains alphabetical current Members, assigned Active counts, bounded per-Member Task pages, and the unassigned Active count. Age cursors retain the database timestamp and Task ID. Definitions and migration behavior are recorded in [Slice 8 notes](../implementation/slice-08-search-flow-workload.md).

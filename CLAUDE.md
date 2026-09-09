@@ -8,7 +8,7 @@
 
 ## Current implementation
 
-- Slices 1 through 7 of the small-team MVP are implemented.
+- Slices 1 through 8 of the small-team MVP are implemented.
 - The running React entry is `src/team/TeamApp.tsx`; it handles sign-in, invitations, Space selection, membership administration, Space lifecycle, Task capture, editing, assignment, Tags, Subtasks, Task Archive, movement, closure Outcomes, history, comments, mentions, the in-app inbox, reload, and sign-out.
 - The Node HTTP Adapter is `api/server.ts`.
 - `IdentityModule` owns OpenID Connect correlation and PostgreSQL sessions.
@@ -47,4 +47,4 @@
 
 ## Next slice
 
-For Slice 8 search and reporting, read [the vertical-slice plan](docs/design/vertical-slice-plan.md), [Board Interface contract](docs/design/board-interface-contract.md), and [Slice 7 notes](docs/implementation/slice-07-workflow-retention.md). Preserve immutable flow history, opaque bounded cursors, Space-local date boundaries, and recipient privacy. Scheduled history entries have a null Member actor. Use [UI foundations](docs/design/design-system.md) for new views. Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.
+For Slice 9 release work, read [the vertical-slice plan](docs/design/vertical-slice-plan.md), [Slice 8 notes](docs/implementation/slice-08-search-flow-workload.md), and [deployment guidance](docs/coolify-deployment.md). Search and report reads remain inside `BoardModule`; `BoardSession` owns their selection, paging, and live refresh. WIP projections are maintained transactionally and backfilled from immutable history. Preserve Space-local report definitions, full timestamp cursor precision, and recipient privacy. Use [UI foundations](docs/design/design-system.md) for new views. Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.

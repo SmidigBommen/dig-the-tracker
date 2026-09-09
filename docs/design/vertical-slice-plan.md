@@ -1,6 +1,6 @@
 # Team MVP vertical-slice plan
 
-Status: Slices 1 through 7 implemented. Slices 8 and 9 remain planned.
+Status: Slices 1 through 8 implemented. Slice 9 remains planned.
 
 ## Delivery rule
 
@@ -21,7 +21,7 @@ Public team deployment remains disabled until the release slice passes all gates
 | 5. Discuss and notify. Complete | Members comment, edit their own comments, mention teammates, moderate as administrators, and work through the in-app inbox. | Add comment revisions/tombstones, mention bindings, moderation audit, Notification creation, read state, 90-day expiry, inbox paging, and task-open read behavior. | Author/moderator permission tests; same-Space mention tests; self-notification suppression; assignment/mention/assigned-Task comment cases; atomic state/history/Notification/update tests. |
 | 6. Collaborate live. Complete | Two open browsers see committed Board changes within seconds, recover after a missed sequence, and become safely read-only while disconnected. | Implement `BoardModule.follow`, retained sequences, bounded subscriber buffers, Server-Sent Events Adapter, reconnect/snapshot recovery, heartbeat access checks, and server-draining closure. | Duplicate/out-of-order reducer tests; missed-sequence snapshot test; revocation/archive stream closure; slow-subscriber behavior; disconnect/reconnect browser test; 100-connection check. |
 | 7. Adapt and retain the workflow. Complete | Administrators atomically edit the workflow; Members browse Archive; Closed Tasks auto-archive after 30 Space-local days; Space deletion observes its grace period. | Complete declarative `set-workflow`, Column archive/restore, Task-family archive/restore, scheduled archive runner, deletion runner, and private cross-Module lifecycle effects. | Empty-Column and terminal-role invariants; atomic Intake/Completion replacement; DST and Space-time-zone archive tests; parent/Subtask archive tests; deletion cancellation and permanent key-reservation tests. |
-| 8. See flow and bottleneck evidence | Members search their Space and view WIP, age, oldest work, median Cycle time, weekly throughput by Outcome, WIP history, and current workload without ranking people. | Implement search, flow and workload reads, indexed history queries or maintained summaries, report pagination, and accessible responsive views. | Search-scope and inaccessible-reference tests; report-definition fixtures; reopened-work Cycle-time tests; no Member ranking; query plans and load checks at the accepted scale. |
+| 8. See flow and bottleneck evidence. Complete | Members search their Space and view WIP, age, oldest work, median Cycle time, weekly throughput by Outcome, WIP history, and current workload without ranking people. | Implement search, flow and workload reads, indexed history queries or maintained summaries, report pagination, and accessible responsive views. | Search-scope and inaccessible-reference tests; report-definition fixtures; reopened-work Cycle-time tests; no Member ranking; query plans and load checks at the accepted scale. |
 | 9. Release on the Hetzner server | The same OCI image runs locally with Compose and in Coolify, exports a Space, survives graceful shutdown, exposes health state, and has a tested backup restore. | Finish versioned JSON export, container/runtime assembly, checksummed migration runner and lock, readiness/liveness, structured redacted logging, graceful drain, Coolify configuration, backup/restore instructions, and monitoring hooks. | Export privacy/schema tests; clean-database setup; image and Compose smoke tests; supported-browser and WCAG gates; load/security gates; Coolify deployment rehearsal; documented successful restore within the recovery target. |
 
 ## Interface-test progression
@@ -78,4 +78,4 @@ On 2026-09-08, API access was verified and Dig was switched to `master` with Aut
 
 ## Following implementation action
 
-Slice 7 is implemented. See [workflow and retention notes](../implementation/slice-07-workflow-retention.md). Start Slice 8 with Space search, flow evidence, and workload views. Preserve stable workflow identities, immutable history, Space-local dates, bounded pages, and recipient privacy.
+Slice 8 is implemented. See [search, flow, and workload notes](../implementation/slice-08-search-flow-workload.md). Start Slice 9 with export and the remaining release gates. Preserve real production data, stable workflow identities, immutable history, Space-local dates, bounded pages, and recipient privacy.
