@@ -1,3 +1,4 @@
+import { readWorkflow, setWorkflow } from './private-workflow.js'
 import { inboxPage, unreadCount, markNotificationsRead, notify } from './private-notifications.js'
 import { changeComment, commentPage, commentForClosure } from './private-comments.js'
 import { commitChange, appendUpdate } from './private-receipts.js'
@@ -62,7 +63,7 @@ export class BoardModuleImplementation implements BoardModule {
     access: AuthorizedSpace<'board-read'>,
     query: BoardQuery,
   ): Promise<Result<BoardView, BoardFault>> {
-    if (query.kind !== 'overview' && query.kind !== 'task' && query.kind !== 'tasks' && query.kind !== 'tags' && query.kind !== 'inbox') return { ok: false, fault: { kind: 'temporarily-unavailable' } }
+    if (query.kind !== 'workflow' && query.kind !== 'overview' && query.kind !== 'task' && query.kind !== 'tasks' && query.kind !== 'tags' && query.kind !== 'inbox') return { ok: false, fault: { kind: 'temporarily-unavailable' } }
     if (query.kind === 'overview' && query.firstPageSize !== undefined
       && (!Number.isInteger(query.firstPageSize) || query.firstPageSize < 1 || query.firstPageSize > 200)) {
       return {
@@ -87,6 +88,7 @@ export class BoardModuleImplementation implements BoardModule {
         if (!board) return { ok: false as const, fault: { kind: 'not-found' as const } }
 
         let sequence = Number(board.change_sequence) as ChangeSequence
+        if (query.kind === 'workflow') return { ok: true as const, value: { kind: 'workflow' as const, sequence, value: await readWorkflow(client, claims.spaceId) } }
         if (query.kind === 'inbox') return { ok: true as const, value: { kind: 'inbox' as const, sequence, value: await inboxPage(client, claims.spaceId, claims.memberId, query.page), unreadNotifications: await unreadCount(client, claims.spaceId, claims.memberId) } }
         if (query.kind === 'tags') {
           if (query.text !== undefined && (typeof query.text !== 'string' || [...query.text].length > 40)) {
@@ -206,7 +208,7 @@ export class BoardModuleImplementation implements BoardModule {
   ): Promise<Result<ChangeReceipt, BoardFault>> {
     const claims = inspectAuthorizedSpace(access)
     if (!claims || claims.use !== 'board-change') return { ok: false, fault: { kind: 'forbidden' } }
-    if (request.command.kind !== 'capture-task' && request.command.kind !== 'revise-task'
+    if (request.command.kind !== 'set-workflow' && request.command.kind !== 'capture-task' && request.command.kind !== 'revise-task'
       && request.command.kind !== 'mark-notification-read' && request.command.kind !== 'mark-all-notifications-read' && request.command.kind !== 'revise-comment' && request.command.kind !== 'remove-comment' && request.command.kind !== 'add-comment' && request.command.kind !== 'change-outcome' && request.command.kind !== 'place-task' && request.command.kind !== 'archive-task' && request.command.kind !== 'restore-task') return { ok: false, fault: { kind: 'temporarily-unavailable' } }
     if (typeof request.requestId !== 'string' || !request.requestId || request.requestId.length > 100) {
       return { ok: false, fault: { kind: 'invalid', issues: [{ field: 'requestId', message: 'Use 1 to 100 characters.' }] } }
@@ -227,6 +229,7 @@ export class BoardModuleImplementation implements BoardModule {
       return await inTransaction(this.db, async (client) => {
         const permitted = await recheckAccess(client, claims)
         if (!permitted.ok) return permitted
+        if (command.kind === 'set-workflow' && permitted.role !== 'space-administrator') return { ok: false as const, fault: { kind: 'forbidden' as const } }
         await client.query('select id from team.boards where space_id = $1 for update', [claims.spaceId])
         const previous = await client.query<{ request_hash: string; response: ChangeReceipt }>(
           `select request_hash, response from team.board_request_receipts
@@ -237,6 +240,11 @@ export class BoardModuleImplementation implements BoardModule {
           if (previous.rows[0].request_hash !== requestHash) return { ok: false as const,
             fault: { kind: 'conflict' as const, reason: 'request-id-reused' as const } }
           return { ok: true as const, value: previous.rows[0].response }
+        }
+        if (command.kind === 'set-workflow') {
+          const workflow = await setWorkflow(client, claims.spaceId, claims.identityId, command.expectedRevision, command.desired)
+          return { ok: true as const, value: await commitChange(client, claims.spaceId, claims.memberId, request, requestHash,
+            { kind: command.kind }, [{ kind: 'workflow-replaced', workflow }]) }
         }
         if (command.kind === 'mark-notification-read' || command.kind === 'mark-all-notifications-read') {
           const changed = await markNotificationsRead(client, claims.spaceId, claims.memberId, command.kind === 'mark-notification-read' ? { notificationId: command.notificationId } : {})

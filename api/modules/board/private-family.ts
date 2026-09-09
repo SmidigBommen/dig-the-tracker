@@ -12,7 +12,7 @@ export async function restoreFamily(client: DbClient, spaceId: string, taskId: s
         select coalesce(max(rank), 0) from team.tasks where space_id = $1 and column_id = destination_id and archived_at is null
       ) as destination_rank from family
     ), changed as (
-      update team.tasks task set archived_at = null, column_id = ranked.destination_id, rank = ranked.destination_rank,
+      update team.tasks task set archived_at = null, restored_at = now(), column_id = ranked.destination_id, rank = ranked.destination_rank,
         column_entered_at = now(), revision = revision + 1, updated_at = now()
       from ranked where task.space_id = $1 and task.id = ranked.id returning task.id, ranked.previous_column_id, task.column_id
     ), restored_events as (

@@ -7,7 +7,7 @@ interface EventRow {
   id: string
   kind: string
   occurred_at: Date
-  actor_member_id: MemberId
+  actor_member_id: MemberId | null
   display_name: string
   details: Partial<TaskHistoryEntry>
   closing_comment_id: string | null
@@ -19,7 +19,7 @@ function entry(row: EventRow): TaskHistoryEntry {
   const summaries: Record<string, string> = {
     'comment-added': 'Added comment', 'comment-edited': 'Edited comment', 'comment-removed': 'Removed comment', 'comment-moderated': 'Removed comment as administrator',
     'capture-task': 'Created Task', 'revise-task': 'Edited Task', 'archive-task': 'Archived Task',
-    'restore-task': 'Restored Task', 'assignee-cleared': 'Unassigned Task after membership ended',
+    'auto-archive-task': 'Automatically archived Task', 'restore-task': 'Restored Task', 'assignee-cleared': 'Unassigned Task after membership ended',
     'column-transition': 'Moved Task', 'place-task': 'Reordered Task', closed: 'Closed Task',
     reopened: 'Reopened Task', 'outcome-changed': 'Changed Outcome',
   }
@@ -32,9 +32,9 @@ function entry(row: EventRow): TaskHistoryEntry {
     ...(row.closing_comment_id ? (row.closing_comment_removed_at ? {} : { comment: row.closing_comment_text! }) : row.details.comment ? { comment: row.details.comment } : {}) }
 }
 
-const eventQuery = `select event.id::text, event.kind, event.occurred_at, event.actor_member_id, event.details, identity.display_name, closing.id as closing_comment_id, closing.text as closing_comment_text, closing.removed_at as closing_comment_removed_at
-  from team.task_events event join team.members member on member.space_id = event.space_id and member.id = event.actor_member_id
-  join team.identities identity on identity.id = member.identity_id
+const eventQuery = `select event.id::text, event.kind, event.occurred_at, event.actor_member_id, event.details, coalesce(identity.display_name,'Dig') as display_name, closing.id as closing_comment_id, closing.text as closing_comment_text, closing.removed_at as closing_comment_removed_at
+  from team.task_events event left join team.members member on member.space_id = event.space_id and member.id = event.actor_member_id
+  left join team.identities identity on identity.id = member.identity_id
   left join team.task_comments closing on closing.space_id = event.space_id and closing.origin_event_id = event.id`
 
 export async function historyPage(client: DbClient, spaceId: string, taskId: string, sequence: number, page: PageRequest): Promise<Page<TaskHistoryEntry>> {

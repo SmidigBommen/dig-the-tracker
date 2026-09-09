@@ -1,3 +1,4 @@
+import { startMaintenance } from './runtime/maintenance.js'
 import { InvalidBoardRequest, parseBoardChange, parseBoardQuery } from './adapters/http/board-requests.js'
 import { sendBoardFeed } from './adapters/http/board-feed.js'
 import { createReadStream } from 'node:fs'
@@ -667,6 +668,10 @@ async function main() {
     sessionHmacSecret: config.sessionHmacSecret,
   })
   const board = new BoardModuleImplementation(db)
+  const stopMaintenance = startMaintenance(db, config.installationAdministrators, (result) => {
+    if (!result) console.error(JSON.stringify({ event: 'maintenance-failed' }))
+    else if (result.archivedTasks || result.deletedSpaces) console.log(JSON.stringify({ event: 'maintenance-completed', ...result }))
+  })
   const feedShutdown = new AbortController()
   setMaxListeners(0, feedShutdown.signal)
   let draining = false
@@ -685,10 +690,12 @@ async function main() {
     if (draining) return
     draining = true
     feedShutdown.abort()
+    const maintenanceStopped = stopMaintenance()
     const deadline = setTimeout(() => process.exit(1), 30_000)
     deadline.unref()
     server.close(async () => {
       try {
+        await maintenanceStopped
         await db.end()
       } finally {
         clearTimeout(deadline)

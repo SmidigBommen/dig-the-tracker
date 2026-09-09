@@ -108,6 +108,7 @@ export type TaskSelection =
   | { kind: 'archive' }
 
 export type BoardQuery =
+  | { kind: 'workflow' }
   | { kind: 'tags'; text?: string; page?: PageRequest }
   | { kind: 'overview'; firstPageSize?: number }
   | { kind: 'tasks'; selection: TaskSelection; page?: PageRequest }
@@ -117,6 +118,7 @@ export type BoardQuery =
   | { kind: 'inbox'; page?: PageRequest }
 
 export type BoardView =
+  | { kind: 'workflow'; value: WorkflowView; sequence: ChangeSequence }
   | { kind: 'tags'; value: Page<TagView>; sequence: ChangeSequence }
   | { kind: 'overview'; value: BoardOverview; sequence: ChangeSequence }
   | { kind: 'tasks'; value: Page<TaskSummary>; sequence: ChangeSequence }
@@ -181,7 +183,15 @@ export interface ColumnCounts { tasks: number; parentTasks: number; subtasks: nu
 export interface BoardCounts { open: number; closed: number; archived: number; columns?: Array<{ columnId: ColumnId; counts: ColumnCounts }> }
 export interface QueryRevisions { tasks: Revision; inbox: Revision }
 export interface TaskPlacement { columnId: ColumnId; beforeTaskId?: TaskId; afterTaskId?: TaskId }
-export interface WorkflowView { columns: BoardColumnView[] }
+export interface WorkflowColumnView extends WorkflowColumnPlan {
+  id: ColumnId
+  archived: boolean
+  position: number
+  revision: Revision
+  orderRevision: Revision
+  taskCount: number
+}
+export interface WorkflowView { revision: Revision; columns: WorkflowColumnView[] }
 export interface MemberSummary { id: MemberId; displayName: string; role: BoardMemberView['role'] }
 export interface CommentView {
   id: CommentId
@@ -199,7 +209,7 @@ export interface TaskHistoryEntry {
   occurredAt: Instant
   kind: string
   summary: string
-  actor: { id: MemberId; displayName: string }
+  actor: { id: MemberId | null; displayName: string }
   fromColumn?: { id: ColumnId; name: string; flowRole: BoardColumnView['flowRole'] }
   toColumn?: { id: ColumnId; name: string; flowRole: BoardColumnView['flowRole'] }
   outcome?: Outcome

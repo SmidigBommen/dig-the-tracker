@@ -1,6 +1,6 @@
 # BoardModule Interface contract
 
-Status: frozen as the implementation baseline on 2026-09-04. Slices 1 through 6 implement overview, Task/detail and history pages, Tag autocomplete, capture, revision, family archive/restore, movement, closure Outcomes, warnings, comments, mentions, Notifications, and live delivery through `follow`. Later slices implement workflow configuration and reports.
+Status: frozen as the implementation baseline on 2026-09-04. Slices 1 through 7 implement overview, Task/detail and history pages, Tag autocomplete, capture, revision, family archive/restore, movement, closure Outcomes, warnings, comments, mentions, Notifications, and live delivery through `follow`. Workflow configuration and scheduled lifecycle work are implemented; Slice 8 adds search and reports.
 
 This document makes the selected `BoardModule` Interface precise enough to plan and test vertical slices. Names describe domain intent, not HTTP routes, database tables, or React state.
 
@@ -352,3 +352,9 @@ Access is rechecked before every delivery and during idle one-second polls. Sess
 The owned HTTP Adapter uses authenticated GET `/api/spaces/:key/board/events`, `text/event-stream`, a ready event, numbered Board events, and ten-second heartbeat comments. It accepts either the `after` query or `Last-Event-ID`, validates the sequence, and times out blocked writes after five seconds. These transport controls do not change the Module's wire-safe feed grammar.
 
 `BoardTransport.follow` provides open, item, and disconnect callbacks and returns a cancellation function. BoardSession ignores duplicate or older updates and replaces missing sequences with a bounded snapshot. A reconnect loads current overview and open pages before resuming live editing. Drafts and pending request IDs survive this process. Clean fields update automatically; a newer Task or comment revision appears beside an unsaved draft. Archived Tasks retain the draft for comparison with editing disabled.
+
+## Slice 7 delivery notes
+
+The `workflow` read returns the current workflow revision and up to 200 retained Columns, including archived Columns, current unarchived Task counts, and order revisions. `set-workflow` supplies the desired unarchived Columns. Omitted existing Columns archive; an archived ID restores with its previous non-terminal role and WIP limit. New Columns receive IDs in the `workflow-replaced` projection, which also carries the committed workflow revision.
+
+Task history permits a null actor Member ID for automatic archive, displayed as Dig. The runtime uses Space-local date boundaries for the 30-day archive window. Restoring a Closed Task restarts that window while preserving Closed at and Outcome. See [Slice 7 implementation notes](../implementation/slice-07-workflow-retention.md) for worker bounds, cancellation, deletion, and receipt retention.

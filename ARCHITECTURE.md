@@ -1,6 +1,6 @@
 # Architecture
 
-Dig is a React, Node, and PostgreSQL modular monolith. Slices 1 through 6 run authentication, Space membership, lifecycle controls, and Task capture, editing, movement, closure, history, comments, and Notifications through three server Modules. OpenID Connect is the only true-external dependency.
+Dig is a React, Node, and PostgreSQL modular monolith. Slices 1 through 7 run authentication, Space membership, lifecycle controls, and Task capture, editing, movement, closure, history, comments, and Notifications through three server Modules. OpenID Connect is the only true-external dependency.
 
 ## Running path
 
@@ -113,3 +113,9 @@ The application image contains the browser build, server build, and migrations. 
 `/health/live` reports HTTP-process liveness. `/health/ready` checks PostgreSQL after startup has completed; the image probes it with Node. Shutdown marks readiness unavailable and allows up to 30 seconds for HTTP and database connections to close. Full mutation drain, backup verification, monitoring, and release hardening remain Slice 9 work.
 
 The app still binds to host loopback in repository Compose. Coolify setup for real-provider sign-in validation precedes further Task development. See [the deployment guide](docs/coolify-deployment.md). Task authorization, rate limiting, operating checks, and the remaining team-release gates are not complete.
+
+## Workflow and scheduled retention
+
+Slice 7 implements atomic administrator workflow changes through `BoardModule.change(set-workflow)` and a bounded `read(workflow)`. Workflow projections update open Boards while settings drafts retain their base revision. Column archive preserves identity, and restoration restores the previous non-terminal role and WIP limit.
+
+`api/runtime/maintenance.ts` runs private Board archive and Space deletion operations on startup and every minute. Each operation owns its PostgreSQL transaction and follows the established lock order. Automatic archive uses Space-local dates and preserves families and history; system actors have null Member IDs. Permanent deletion cascades scoped receipts and clears the key reservation's identity reference. Shutdown awaits maintenance before closing the pool. [Slice 7 notes](docs/implementation/slice-07-workflow-retention.md) define batch limits, retry behavior, and the restored-Task retention window.

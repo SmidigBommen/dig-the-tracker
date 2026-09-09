@@ -1,4 +1,4 @@
-import type { BoardQuery, CaptureTask, ChangeRequest, VersionedComment, TaskDestination, Closure, Outcome, TaskChanges, VersionedTask } from '../../contracts/board.js'
+import type { BoardQuery, CaptureTask, ChangeRequest, VersionedComment, TaskDestination, Closure, Outcome, TaskChanges, VersionedTask, WorkflowPlan } from '../../contracts/board.js'
 import type { ColumnId, CommentId, NotificationId, MemberId, PageRequest, RequestId, Revision, TaskId } from '../../modules/shared.js'
 
 export class InvalidBoardRequest extends Error {}
@@ -42,9 +42,23 @@ function changes(value: unknown, capture: boolean): CaptureTask | TaskChanges {
 
 export function parseBoardChange(value: unknown): ChangeRequest {
   const body = object(value, ['requestId', 'command'])
-  const command = object(body.command, ['kind', 'input', 'task', 'changes', 'destination', 'closure', 'outcome', 'taskId', 'text', 'mentions', 'comment', 'notificationId'])
+  const command = object(body.command, ['kind', 'input', 'task', 'changes', 'destination', 'closure', 'outcome', 'taskId', 'text', 'mentions', 'comment', 'notificationId', 'desired', 'expectedRevision'])
   const requestId = string(body.requestId) as RequestId
   switch (command.kind) {
+    case 'set-workflow': {
+      object(command, ['kind', 'expectedRevision', 'desired'])
+      if (!Number.isSafeInteger(command.expectedRevision) || Number(command.expectedRevision) < 1) throw new InvalidBoardRequest('Invalid workflow revision')
+      const desired = object(command.desired, ['columns'])
+      if (!Array.isArray(desired.columns) || desired.columns.length > 200) throw new InvalidBoardRequest('Invalid workflow')
+      for (const value of desired.columns) {
+        const column = object(value, ['id', 'name', 'flowRole', 'intake', 'completion', 'wipLimit'])
+        if (column.id !== undefined) string(column.id)
+        string(column.name)
+        if (!['queue', 'active', 'complete'].includes(String(column.flowRole)) || typeof column.intake !== 'boolean' || typeof column.completion !== 'boolean'
+          || column.wipLimit !== null && typeof column.wipLimit !== 'number') throw new InvalidBoardRequest('Invalid Column')
+      }
+      return { requestId, command: { kind: 'set-workflow', expectedRevision: command.expectedRevision as Revision, desired: desired as unknown as WorkflowPlan } }
+    }
     case 'mark-notification-read':
       object(command, ['kind', 'notificationId'])
       return { requestId, command: { kind: 'mark-notification-read', notificationId: string(command.notificationId) as NotificationId } }
@@ -93,6 +107,9 @@ export function parseBoardChange(value: unknown): ChangeRequest {
 export function parseBoardQuery(value: unknown): BoardQuery {
   const input = object(value, ['kind', 'firstPageSize', 'selection', 'page', 'task', 'subtasks', 'history', 'comments', 'text', 'markNotificationsRead'])
   switch (input.kind) {
+    case 'workflow':
+      object(input, ['kind'])
+      return { kind: 'workflow' }
     case 'inbox':
       object(input, ['kind', 'page'])
       page(input.page)

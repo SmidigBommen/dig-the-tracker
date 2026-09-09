@@ -1,3 +1,4 @@
+import { WorkflowEditor } from './WorkflowEditor.tsx'
 import { Button } from '../ui/Button.tsx'
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type DragEvent } from 'react'
 import type { BoardOverview, BoardWarning, Outcome, TaskSummary } from '../../api/contracts/board.ts'
@@ -20,7 +21,7 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
   const dirty = session.hasUnsavedEdits()
   const dragged = useRef<TaskSummary | null>(null)
   const [hoveredColumn, setHoveredColumn] = useState<ColumnId | null>(null)
-  const canDrag = !readOnly && !busy && !detail && !draft && !state.archive && !state.inbox
+  const canDrag = !readOnly && !busy && !detail && !draft && !state.archive && !state.inbox && !state.workflow
 
   useEffect(() => {
     session.startLive()
@@ -82,6 +83,8 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
       <Button variant="primary" disabled={readOnly || busy} onClick={() => session.beginCapture()}>New Task</Button>
       <Button variant="secondary" disabled={busy} onClick={() => void session.openInbox()}>Inbox {overview.unreadNotifications > 0 ? `(${overview.unreadNotifications})` : ''}</Button>
       <Button variant="secondary" disabled={busy} onClick={() => void session.openArchive()}>Task Archive</Button>
+      {overview.members.find((member) => member.id === overview.currentMemberId)?.role === 'space-administrator' &&
+        <Button variant="secondary" disabled={busy || readOnly} onClick={() => void session.openWorkflow()}>Workflow settings</Button>}
       <Button variant="secondary" disabled={busy} onClick={() => void reconnect()}>{connected ? 'Refresh Board' : 'Reconnect'}</Button>
     </div>
     {!detail && <Warnings warnings={state.warnings} overview={overview} />}
@@ -110,6 +113,7 @@ export function BoardWorkspace({ initialBoard, transport }: { initialBoard: Boar
         {column.tasks.next && <Button variant="secondary" disabled={busy || state.pagesStale} onClick={() => void session.loadMore(column.id)}>Load more in {column.name}</Button>}
       </section>)}
     </div>
+    {state.workflow && !detail && !draft && <WorkflowEditor key={state.workflowLoad} session={session} state={state} />}
     {state.inbox && !detail && !draft && <TaskDialog title="Inbox" onClose={() => session.closeInbox()}><InboxPanel session={session} state={state} readOnly={readOnly} /></TaskDialog>}
     {state.archive && !state.inbox && !detail && !draft && <TaskDialog title="Task Archive" onClose={() => session.closeArchive()}>
       {state.archive.items.length ? <div className="work-cards">{state.archive.items.map(card)}</div> : <p>No archived Tasks.</p>}

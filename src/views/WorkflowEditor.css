@@ -1,0 +1,20 @@
+.workflow-editor h2 { font-size: var(--dig-font-title); margin: 0 0 var(--dig-space-2); }
+.workflow-intro, .workflow-help { color: var(--dig-muted); font-size: var(--dig-font-control); margin: 0 0 var(--dig-space-6); }
+.workflow-columns { display: grid; gap: var(--dig-space-3); list-style: none; padding: 0; margin: 0 0 var(--dig-space-4); }
+.workflow-columns > li { border: 1px solid var(--dig-border); border-radius: var(--dig-radius); padding: var(--dig-space-4); }
+.workflow-column-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--dig-space-2); margin-bottom: var(--dig-space-3); color: var(--dig-muted); font-size: var(--dig-font-label); }
+.workflow-column-heading > div { display: flex; gap: var(--dig-space-1); }
+.workflow-column-fields { display: grid; grid-template-columns: minmax(100px,2fr) minmax(100px,1fr) 85px 65px; align-items: end; gap: var(--dig-space-3); }
+.workflow-column-fields label { display: grid; gap: var(--dig-space-2); color: var(--dig-muted); font-size: var(--dig-font-label); }
+.workflow-column-fields input, .workflow-column-fields select { width: 100%; }
+.workflow-column-fields .workflow-intake { display: flex; align-items: center; min-height: 38px; }
+.workflow-intake input { width: 16px; height: 16px; accent-color: var(--dig-accent); }
+.workflow-footer { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--dig-space-2); padding-top: var(--dig-space-6); margin-top: var(--dig-space-6); border-top: 1px solid var(--dig-border); }
+.workflow-help { margin-top: var(--dig-space-4); }
+.workflow-archive { margin-top: var(--dig-space-6); font-size: var(--dig-font-control); color: var(--dig-muted); }
+.workflow-archive summary { cursor: pointer; padding: var(--dig-space-2) 0; }
+.workflow-archive ul { list-style: none; }
+.workflow-archive li { display: flex; justify-content: space-between; align-items: center; gap: var(--dig-space-3); padding: var(--dig-space-3) 0; }
+.workflow-archive li > div { display: grid; gap: var(--dig-space-1); }
+.workflow-archive strong { color: var(--dig-text); font-weight: 500; }
+@media (max-width: 650px) { .workflow-column-fields { grid-template-columns: minmax(0,1fr) minmax(0,1fr); } .workflow-column-heading { flex-wrap: wrap; } }

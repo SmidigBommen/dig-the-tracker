@@ -1,6 +1,6 @@
 # Dig team Kanban
 
-Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 through 6 of the team MVP: authenticated Spaces, membership administration, Space lifecycle, Task capture and editing, work movement and closure, comments, the in-app inbox, and live collaboration.
+Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 through 7 of the team MVP: authenticated Spaces, membership administration, Space lifecycle, Task capture and editing, work movement and closure, comments, the in-app inbox, and live collaboration.
 
 Members can create, open, edit, assign, tag, archive, and restore Tasks and one-level Subtasks. They can drag or explicitly move work, close with an Outcome, reopen, and inspect immutable Task history.
 
@@ -126,3 +126,5 @@ Open http://127.0.0.1:5173.
 - [Slice 4 implementation notes](docs/implementation/slice-04-move-work-and-record-flow.md)
 - [Slice 5 implementation notes](docs/implementation/slice-05-discuss-and-notify.md)
 - [Slice 6 implementation notes](docs/implementation/slice-06-collaborate-live.md)
+
+Workflow settings lets Space administrators configure, reorder, archive, and restore Columns. Closed Tasks auto-archive after 30 Space-local dates; restored Closed Tasks get a new retention window. Scheduled Space deletion runs after the seven-day cancellation period. See [Slice 7 notes](docs/implementation/slice-07-workflow-retention.md).

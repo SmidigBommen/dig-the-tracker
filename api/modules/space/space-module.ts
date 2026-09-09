@@ -80,6 +80,7 @@ export type SpaceAuditAction =
   | 'space-restored'
   | 'space-deletion-scheduled'
   | 'space-deletion-cancelled'
+  | 'workflow-changed'
 
 export interface SpaceAuditView {
   id: AuditId
@@ -343,11 +344,15 @@ export class SpaceModuleImplementation implements SpaceModule {
         }
         if (!result.ok) return { outcome: result, committedChange: false }
 
+        const changed = result.value.result
+        const scope = 'space' in changed ? changed.space.id : 'invitation' in changed
+          ? (await client.query<{ space_id: string }>('select space_id from team.space_invitations where id=$1', [changed.invitation.id])).rows[0].space_id
+          : (await client.query<{ space_id: string }>('select space_id from team.members where id=$1', ['member' in changed ? changed.member.id : changed.memberId])).rows[0].space_id
         await client.query(
           `insert into team.space_request_receipts
-            (identity_id, request_id, request_hash, response, created_at)
-           values ($1,$2,$3,$4,$5)`,
-          [claims.identityId, request.requestId, requestHash, storedReceipt(result.value), this.now()],
+            (identity_id, request_id, request_hash, response, created_at, space_id)
+           values ($1,$2,$3,$4,$5,$6)`,
+          [claims.identityId, request.requestId, requestHash, storedReceipt(result.value), this.now(), scope],
         )
         return { outcome: result, committedChange: true }
       })
@@ -1083,6 +1088,9 @@ export class SpaceModuleImplementation implements SpaceModule {
     }
 
     const now = this.now()
+    if (operation === 'cancel' && access.deletion_scheduled_for && access.deletion_scheduled_for.getTime() <= now.getTime()) {
+      return { ok: false, fault: { kind: 'conflict', reason: 'invalid-lifecycle' } }
+    }
     const scheduledFor = operation === 'schedule'
       ? new Date(now.getTime() + DELETION_GRACE_MILLISECONDS)
       : null

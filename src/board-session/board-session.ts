@@ -1,5 +1,5 @@
 import type {
-  NotificationView, CommentView, BoardWarning, Closure, Outcome, TaskDestination, TagView, BoardCommand, BoardFault, BoardOverview, BoardQuery, BoardUpdate, BoardView,
+  WorkflowView, WorkflowPlan, NotificationView, CommentView, BoardWarning, Closure, Outcome, TaskDestination, TagView, BoardCommand, BoardFault, BoardOverview, BoardQuery, BoardUpdate, BoardView,
   ChangeReceipt, ChangeRequest, Page, TaskDetail, TaskLocator, TaskSummary, BoardFeedItem, FollowOptions,
 } from '../../api/contracts/board.ts'
 import type { NotificationId, CommentId, ColumnId, MemberId, RequestId, Result, Revision, TaskId, TaskKey } from '../../api/modules/shared.ts'
@@ -34,6 +34,8 @@ export interface CommentDraft {
 }
 
 export interface BoardSessionState {
+  workflow?: WorkflowView
+  workflowLoad?: number
   commentDraft?: CommentDraft
   commentConflict?: CommentView
   overview: BoardOverview
@@ -63,6 +65,7 @@ export class BoardSession {
   private refreshRequest = 0
   private archiveRequest = 0
   private inboxRequest = 0
+  private workflowRequest = 0
   private pageGeneration = 0
   private readonly commentDrafts = new Map<TaskId, CommentDraft>()
   private editBaseline?: TaskDraft
@@ -417,6 +420,13 @@ export class BoardSession {
     for (const change of update.changes) {
       if (change.kind === 'query-revisions-changed') {
         pagesStale = true
+      } else if (change.kind === 'workflow-replaced') {
+        overview = { ...overview, board: { ...overview.board, workflowRevision: change.workflow.revision },
+          columns: change.workflow.columns.filter((column) => !column.archived).map((column) => {
+            const previous = overview.columns.find((item) => item.id === column.id)
+            return { ...column, tasks: previous?.tasks ?? { items: [] },
+              counts: previous?.counts ?? { tasks: 0, parentTasks: 0, subtasks: 0 } }
+          }) }
       } else if (change.kind === 'task-upserted') {
         const task = change.task
         if (detail?.id === task.id) detail = { ...detail, ...task }
@@ -499,6 +509,28 @@ export class BoardSession {
     } finally { this.set({ busy: false }) }
   }
 
+  async openWorkflow() {
+    if (this.state.busy || this.state.pendingAction) return
+    const request = ++this.workflowRequest
+    this.set({ busy: true })
+    try {
+      const result = await this.transport.read({ kind: 'workflow' })
+      if (request !== this.workflowRequest) return
+      if (!result.ok) { this.fail(result.fault); return }
+      if (result.value.kind === 'workflow') this.set({ workflow: result.value.value, workflowLoad: request, error: undefined })
+    } finally { this.set({ busy: false }) }
+  }
+
+  closeWorkflow() { if (!this.state.busy && !this.state.pendingAction) { this.workflowRequest++; this.set({ workflow: undefined }) } }
+
+  async saveWorkflow(expectedRevision: Revision, desired: WorkflowPlan) {
+    if (!this.canChange()) return false
+    const result = await this.commit({ kind: 'set-workflow', expectedRevision, desired })
+    if (!result) return false
+    this.set({ workflow: undefined })
+    return true
+  }
+
   async openArchive(more = false) {
     if (this.state.busy || (more && (!this.state.archive?.next || this.state.pagesStale))) return
     const after = more ? this.state.archive?.next : undefined
@@ -572,6 +604,7 @@ export class BoardSession {
     const taskId = 'task' in command ? command.task.taskId : command.kind === 'add-comment' ? command.taskId : this.state.detail?.id
     const result = await this.commit(command, taskId, command.kind === 'mark-notification-read' || command.kind === 'mark-all-notifications-read')
     if (!result) return false
+    if (command.kind === 'set-workflow') this.set({ workflow: undefined })
     if ((command.kind === 'add-comment' || command.kind === 'revise-comment') && result.result.taskId) {
       this.commentDrafts.delete(result.result.taskId)
       if (this.state.detail?.id === result.result.taskId) this.set({ commentDraft: { text: '', mentions: [] }, commentConflict: undefined })
@@ -713,10 +746,10 @@ export class BoardSession {
     let error = 'The request could not be completed.'
     if (fault.kind === 'invalid') error = fault.issues.map((issue) => issue.message).join(' ')
     if (fault.kind === 'not-found') error = 'Task or Member is no longer available.'
-    if (fault.kind === 'rule-violation') error = fault.rule === 'subtask-depth' ? 'Subtasks cannot have Subtasks.' : 'This change is not allowed.'
+    if (fault.kind === 'rule-violation') error = fault.rule === 'subtask-depth' ? 'Subtasks cannot have Subtasks.' : fault.rule === 'column-not-empty' ? 'Empty the Column before changing its role, Intake status, or archiving it.' : 'This change is not allowed.'
     if (fault.kind === 'cursor-expired') error = 'This page changed. Reload it to continue.'
     if (fault.kind === 'conflict') {
-      error = 'Someone changed this Task. Compare your draft with the current version.'
+      error = fault.reason === 'stale-workflow' ? 'The workflow changed. Reload the current workflow before saving.' : 'Someone changed this Task. Compare your draft with the current version.'
       if (fault.current?.kind === 'task') this.set({ conflict: fault.current.value, detail: fault.current.value })
     }
     if (fault.kind === 'conflict' && fault.reason === 'stale-comment') { error = 'This comment changed. Your draft is kept beside the current version.'; this.set({ commentConflict: fault.currentComment }) }

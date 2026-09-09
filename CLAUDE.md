@@ -8,12 +8,12 @@
 
 ## Current implementation
 
-- Slices 1 through 6 of the small-team MVP are implemented.
+- Slices 1 through 7 of the small-team MVP are implemented.
 - The running React entry is `src/team/TeamApp.tsx`; it handles sign-in, invitations, Space selection, membership administration, Space lifecycle, Task capture, editing, assignment, Tags, Subtasks, Task Archive, movement, closure Outcomes, history, comments, mentions, the in-app inbox, reload, and sign-out.
 - The Node HTTP Adapter is `api/server.ts`.
 - `IdentityModule` owns OpenID Connect correlation and PostgreSQL sessions.
 - `SpaceModule` owns Space reads, invitations, membership, roles, lifecycle, audit, idempotent changes, access invalidation, and request authorization.
-- `BoardModule` owns Task reads and changes, revisions, numbering, Tags, Subtasks, archive/restore, relative placement, order revisions, closure Outcomes, immutable flow history, comment revisions and tombstones, Notifications, cursor pages, and transaction-time access checks. `follow` streams committed updates with access rechecks, bounded replay, and recipient filtering.
+- `BoardModule` owns Task reads and changes, revisions, numbering, Tags, Subtasks, archive/restore, relative placement, order revisions, closure Outcomes, immutable flow history, comment revisions and tombstones, Notifications, cursor pages, and transaction-time access checks. `follow` streams committed updates with access rechecks, bounded replay, and recipient filtering. Declarative workflow edits are administrator-only and atomic. Scheduled archive preserves Task families and local-date retention; Space deletion removes scoped receipts while retaining non-personal key reservations.
 - `BoardSession` owns browser Task state, drafts, live updates, and snapshot recovery through the `BoardTransport` port. Owned HTTP and in-memory test Adapters share wire values in `api/contracts/board.ts`.
 - PostgreSQL 16 uses checksummed migrations. New team tables live in the `team` schema.
 - Slice 3 removes the prototype mutation path and drops its public-schema tables with a forward migration. Team data remains in the `team` schema.
@@ -47,4 +47,4 @@
 
 ## Next slice
 
-For Slice 7 workflow and retention, read [the vertical-slice plan](docs/design/vertical-slice-plan.md), [Board Interface contract](docs/design/board-interface-contract.md), and [Slice 6 notes](docs/implementation/slice-06-collaborate-live.md). Preserve atomic receipts, events, Notifications, and Board updates. New workflow and lifecycle changes must reach open browsers through the feed or access invalidation. Keep inbox projections recipient-scoped and preserve unsaved drafts during snapshot recovery. Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.
+For Slice 8 search and reporting, read [the vertical-slice plan](docs/design/vertical-slice-plan.md), [Board Interface contract](docs/design/board-interface-contract.md), and [Slice 7 notes](docs/implementation/slice-07-workflow-retention.md). Preserve immutable flow history, opaque bounded cursors, Space-local date boundaries, and recipient privacy. Scheduled history entries have a null Member actor. Use [UI foundations](docs/design/design-system.md) for new views. Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.
