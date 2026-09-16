@@ -1,25 +1,25 @@
 # Dig UI foundations
 
-Dig uses the same forest-green palette and control scale across the app shell, Board, Task dialogs, reports, and Space settings. The Board remains the working context behind a Task dialog. Routine edits belong beside their values; secondary actions belong in the actions disclosure.
+Dig uses a shared control scale and six personal colour palettes across the app shell, Board, Task dialogs, reports, and Space settings. The Board remains the working context behind a Task dialog. Routine edits belong beside their values; secondary actions belong in the actions disclosure.
 
 ## Tokens
 
-`src/ui/design-system.css` owns the palette, spacing, typography, radii, and focus treatment. Use its `--dig-*` variables when extending these components.
+`src/ui/palettes.css` owns Nature, Neutral, and Tokyo Night in light and dark modes. `src/ui/design-system.css` owns spacing, typography, radii, and focus treatment. Use its `--dig-*` variables when extending these components.
 
 | Purpose | Token or rule |
 |---|---|
-| Backgrounds | Dark forest canvas, recessed Columns and fields, surface cards, raised controls, and hover surface |
+| Backgrounds | Canvas, recessed Columns and fields, surface cards, raised controls, and hover surface |
 | Text | Primary text for content; muted text for metadata and labels |
-| Accent | Mint green for primary actions, selected tabs, keyboard focus, and drop targets |
+| Accent | Green (Nature/Neutral) or blue (Tokyo Night) for primary actions, selected tabs, keyboard focus, and drop targets |
 | Feedback | Warm red for destructive actions; amber for warnings |
 | Spacing | 4, 8, 12, 16, 24, and 32 pixels |
 | Typography | 15px body, 14px controls, 13px labels, 12px metadata, 24px Task title; page headings scale from 26 to 32px |
 | Corners | 8px controls, 14px dialog |
 | Controls | Shared buttons and fields are at least 40px high on desktop and 44px on narrow screens; phone form fields use 16px text |
 
-All colours belong in the shared tokens. Canvas, Columns, and cards have distinct surfaces, so the hierarchy remains visible without heavy shadows. Use `--dig-border-strong` for field boundaries. Reserve amber for warnings and warm red for destructive actions; an Active Column within its WIP limit uses green and a neutral limit label.
+All colours belong in the shared tokens. Canvas, Columns, and cards have distinct surfaces, so the hierarchy remains visible without heavy shadows. Use `--dig-border-strong` for field boundaries. Reserve amber for warnings and warm red for destructive actions; an Active Column within its WIP limit uses the active token and a neutral limit label.
 
-Primary text has at least 9:1 contrast and muted text at least 5.49:1 against the canvas, surface, raised surface, and hover surface. The primary button's dark text on mint has 10.29:1 contrast. Strong field borders have at least 3.48:1 contrast against the field, surface, and raised surface. These are token-pair checks, not a full accessibility certification.
+Across all six palettes, checked text pairs have at least 4.70:1 contrast, including muted labels, selected and hover surfaces, feedback, and primary-button text. Strong control boundaries have at least 3.19:1 contrast against adjacent field and surface colours. Focus uses the accent token. These are computed token-pair checks, not a full accessibility certification; disabled controls and decorative separators are excluded.
 
 ## Components
 
@@ -36,7 +36,7 @@ The app shell's existing `primary-button`, `quiet-button`, and `danger-button` c
 
 The Space name and Member/time-zone metadata form one heading group. Space administration uses the same control size as Board actions; Leave Space is a quiet destructive action after the ordinary actions.
 
-Board Columns always stay in one horizontally scrolling row. Cards use 15px titles, 12px keys and tags, and 24px assignee avatars. Long content wraps inside its card. Keep visible Column borders and a mint outline plus green surface on the current drop target.
+Board Columns always stay in one horizontally scrolling row. Cards use 15px titles, 12px keys and tags, and 24px assignee avatars. Long content wraps inside its card. Keep visible Column borders and an accent outline plus selected surface on the current drop target.
 
 On phones, header controls wrap, Task properties stack, and search and workload rows put age beneath the Task text. Tables scroll inside their own region. Chart dates and peak labels are HTML text so they retain their size when the chart shrinks. Keep native form controls large enough to avoid automatic text-field zoom on phones.
 
@@ -51,3 +51,9 @@ Typing `@` in a comment opens matching Members. Arrow keys and Enter choose a Me
 ## Extending the system
 
 Use one primary action per form. Keep labels visible, expose save state, and preserve keyboard focus during live updates. Use the shared palette for every control in a dialog. Check long titles, multiline descriptions, disabled states, conflicts, and narrow viewports when changing layouts. Add shared components when more than one view needs the same interaction; keep Task-specific behavior in `src/views`.
+
+## Personal themes
+
+Personal menu → Appearance uses labelled palette previews and native radio groups for Palette and Mode. Choices apply and save immediately. System follows the device; Light and Dark remain fixed. Theme changes affect colour tokens only, preserving layout, fonts, open work, and focus. Keep every new screen on the semantic tokens and verify all six combinations. Persistence and recovery belong to `AppearanceSession`; see [Slice 9 notes](../implementation/slice-09-personal-themes.md).
+
+Tokyo Night adapts the original Enkia Night and Light palettes with readability adjustments. The distributed MIT attribution is in `public/licenses/tokyo-night.txt`.

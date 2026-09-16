@@ -34,6 +34,11 @@
 .wip-columns article > div { display: flex; justify-content: space-between; gap: 12px; font-size: var(--dig-font-control); }
 .wip-columns strong { overflow-wrap: anywhere; }
 .wip-columns meter { width: 100%; margin-top: 12px; accent-color: var(--dig-accent); }
+.wip-columns meter::-webkit-meter-bar { background: var(--dig-field); border-color: var(--dig-border-strong); }
+.wip-columns meter::-webkit-meter-optimum-value { background: var(--dig-accent); }
+.wip-columns meter::-webkit-meter-suboptimum-value { background: var(--dig-warning); }
+.wip-columns meter::-webkit-meter-even-less-good-value { background: var(--dig-danger); }
+.wip-columns meter::-moz-meter-bar { background: var(--dig-accent); }
 .over-limit { color: var(--dig-warning); }
 .report-table-scroll { overflow-x: auto; max-width: 100%; }
 .board-exploration table { border-collapse: collapse; width: 100%; font-size: var(--dig-font-label); text-align: left; }

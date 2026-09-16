@@ -1,0 +1,178 @@
+/* Tokyo Night colours adapted from Enkia. MIT notice: /licenses/tokyo-night.txt */
+
+:root, [data-palette="nature"][data-scheme="light"] {
+  color-scheme: light;
+  --dig-canvas: #f3f7f2;
+  --dig-surface: #ffffff;
+  --dig-surface-raised: #e7efe7;
+  --dig-surface-hover: #d9e6da;
+  --dig-column: #eaf1e8;
+  --dig-field: #f9fcf7;
+  --dig-border: #b1c4b3;
+  --dig-border-strong: #5b735f;
+  --dig-text: #20372a;
+  --dig-muted: #4d6555;
+  --dig-accent: #22693d;
+  --dig-accent-hover: #1a5630;
+  --dig-accent-ink: #ffffff;
+  --dig-accent-surface: #dfefe2;
+  --dig-active: #216859;
+  --dig-danger: #9e352e;
+  --dig-danger-surface: #fbe9e7;
+  --dig-warning: #79510f;
+  --dig-warning-surface: #fff0d3;
+  --dig-chart-duplicate: #6553a0;
+  --dig-overlay: #15271acc;
+}
+
+[data-palette="nature"][data-scheme="dark"] {
+  color-scheme: dark;
+  --dig-canvas: #0f1914;
+  --dig-surface: #1b2c23;
+  --dig-surface-raised: #243b2f;
+  --dig-surface-hover: #2d4839;
+  --dig-column: #14231b;
+  --dig-field: #14241c;
+  --dig-border: #3e5949;
+  --dig-border-strong: #7d9c88;
+  --dig-text: #edf5ef;
+  --dig-muted: #b0c5b6;
+  --dig-accent: #a1e4b5;
+  --dig-accent-hover: #bcf0cb;
+  --dig-accent-ink: #122b1b;
+  --dig-accent-surface: #284a35;
+  --dig-active: #83d6bd;
+  --dig-danger: #ffb4ac;
+  --dig-danger-surface: #422823;
+  --dig-warning: #f0cc88;
+  --dig-warning-surface: #3c3220;
+  --dig-chart-duplicate: #b8b6dc;
+  --dig-overlay: #07120dc4;
+}
+
+[data-palette="neutral"][data-scheme="light"] {
+  color-scheme: light;
+  --dig-canvas: #f4f5f6;
+  --dig-surface: #ffffff;
+  --dig-surface-raised: #e8ecef;
+  --dig-surface-hover: #dce3e7;
+  --dig-column: #eceff1;
+  --dig-field: #fafbfc;
+  --dig-border: #bcc5cb;
+  --dig-border-strong: #68767f;
+  --dig-text: #253039;
+  --dig-muted: #53626c;
+  --dig-accent: #22693d;
+  --dig-accent-hover: #1a5630;
+  --dig-accent-ink: #ffffff;
+  --dig-accent-surface: #e0eee5;
+  --dig-active: #216859;
+  --dig-danger: #9e352e;
+  --dig-danger-surface: #fbe9e7;
+  --dig-warning: #79510f;
+  --dig-warning-surface: #fff0d3;
+  --dig-chart-duplicate: #6553a0;
+  --dig-overlay: #0b111bc4;
+}
+
+[data-palette="neutral"][data-scheme="dark"] {
+  color-scheme: dark;
+  --dig-canvas: #171a1d;
+  --dig-surface: #21262b;
+  --dig-surface-raised: #2b3238;
+  --dig-surface-hover: #353d44;
+  --dig-column: #1d2226;
+  --dig-field: #171d21;
+  --dig-border: #48545b;
+  --dig-border-strong: #88969c;
+  --dig-text: #edf0f2;
+  --dig-muted: #b8c2c8;
+  --dig-accent: #a1e4b5;
+  --dig-accent-hover: #bcf0cb;
+  --dig-accent-ink: #122b1b;
+  --dig-accent-surface: #304a3b;
+  --dig-active: #83d6bd;
+  --dig-danger: #ffb4ac;
+  --dig-danger-surface: #422823;
+  --dig-warning: #f0cc88;
+  --dig-warning-surface: #3c3220;
+  --dig-chart-duplicate: #b8b6dc;
+  --dig-overlay: #0b111bc4;
+}
+
+[data-palette="tokyo-night"][data-scheme="light"] {
+  color-scheme: light;
+  --dig-canvas: #e6e7ed;
+  --dig-surface: #f6f7fb;
+  --dig-surface-raised: #dddfea;
+  --dig-surface-hover: #d2d7e6;
+  --dig-column: #e0e2eb;
+  --dig-field: #fafbff;
+  --dig-border: #b1b8ce;
+  --dig-border-strong: #6c7495;
+  --dig-text: #343b59;
+  --dig-muted: #505a7e;
+  --dig-accent: #34548a;
+  --dig-accent-hover: #29436f;
+  --dig-accent-ink: #ffffff;
+  --dig-accent-surface: #d5e0f5;
+  --dig-active: #176875;
+  --dig-danger: #a3244a;
+  --dig-danger-surface: #f9e4e9;
+  --dig-warning: #79511a;
+  --dig-warning-surface: #fff0d5;
+  --dig-chart-duplicate: #64479e;
+  --dig-overlay: #0b0e1bc4;
+}
+
+[data-palette="tokyo-night"][data-scheme="dark"] {
+  color-scheme: dark;
+  --dig-canvas: #1a1b26;
+  --dig-surface: #24283b;
+  --dig-surface-raised: #2b3046;
+  --dig-surface-hover: #30364e;
+  --dig-column: #1f2233;
+  --dig-field: #1a1b26;
+  --dig-border: #49506a;
+  --dig-border-strong: #858faf;
+  --dig-text: #c0caf5;
+  --dig-muted: #a9b4de;
+  --dig-accent: #7aa2f7;
+  --dig-accent-hover: #a1bdff;
+  --dig-accent-ink: #141b30;
+  --dig-accent-surface: #233252;
+  --dig-active: #73daca;
+  --dig-danger: #ff9db0;
+  --dig-danger-surface: #4a2937;
+  --dig-warning: #e0af68;
+  --dig-warning-surface: #3f3528;
+  --dig-chart-duplicate: #bb9af7;
+  --dig-overlay: #0b0e1bc4;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme]) {
+    color-scheme: dark;
+    --dig-canvas: #0f1914;
+    --dig-surface: #1b2c23;
+    --dig-surface-raised: #243b2f;
+    --dig-surface-hover: #2d4839;
+    --dig-column: #14231b;
+    --dig-field: #14241c;
+    --dig-border: #3e5949;
+    --dig-border-strong: #7d9c88;
+    --dig-text: #edf5ef;
+    --dig-muted: #b0c5b6;
+    --dig-accent: #a1e4b5;
+    --dig-accent-hover: #bcf0cb;
+    --dig-accent-ink: #122b1b;
+    --dig-accent-surface: #284a35;
+    --dig-active: #83d6bd;
+    --dig-danger: #ffb4ac;
+    --dig-danger-surface: #422823;
+    --dig-warning: #f0cc88;
+    --dig-warning-surface: #3c3220;
+    --dig-chart-duplicate: #b8b6dc;
+    --dig-overlay: #07120dc4;
+  }
+}

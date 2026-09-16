@@ -45,7 +45,7 @@
 .task-move select, .task-closure select, .task-closure input, .task-closure textarea { width: 100%; }
 .inline-task-editor { border: 0; padding: 0; margin: 0; min-width: 0; }
 .inline-task-editor input, .inline-task-editor textarea, .inline-task-editor select { width: 100%; background: transparent; border-color: transparent; padding: 6px 8px; }
-.inline-task-editor input:hover:not(:disabled), .inline-task-editor textarea:hover:not(:disabled), .inline-task-editor select:hover:not(:disabled) { background: var(--dig-surface-raised); border-color: var(--dig-border); }
+.inline-task-editor input:hover:not(:disabled), .inline-task-editor textarea:hover:not(:disabled), .inline-task-editor select:hover:not(:disabled) { background: var(--dig-surface-raised); border-color: var(--dig-border-strong); }
 .inline-task-editor .task-title-input, .task-read-title { font-size: var(--dig-font-title); line-height: 1.35; font-weight: 600; letter-spacing: -.025em; margin: 0 0 24px -8px; width: calc(100% + 16px); }
 .task-properties { display: grid; grid-template-columns: 1fr 1fr; column-gap: 24px; row-gap: 10px; }
 .task-property { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 8px; font-size: var(--dig-font-control); min-height: var(--dig-control-height); }
@@ -88,7 +88,7 @@
 .task-comments li:last-child { border: 0; }
 .task-comments li header { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: var(--dig-font-control); }
 .task-comments li header strong { font-weight: 550; }
-.comment-composer { border: 1px solid var(--dig-border); border-radius: var(--dig-radius); background: var(--dig-surface-raised); padding: 12px; }
+.comment-composer { border: 1px solid var(--dig-border-strong); border-radius: var(--dig-radius); background: var(--dig-surface-raised); padding: 12px; }
 .comment-composer:focus-within { border-color: var(--dig-border-strong); }
 .comment-composer textarea { display: block; width: 100%; min-height: 64px; border: 0; padding: 0; background: transparent; resize: vertical; font-size: var(--dig-font-body); line-height: 1.6; }
 .comment-composer textarea:focus-visible { outline-offset: 5px; }

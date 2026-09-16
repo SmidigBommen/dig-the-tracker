@@ -1,6 +1,6 @@
 # Slice 9: personal themes
 
-Status: scope agreed on 2026-09-16; implementation planned. This slice precedes release readiness, now Slice 10.
+Status: implemented on 2026-09-16; see [implementation and verification notes](../implementation/slice-09-personal-themes.md). This slice precedes release readiness, now Slice 10.
 
 ## User outcome
 

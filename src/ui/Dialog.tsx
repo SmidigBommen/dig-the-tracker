@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { Button } from './Button.tsx'
 
-export function Dialog({ title, onClose, actions, children, focusTitle = false }: { title: string; onClose: () => void; actions?: ReactNode; children: ReactNode; focusTitle?: boolean }) {
+export function Dialog({ title, onClose, actions, children, focusTitle = false, closeLabel = 'Close Task dialog' }: { title: string; onClose: () => void; actions?: ReactNode; children: ReactNode; focusTitle?: boolean; closeLabel?: string }) {
   const element = useRef<HTMLDivElement>(null)
   const close = useRef(onClose)
   const titleId = useId()
@@ -33,7 +33,7 @@ export function Dialog({ title, onClose, actions, children, focusTitle = false }
   return <div className="task-overlay" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}><div ref={element} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="dig-dialog task-dialog" onKeyDown={(event) => {
       if (event.key === 'Escape') { event.preventDefault(); close.current() }
     }}>
-    <header className="dig-dialog-header"><h2 id={titleId}>{title}</h2><div className="task-dialog-actions">{actions}<Button variant="ghost" className="dig-icon-button" aria-label="Close Task dialog" onClick={onClose}>×</Button></div></header>
+    <header className="dig-dialog-header"><h2 id={titleId}>{title}</h2><div className="task-dialog-actions">{actions}<Button variant="ghost" className="dig-icon-button" aria-label={closeLabel} onClick={onClose}>×</Button></div></header>
     <div className="dig-dialog-body">{children}</div>
   </div></div>
 }

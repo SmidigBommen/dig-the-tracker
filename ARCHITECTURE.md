@@ -45,10 +45,11 @@ The HTTP Adapter resolves a server session through `IdentityModule`. It passes t
 
 ## Module Interfaces
 
-`IdentityModule` has two entries:
+`IdentityModule` has three entries:
 
 - `signIn` begins or completes OpenID Connect sign-in.
 - `session` resolves or ends a PostgreSQL-backed browser session.
+- `appearance` reads or changes the authenticated identity’s palette and mode, with session checks and revision comparison inside the transaction.
 
 Its Implementation owns state, nonce, PKCE, identity mapping, secret hashing, expiry, Origin checks, and CSRF. The OpenID Connect port has a production Adapter and a deterministic test Adapter.
 
@@ -96,7 +97,7 @@ The Slice 3 retirement migration drops the unused public-schema prototype tables
 
 Task detail loads descriptions separately from lane summaries. A stale edit preserves the draft beside the current Task and requires the Member to choose the current revision before retrying. An uncertain network response preserves the request ID so reconnecting cannot duplicate a capture. The browser pauses changes while disconnected. Drag and keyboard Move actions share the same relative placement command. Completion defaults to Completed; the dialog also offers Rejected, Cancelled, and Duplicate. WIP and open-Subtask warnings describe committed changes. History loads independently and preserves actor identity and transition Column snapshots. An uncertain movement or Outcome change keeps its request for explicit retry after reconnection. Comment drafts survive Task navigation and uncertain requests. A stale comment shows the current text beside the retained draft before an explicit retry. The inbox opens Tasks and supports individual and all-read actions. Live updates refresh loaded Task detail, comments, inbox, and Archive pages. Clean fields follow current data; dirty fields retain their draft beside a newer revision. Connection failures pause changes and reload a current snapshot before opening a new feed.
 
-The Task dialog uses shared `Button`, `Dialog`, `AutoTextarea`, and `Tabs` components from `src/ui`. Its palette, spacing, typography, and focus treatment are defined in `design-system.css`; [UI foundations](docs/design/design-system.md) records their use. Column changes save directly from the property, with ordering and alternative closure forms in the actions disclosure. Comments and History share an activity area. The comment composer binds `@` selections to Member IDs and exposes removable notification recipients. Presentation components leave commands and draft state in `BoardSession`.
+The Task dialog uses shared `Button`, `Dialog`, `AutoTextarea`, and `Tabs` components from `src/ui`. Its six semantic colour palettes are defined in `palettes.css`; shared spacing, typography, and focus treatment are defined in `design-system.css`; [UI foundations](docs/design/design-system.md) records their use. Column changes save directly from the property, with ordering and alternative closure forms in the actions disclosure. Comments and History share an activity area. The comment composer binds `@` selections to Member IDs and exposes removable notification recipients. Presentation components leave commands and draft state in `BoardSession`.
 
 ## Live delivery
 
@@ -129,3 +130,9 @@ Flow reads use current WIP, indexed closure and Cycle-time ranges, and recent oc
 Browser tabs reuse the UI foundations. `BoardSession` retains the selected search or report, rejects superseded responses, and refreshes it after committed or live changes. Search and report Tasks open the shared detail dialog. Charts have accessible tables; report reads expose no Member productivity rankings.
 
 Task-reference reads return only accessible IDs and keys. The HTTP Adapter resolves foreign keys through separate Space authorization and Board transactions; inaccessible or missing targets produce no link. Same-Space links reuse the editor, while foreign links open a new tab. `TeamApp` resolves direct Task paths after sign-in, including accessible archived Spaces.
+
+## Personal appearance
+
+Slice 9 stores personal palette and mode in Identity-owned `team.identity_appearance`. An absent row means Nature/System. `GET /api/appearance` and `POST /api/appearance` derive ownership from the session; changes require Origin, CSRF, closed preference values, and an expected revision. Repeating an uncertain write of the current values succeeds without another write.
+
+`AppearanceSession` and its owned HTTP Adapter update root colour attributes independently of `BoardSession`. A validated cache resolves colours before the application loads; authenticated reads reconcile the account without writing cached values back. Same-account tabs exchange ordered choices and save status; other devices restore the account preference on load. Local storage is optional. [Slice 9 notes](docs/implementation/slice-09-personal-themes.md) describe concurrency, recovery, validation, and palette attribution.

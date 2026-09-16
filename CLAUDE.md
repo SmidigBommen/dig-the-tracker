@@ -8,13 +8,14 @@
 
 ## Current implementation
 
-- Slices 1 through 8 of the small-team MVP are implemented.
+- Slices 1 through 9 of the small-team MVP are implemented.
 - The running React entry is `src/team/TeamApp.tsx`; it handles sign-in, invitations, Space selection, membership administration, Space lifecycle, Task capture, editing, assignment, Tags, Subtasks, Task Archive, movement, closure Outcomes, history, comments, mentions, the in-app inbox, reload, and sign-out.
 - The Node HTTP Adapter is `api/server.ts`.
-- `IdentityModule` owns OpenID Connect correlation and PostgreSQL sessions.
+- `IdentityModule` owns OpenID Connect correlation, PostgreSQL sessions, and account appearance preferences.
 - `SpaceModule` owns Space reads, invitations, membership, roles, lifecycle, audit, idempotent changes, access invalidation, and request authorization.
 - `BoardModule` owns Task reads and changes, revisions, numbering, Tags, Subtasks, archive/restore, relative placement, order revisions, closure Outcomes, immutable flow history, comment revisions and tombstones, Notifications, cursor pages, and transaction-time access checks. `follow` streams committed updates with access rechecks, bounded replay, and recipient filtering. Declarative workflow edits are administrator-only and atomic. Scheduled archive preserves Task families and local-date retention; Space deletion removes scoped receipts while retaining non-personal key reservations.
 - `BoardSession` owns browser Task state, drafts, live updates, and snapshot recovery through the `BoardTransport` port. Owned HTTP and in-memory test Adapters share wire values in `api/contracts/board.ts`.
+- `AppearanceSession` owns personal palette/mode, startup reconciliation, save recovery, and same-account tab updates through `AppearanceTransport`. Theme changes preserve `BoardSession` and its drafts.
 - PostgreSQL 16 uses checksummed migrations. New team tables live in the `team` schema.
 - Slice 3 removes the prototype mutation path and drops its public-schema tables with a forward migration. Team data remains in the `team` schema.
 - Member removal and leave call Board-owned unassignment inside the Space transaction. Preserve the Space, Member, session, then Board lock order.
@@ -47,4 +48,4 @@
 
 ## Next slice
 
-For Slice 9 implementation or theme changes, read [the agreed personal-theme scope](docs/design/slice-09-personal-themes.md) and [UI foundations](docs/design/design-system.md). Themes remain planned; account preferences must preserve open work and use shared colour tokens. Release work is now Slice 10; consult [the vertical-slice plan](docs/design/vertical-slice-plan.md) and [deployment guidance](docs/coolify-deployment.md) for its gates. Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.
+For theme changes, read [personal-theme implementation notes](docs/implementation/slice-09-personal-themes.md) and [UI foundations](docs/design/design-system.md). Release work is next in Slice 10; consult [the vertical-slice plan](docs/design/vertical-slice-plan.md) and [deployment guidance](docs/coolify-deployment.md) for its gates. Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.

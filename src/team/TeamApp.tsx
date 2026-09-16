@@ -1,4 +1,7 @@
 import { BoardWorkspace } from '../views/BoardWorkspace.tsx'
+import { AppearanceMenu } from '../appearance/AppearanceMenu.tsx'
+import { AppearanceSession } from '../appearance/appearance-session.ts'
+import { HttpAppearanceTransport } from '../adapters/http/appearance-transport.ts'
 import { HttpBoardTransport } from '../adapters/http/board-transport.ts'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
@@ -25,17 +28,33 @@ type AppState =
     }
 
 const LAST_SPACE_KEY = 'dig:last-space'
+const rememberedSpace = {
+  read(): string | null {
+    try { return localStorage.getItem(LAST_SPACE_KEY) } catch { return null }
+  },
+  write(key?: string) {
+    try {
+      if (key) localStorage.setItem(LAST_SPACE_KEY,key)
+      else localStorage.removeItem(LAST_SPACE_KEY)
+    } catch { /* Remembering a Space is optional when browser storage is blocked. */ }
+  },
+}
 
 export default function TeamApp() {
+  const [appearance] = useState(() => new AppearanceSession(new HttpAppearanceTransport()))
   const [state, setState] = useState<AppState>({ kind: 'loading' })
   const [busy, setBusy] = useState(false)
   const [invitationLink, setInvitationLink] = useState<string>()
   const [management, setManagement] = useState<SpaceManagement>()
   const [showingArchived, setShowingArchived] = useState(false)
   const invitationSecret = invitationSecretFromPath(window.location.pathname)
+  const appearanceIdentity = state.kind === 'ready' ? state.session.identity.id : undefined
+  const appearanceCsrf = state.kind === 'ready' ? state.session.csrfToken : undefined
+  useEffect(() => { appearance.connect(appearanceIdentity,appearanceCsrf) },[appearance,appearanceIdentity,appearanceCsrf])
+  useEffect(() => () => appearance.stop(),[appearance])
 
   const openBoard = useCallback(async (session: TeamSession, spaces: SpaceSummary[], key: string) => {
-    localStorage.setItem(LAST_SPACE_KEY, key)
+    rememberedSpace.write(key)
     setState({ kind: 'ready', session, spaces, selectedKey: key })
     try {
       const board = await teamApi.board(key)
@@ -62,7 +81,7 @@ export default function TeamApp() {
           if (active) await openBoard(session,result.spaces,target.spaceKey)
           return
         }
-        const remembered = localStorage.getItem(LAST_SPACE_KEY)
+        const remembered = rememberedSpace.read()
         const selected = result.spaces.find((space) => space.key === remembered) ?? result.spaces[0]
         if (selected) await openBoard(session, result.spaces, selected.key)
         else setState({ kind: 'ready', session, spaces: [] })
@@ -92,7 +111,7 @@ export default function TeamApp() {
     setBusy(true)
     try {
       await teamApi.signOut(state.session.csrfToken)
-      localStorage.removeItem(LAST_SPACE_KEY)
+      rememberedSpace.write()
       setState({ kind: 'anonymous' })
     } catch (error) {
       setState({ ...state, error: message(error) })
@@ -221,7 +240,7 @@ export default function TeamApp() {
         action: 'remove-member', memberId: member.id, expectedRevision: member.revision,
       })
       if (result.signedOut) {
-        localStorage.removeItem(LAST_SPACE_KEY)
+        rememberedSpace.write()
         setState({ kind: 'anonymous' })
         setManagement(undefined)
         return
@@ -296,7 +315,7 @@ export default function TeamApp() {
       if (selected) {
         await openBoard(state.session, result.spaces, selected.key)
       } else {
-        localStorage.removeItem(LAST_SPACE_KEY)
+        rememberedSpace.write()
         setState({ kind: 'ready', session: state.session, spaces: [] })
       }
     } catch (error) {
@@ -331,7 +350,7 @@ export default function TeamApp() {
     setBusy(true)
     try {
       const result = await teamApi.manageSpace(state.session.csrfToken, state.selectedKey, { action: 'leave-space' })
-      localStorage.removeItem(LAST_SPACE_KEY)
+      rememberedSpace.write()
       if (result.signedOut) {
         setState({ kind: 'anonymous' })
         return
@@ -389,8 +408,7 @@ export default function TeamApp() {
           <button className="quiet-button" onClick={() => void switchSpaceList()} disabled={busy}>
             {showingArchived ? 'Active Spaces' : 'Archived Spaces'}
           </button>
-          <span className="identity-name">{state.session.identity.displayName}</span>
-          <button className="quiet-button" onClick={() => void signOut()} disabled={busy}>Sign out</button>
+          <AppearanceMenu session={appearance} displayName={state.session.identity.displayName} onSignOut={() => void signOut()} busy={busy} />
         </div>
       </header>
 

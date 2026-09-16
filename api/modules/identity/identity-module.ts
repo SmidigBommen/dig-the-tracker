@@ -1,5 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
-import type { Database } from '../../db.js'
+import type { Database, DbClient } from '../../db.js'
+import { defaultAppearance, isAppearancePreference, type AppearancePreference, type AppearanceView } from '../../contracts/appearance.js'
 import { inTransaction } from '../../db.js'
 import type { OidcPort } from '../../adapters/oidc/oidc-port.js'
 import { OidcRejectedError, OidcUnavailableError } from '../../adapters/oidc/oidc-port.js'
@@ -82,7 +83,13 @@ export type IdentityFault =
 export interface IdentityModule {
   signIn(request: SignInRequest): Promise<Result<SignInReceipt, IdentityFault>>
   session(request: SessionRequest): Promise<Result<SessionReceipt, IdentityFault>>
+  appearance(request: AppearanceRequest): Promise<Result<AppearanceView, AppearanceFault>>
 }
+
+export type AppearanceRequest =
+  | { kind: 'read'; evidence: SessionEvidence }
+  | { kind: 'change'; evidence: SessionEvidence; preference: AppearancePreference; expectedRevision: number }
+export type AppearanceFault = IdentityFault | { kind: 'invalid-appearance' } | { kind: 'appearance-conflict'; current: AppearanceView }
 
 export interface IdentityModuleConfig {
   redirectUri: string
@@ -139,6 +146,42 @@ export class IdentityModuleImplementation implements IdentityModule {
     try {
       if (request.kind === 'end') return await this.endSession(request.evidence)
       return await this.resolveSession(request.evidence, request.use)
+    } catch (error) {
+      if (isDatabaseError(error)) return { ok: false, fault: { kind: 'temporarily-unavailable' } }
+      throw error
+    }
+  }
+
+  async appearance(request: AppearanceRequest): Promise<Result<AppearanceView, AppearanceFault>> {
+    try {
+      return await inTransaction(this.db, async client => {
+        const session = await this.resolveSession(request.evidence, request.kind === 'change' ? 'change' : 'read', client, true)
+        if (!session.ok) return session
+        if (session.value.kind !== 'resolved') throw new Error('Expected a resolved session')
+        const identityId = session.value.identityView.id
+        const read = async (): Promise<AppearanceView> => {
+          const row = (await client.query<AppearancePreference & { revision: number }>(
+            'select palette, mode, revision from team.identity_appearance where identity_id=$1', [identityId])).rows[0]
+          return { identityId, ...(row ?? { ...defaultAppearance, revision: 0 }) }
+        }
+        if (request.kind === 'read') return { ok: true, value: await read() }
+        if (!isAppearancePreference(request.preference) || !Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < 0 || request.expectedRevision >= 2147483647) {
+          return { ok: false, fault: { kind: 'invalid-appearance' } }
+        }
+        const { palette, mode } = request.preference
+        const updated = await client.query<AppearancePreference & { revision: number }>(
+          `insert into team.identity_appearance (identity_id,palette,mode)
+           select $1,$2,$3 where $4::integer=0
+           on conflict (identity_id) do nothing returning palette,mode,revision`, [identityId,palette,mode,request.expectedRevision])
+        const row = updated.rows[0] ?? (await client.query<AppearancePreference & { revision: number }>(
+          `update team.identity_appearance set palette=$2,mode=$3,revision=revision+1
+           where identity_id=$1 and revision=$4 returning palette,mode,revision`, [identityId,palette,mode,request.expectedRevision])).rows[0]
+        if (row) return { ok: true, value: { identityId,...row } }
+        const current = await read()
+        // Repeating an uncertain save of the same values is safe without another write.
+        if (current.palette === palette && current.mode === mode) return { ok: true, value: current }
+        return { ok: false, fault: { kind: 'appearance-conflict', current } }
+      })
     } catch (error) {
       if (isDatabaseError(error)) return { ok: false, fault: { kind: 'temporarily-unavailable' } }
       throw error
@@ -295,15 +338,17 @@ export class IdentityModuleImplementation implements IdentityModule {
   private async resolveSession(
     evidence: SessionEvidence,
     use: 'read' | 'change' | 'stream',
+    client: Database | DbClient = this.db,
+    lock = false,
   ): Promise<Result<SessionReceipt, IdentityFault>> {
     if (!evidence.sessionSecret) return { ok: false, fault: { kind: 'not-authenticated' } }
-    const result = await this.db.query<SessionRow>(
+    const result = await client.query<SessionRow>(
       `select session.id as session_id, session.identity_id, session.secret_hash,
               session.last_active_at, session.absolute_expires_at, session.revoked_at,
               identity.oidc_issuer, identity.oidc_subject, identity.display_name
        from team.browser_sessions session
        join team.identities identity on identity.id = session.identity_id
-       where session.secret_hash = $1`,
+       where session.secret_hash = $1 ${lock ? 'for update of session' : ''}`,
       [digestSessionSecret(evidence.sessionSecret)],
     )
     const row = result.rows[0]
@@ -311,7 +356,7 @@ export class IdentityModuleImplementation implements IdentityModule {
     if (!row || row.revoked_at || row.absolute_expires_at.getTime() <= now.getTime()
       || row.last_active_at.getTime() + SESSION_IDLE_MILLISECONDS <= now.getTime()) {
       if (row && !row.revoked_at) {
-        await this.db.query('update team.browser_sessions set revoked_at = $1 where id = $2', [now, row.session_id])
+        await client.query('update team.browser_sessions set revoked_at = $1 where id = $2', [now, row.session_id])
       }
       return { ok: false, fault: { kind: 'not-authenticated' } }
     }
@@ -326,7 +371,7 @@ export class IdentityModuleImplementation implements IdentityModule {
       }
     }
 
-    await this.db.query('update team.browser_sessions set last_active_at = $1 where id = $2', [now, row.session_id])
+    await client.query('update team.browser_sessions set last_active_at = $1 where id = $2', [now, row.session_id])
     const identity = makeAuthenticatedIdentity({
       sessionId: row.session_id as SessionId,
       identityId: row.identity_id as IdentityId,

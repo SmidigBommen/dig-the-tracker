@@ -31,7 +31,7 @@ Members can create, open, edit, assign, tag, archive, and restore Tasks and one-
 - Draft preservation and paused editing while disconnected
 - PostgreSQL persistence and checksummed migrations
 
-Administrators can edit workflows; scheduled retention archives Closed Tasks and deletes Spaces after their grace period. Members can search their Space and open Flow and Workload views. See [Slice 8 notes](docs/implementation/slice-08-search-flow-workload.md) for report definitions. Personal themes are planned for [Slice 9](docs/design/slice-09-personal-themes.md). Export and the remaining release gates move to Slice 10.
+Administrators can edit workflows; scheduled retention archives Closed Tasks and deletes Spaces after their grace period. Members can search their Space and open Flow and Workload views. See [Slice 8 notes](docs/implementation/slice-08-search-flow-workload.md) for report definitions. Personal menu → Appearance offers Nature, Neutral, and Tokyo Night, each with System, Light, or Dark mode. Preferences save to the account across Spaces and devices; see [Slice 9 notes](docs/implementation/slice-09-personal-themes.md). Export and the remaining release gates move to Slice 10.
 
 ## Coolify setup
 

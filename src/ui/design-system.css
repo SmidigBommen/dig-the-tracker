@@ -1,25 +1,6 @@
+@import './palettes.css';
+
 :root {
-  --dig-canvas: #0f1914;
-  --dig-surface: #1b2c23;
-  --dig-surface-raised: #243b2f;
-  --dig-surface-hover: #2d4839;
-  --dig-column: #14231b;
-  --dig-field: #14241c;
-  --dig-border: #3e5949;
-  --dig-border-strong: #72917e;
-  --dig-text: #edf5ef;
-  --dig-muted: #b0c5b6;
-  --dig-accent: #a1e4b5;
-  --dig-accent-hover: #bcf0cb;
-  --dig-accent-ink: #122b1b;
-  --dig-accent-surface: #284a35;
-  --dig-active: #83d6bd;
-  --dig-danger: #ffb4ac;
-  --dig-danger-surface: #422823;
-  --dig-warning: #f0cc88;
-  --dig-warning-surface: #3c3220;
-  --dig-chart-duplicate: #b8b6dc;
-  --dig-overlay: #07120dc4;
   --dig-font-small: 12px;
   --dig-font-label: 13px;
   --dig-font-control: 14px;
@@ -68,7 +49,7 @@
 .dig-dialog :where(input, select, textarea) { min-width: 0; max-width: 100%; font: inherit; color: var(--dig-text); background: var(--dig-field);
   border: 1px solid var(--dig-border-strong); border-radius: var(--dig-radius); padding: 8px 10px; }
 .dig-dialog :where(input, textarea)::placeholder { color: var(--dig-muted); }
-.dig-dialog select { color-scheme: dark; }
+.dig-dialog select { color-scheme: inherit; }
 .dig-dialog option { background: var(--dig-surface-raised); color: var(--dig-text); }
 .dig-dialog :where(input:not([type="checkbox"]), select) { min-height: var(--dig-control-height); }
 .dig-dialog :where(fieldset) { border: 0; padding: 0; margin: 0; min-width: 0; }

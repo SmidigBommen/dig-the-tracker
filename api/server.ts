@@ -1,4 +1,5 @@
 import { foreignReferences } from './adapters/http/task-references.js'
+import { isAppearancePreference } from './contracts/appearance.js'
 import { startMaintenance } from './runtime/maintenance.js'
 import { InvalidBoardRequest, parseBoardChange, parseBoardQuery } from './adapters/http/board-requests.js'
 import { sendBoardFeed } from './adapters/http/board-feed.js'
@@ -17,6 +18,7 @@ import {
   IdentityModuleImplementation,
   type AuthenticatedIdentity,
   type IdentityFault,
+  type AppearanceFault,
   type IdentityModule,
   type SessionEvidence,
 } from './modules/identity/identity-module.js'
@@ -159,6 +161,21 @@ export function createTeamServer(
         return
       }
 
+      if (pathname === '/api/appearance' && (method === 'GET' || method === 'POST')) {
+        let result
+        if (method === 'POST') {
+          assertMutationOrigin(request, config)
+          const body = await readJson(request)
+          if (Object.keys(body).some(key => key !== 'preference' && key !== 'expectedRevision')
+            || !isAppearancePreference(body.preference) || typeof body.expectedRevision !== 'number') {
+            throw new RequestError(400, 'Choose a supported palette and mode')
+          }
+          result = await modules.identity.appearance({ kind: 'change', evidence: evidence(request), preference: body.preference, expectedRevision: body.expectedRevision })
+        } else result = await modules.identity.appearance({ kind: 'read', evidence: evidence(request) })
+        if (!result.ok) sendFault(response, result.fault)
+        else sendJson(response, 200, result.value)
+        return
+      }
       if (method === 'GET' && pathname === '/api/session') {
         const resolved = await modules.identity.session({ kind: 'resolve', use: 'read', evidence: evidence(request) })
         if (!resolved.ok || resolved.value.kind !== 'resolved') {
@@ -615,7 +632,7 @@ function setSecurityHeaders(response: ServerResponse) {
   )
 }
 
-type HttpFault = IdentityFault | SpaceFault | BoardFault
+type HttpFault = IdentityFault | AppearanceFault | SpaceFault | BoardFault
 
 function sendFault(response: ServerResponse, fault: HttpFault) {
   const mapped = mapFault(fault)
@@ -624,6 +641,8 @@ function sendFault(response: ServerResponse, fault: HttpFault) {
 
 function mapFault(fault: HttpFault): { status: number; message: string } {
   switch (fault.kind) {
+    case 'invalid-appearance': return { status: 400, message: 'Choose a supported palette and mode' }
+    case 'appearance-conflict': return { status: 409, message: 'Appearance changed in another session. Try your selection again.' }
     case 'not-authenticated': return { status: 401, message: 'Sign in required' }
     case 'csrf': return { status: 403, message: 'Request verification failed' }
     case 'forbidden': return { status: 403, message: 'Not allowed' }
