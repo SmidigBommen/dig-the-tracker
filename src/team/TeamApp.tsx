@@ -1,3 +1,4 @@
+import { SpaceExportButton } from './SpaceExportButton.tsx'
 import { BoardWorkspace } from '../views/BoardWorkspace.tsx'
 import { AppearanceMenu } from '../appearance/AppearanceMenu.tsx'
 import { AppearanceSession } from '../appearance/appearance-session.ts'
@@ -397,7 +398,7 @@ export default function TeamApp() {
           {state.spaces.length > 0 && (
             <label className="space-picker">
               <span>Space</span>
-              <select
+              <select aria-label="Space"
                 value={state.selectedKey ?? ''}
                 onChange={(event) => void openBoard(state.session, state.spaces, event.target.value)}
               >
@@ -636,6 +637,7 @@ function SpaceManagementPanel({
         <button className="quiet-button" onClick={() => void onClose()}>Back to Board</button>
       </div>
       <SpaceSettingsForm management={management} busy={busy} onRevise={onReviseSpace} onLifecycle={onChangeLifecycle} />
+      <SpaceExportButton key={management.space.key} spaceKey={management.space.key} />
       <section className="management-panel" aria-label="Space Members">
         {management.members.map((member) => (
           <div className="member-row" data-member={member.id} key={member.id}>

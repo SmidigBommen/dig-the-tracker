@@ -1,0 +1,1057 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Dig Space export version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "const": "dig-space"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+    },
+    "space": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^space-(?:[a-f0-9]{64}|1)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "timeZone": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "enum": [
+            "active",
+            "archived",
+            "deletion_scheduled"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+        },
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deletionScheduledFor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "displayName",
+        "timeZone",
+        "lifecycle",
+        "createdAt",
+        "archivedAt",
+        "deletionScheduledFor"
+      ]
+    },
+    "board": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^board-(?:[a-f0-9]{64}|1)$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workflowRevision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAt": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+        }
+      },
+      "required": [
+        "id",
+        "workflowRevision",
+        "createdAt"
+      ]
+    },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^member-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "member",
+              "space-administrator"
+            ]
+          },
+          "joinedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "role",
+          "joinedAt",
+          "endedAt"
+        ]
+      }
+    },
+    "columns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^column-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "flowRole": {
+            "enum": [
+              "queue",
+              "active",
+              "complete"
+            ]
+          },
+          "intake": {
+            "type": "boolean"
+          },
+          "completion": {
+            "type": "boolean"
+          },
+          "wipLimit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "archivedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "flowRole",
+          "intake",
+          "completion",
+          "wipLimit",
+          "position",
+          "archivedAt",
+          "revision"
+        ]
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^tag-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^task-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "number": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "columnId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^column-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "parentTaskId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^task-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assigneeId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^member-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^member-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+          },
+          "updatedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+          },
+          "archivedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "restoredAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "columnEnteredAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+          },
+          "closedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "enum": [
+              null,
+              "completed",
+              "rejected",
+              "cancelled",
+              "duplicate"
+            ]
+          },
+          "duplicateTaskId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^task-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "title",
+          "description",
+          "columnId",
+          "position",
+          "parentTaskId",
+          "assigneeId",
+          "createdBy",
+          "revision",
+          "createdAt",
+          "updatedAt",
+          "archivedAt",
+          "restoredAt",
+          "startedAt",
+          "columnEnteredAt",
+          "closedAt",
+          "outcome",
+          "duplicateTaskId"
+        ]
+      }
+    },
+    "taskTags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^task-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tagId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^tag-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "taskId",
+          "tagId"
+        ]
+      }
+    },
+    "comments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^comment-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^task-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authorId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^member-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+          },
+          "editedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "removedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "removedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^member-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originEventId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^event-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "taskId",
+          "authorId",
+          "text",
+          "revision",
+          "createdAt",
+          "editedAt",
+          "removedAt",
+          "removedBy",
+          "originEventId"
+        ]
+      }
+    },
+    "mentions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "commentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^comment-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memberId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^member-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "commentId",
+          "memberId"
+        ]
+      }
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^event-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^task-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "actorId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^member-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "fromColumn": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^column-(?:[a-f0-9]{64}|1)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "flowRole": {
+                    "enum": [
+                      "queue",
+                      "active",
+                      "complete"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "flowRole"
+                ]
+              },
+              "toColumn": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^column-(?:[a-f0-9]{64}|1)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "flowRole": {
+                    "enum": [
+                      "queue",
+                      "active",
+                      "complete"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "flowRole"
+                ]
+              },
+              "outcome": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "completed",
+                      "rejected",
+                      "cancelled",
+                      "duplicate"
+                    ]
+                  },
+                  "taskId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^task-(?:[a-f0-9]{64}|1)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "previousOutcome": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "completed",
+                      "rejected",
+                      "cancelled",
+                      "duplicate"
+                    ]
+                  },
+                  "taskId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^task-(?:[a-f0-9]{64}|1)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "formerMemberId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^member-(?:[a-f0-9]{64}|1)$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "changes": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "assigneeId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^member-(?:[a-f0-9]{64}|1)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "parentTaskId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^task-(?:[a-f0-9]{64}|1)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": []
+              }
+            },
+            "required": []
+          }
+        },
+        "required": [
+          "id",
+          "taskId",
+          "actorId",
+          "kind",
+          "occurredAt",
+          "details"
+        ]
+      }
+    },
+    "invitations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^invitation-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^member-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issuedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+          },
+          "expiresAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "acceptedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "acceptedByDisplayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "issuedBy",
+          "issuedAt",
+          "expiresAt",
+          "revokedAt",
+          "acceptedAt",
+          "acceptedByDisplayName"
+        ]
+      }
+    },
+    "audit": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^audit-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "action": {
+            "type": "string"
+          },
+          "actorDisplayName": {
+            "type": "string"
+          },
+          "subjectMemberId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^member-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "invitationId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^invitation-(?:[a-f0-9]{64}|1)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "occurredAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d\\d-\\d\\dT"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "revision": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "taskId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^task-(?:[a-f0-9]{64}|1)$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "commentId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^comment-(?:[a-f0-9]{64}|1)$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": []
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "actorDisplayName",
+          "subjectMemberId",
+          "invitationId",
+          "occurredAt",
+          "details"
+        ]
+      }
+    }
+  },
+  "required": [
+    "format",
+    "schemaVersion",
+    "generatedAt",
+    "space",
+    "board",
+    "members",
+    "columns",
+    "tags",
+    "tasks",
+    "taskTags",
+    "comments",
+    "mentions",
+    "history",
+    "invitations",
+    "audit"
+  ]
+}

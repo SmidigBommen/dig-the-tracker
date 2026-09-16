@@ -21,9 +21,11 @@
     "db:up": "./scripts/compose -f podman-compose.yml up -d db",
     "db:migrate": "npm run migrate",
     "db:reset": "npm run build:api && node --env-file-if-exists=.env.local api-dist/migrate.js reset",
-    "db:backup": "./scripts/compose -f podman-compose.yml exec -T db pg_dump -U dig -d dig -Fc > dig-backup.dump",
-    "db:restore": "./scripts/compose -f podman-compose.yml exec -T db pg_restore -U dig -d dig --clean --if-exists < dig-backup.dump",
-    "db:down": "./scripts/compose -f podman-compose.yml down"
+    "db:backup": "node scripts/database-archive.mjs backup",
+    "db:restore": "node scripts/database-archive.mjs restore",
+    "db:down": "./scripts/compose -f podman-compose.yml down",
+    "test:e2e": "npm run build && playwright test",
+    "test:recovery": "npm run build:api && node scripts/test-recovery.mjs && node scripts/test-backup.mjs"
   },
   "dependencies": {
     "jose": "^6.2.11",
@@ -32,7 +34,9 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
@@ -41,6 +45,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "ajv": "^8.20.0",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",

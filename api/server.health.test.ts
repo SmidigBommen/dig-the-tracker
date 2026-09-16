@@ -16,6 +16,7 @@ afterEach(async () => {
 async function start(isReady?: () => Promise<boolean>) {
   const unexpected = vi.fn(() => { throw new Error('Health must not resolve a browser session or read Space data') })
   const modules: ServerModules = {
+    exports: { read: unexpected },
     identity: { signIn: unexpected, session: unexpected, appearance: unexpected },
     space: { read: unexpected, change: unexpected, authorize: unexpected },
     board: { read: unexpected, change: unexpected, follow: unexpected },

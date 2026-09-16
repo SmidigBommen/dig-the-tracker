@@ -114,7 +114,7 @@ export function BoardWorkspace({ initialBoard, transport, initialTask }: { initi
           if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
           setHoveredColumn((current) => current === column.id ? null : current)
         }} onDrop={(event) => drop(event, column.id)} aria-labelledby={`column-${column.id}`}>
-        <header><h2 id={`column-${column.id}`}><span className="column-dot" aria-label={column.flowRole} />{column.name}<span className="column-count" title={`${column.counts.parentTasks} parent Tasks, ${column.counts.subtasks} Subtasks`}>{column.counts.tasks}</span></h2>
+        <header><h2 id={`column-${column.id}`}><span className="column-dot" role="img" aria-label={column.flowRole} />{column.name}<span className="column-count" title={`${column.counts.parentTasks} parent Tasks, ${column.counts.subtasks} Subtasks`}>{column.counts.tasks}</span></h2>
           {column.wipLimit !== null && <span className={`wip-limit${column.counts.tasks > column.wipLimit ? ' exceeded' : ''}`}>Limit {column.wipLimit}</span>}
         </header>
         <div className="work-cards">{column.tasks.items.map(card)}

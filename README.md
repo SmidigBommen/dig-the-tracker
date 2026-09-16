@@ -1,6 +1,6 @@
 # Dig team Kanban
 
-Dig is a flow-based Kanban system for small teams. The current implementation covers Slices 1 through 8 of the team MVP: authenticated Spaces, membership administration, Space lifecycle, Task capture and editing, work movement and closure, comments, the in-app inbox, and live collaboration.
+Dig is a flow-based Kanban system for small teams. Slices 1 through 10 implement authenticated Spaces, team workflows, live collaboration, flow reports, personal themes, and release tooling. Production backup and monitoring activation remain open release gates.
 
 Members can create, open, edit, assign, tag, archive, and restore Tasks and one-level Subtasks. They can drag or explicitly move work, close with an Outcome, reopen, and inspect immutable Task history.
 
@@ -31,7 +31,7 @@ Members can create, open, edit, assign, tag, archive, and restore Tasks and one-
 - Draft preservation and paused editing while disconnected
 - PostgreSQL persistence and checksummed migrations
 
-Administrators can edit workflows; scheduled retention archives Closed Tasks and deletes Spaces after their grace period. Members can search their Space and open Flow and Workload views. See [Slice 8 notes](docs/implementation/slice-08-search-flow-workload.md) for report definitions. Personal menu → Appearance offers Nature, Neutral, and Tokyo Night, each with System, Light, or Dark mode. Preferences save to the account across Spaces and devices; see [Slice 9 notes](docs/implementation/slice-09-personal-themes.md). Export and the remaining release gates move to Slice 10.
+Administrators can edit workflows; scheduled retention archives Closed Tasks and deletes Spaces after their grace period. Members can search their Space and open Flow and Workload views. See [Slice 8 notes](docs/implementation/slice-08-search-flow-workload.md) for report definitions. Personal menu → Appearance offers Nature, Neutral, and Tokyo Night, each with System, Light, or Dark mode. Preferences save to the account across Spaces and devices; see [Slice 9 notes](docs/implementation/slice-09-personal-themes.md). Space administrators can download versioned JSON from Manage Space. See [release operations](docs/operations.md) for exports, backup setup, recovery, and remaining production gates.
 
 ## Coolify setup
 
@@ -110,6 +110,10 @@ Open http://127.0.0.1:5173.
 | `npm run db:migrate` | Apply pending checksummed migrations |
 | `npm run db:reset` | Roll back and reapply every migration |
 | `npm run db:down` | Stop local services without deleting the volume |
+| `npm run test:e2e` | Run real browser and accessibility checks against a disposable `DIG_E2E_DATABASE_URL` |
+| `npm run test:recovery` | Restore a disposable database and verify backup upload failure handling; requires `DIG_RECOVERY_TEST=1` |
+| `npm run db:backup -- FILE.dump` | Create a custom PostgreSQL archive from explicit `DATABASE_URL` |
+| `npm run db:restore -- FILE.dump` | Restore into an empty database named by `RESTORE_DATABASE_URL` |
 
 `db:reset` replaces local database contents. Use it only when intended.
 

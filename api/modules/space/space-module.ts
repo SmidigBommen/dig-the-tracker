@@ -378,6 +378,7 @@ export class SpaceModuleImplementation implements SpaceModule {
     try {
       const row = await this.findSpace(identityValue.identityId, request.space)
       if (!row) return { ok: false, fault: { kind: 'not-found' } }
+      if ((request.use === 'space-export' || request.use === 'space-audit-read') && row.role !== 'space-administrator') return { ok: false,fault: { kind: 'forbidden' } }
       if (request.use === 'board-change' && row.lifecycle !== 'active') {
         return { ok: false, fault: lifecycleFault(row.lifecycle) }
       }

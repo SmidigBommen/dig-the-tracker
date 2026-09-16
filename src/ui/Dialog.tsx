@@ -21,18 +21,19 @@ export function Dialog({ title, onClose, actions, children, focusTitle = false, 
       }
     }
     const focusin = (event: FocusEvent) => { if (!dialog.contains(event.target as Node)) (focusable()[0] ?? dialog).focus() }
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault();close.current() } }
+    document.addEventListener('keydown',escape)
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     dialog.addEventListener('keydown', keydown)
     document.addEventListener('focusin', focusin)
     return () => {
+      document.removeEventListener('keydown',escape)
       dialog.removeEventListener('keydown', keydown); document.removeEventListener('focusin', focusin)
       document.body.style.overflow = previousOverflow; previous?.focus()
     }
   }, [focusTitle])
-  return <div className="task-overlay" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}><div ref={element} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="dig-dialog task-dialog" onKeyDown={(event) => {
-      if (event.key === 'Escape') { event.preventDefault(); close.current() }
-    }}>
+  return <div className="task-overlay" onClick={(event) => { if (event.target === event.currentTarget) onClose() }}><div ref={element} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="dig-dialog task-dialog">
     <header className="dig-dialog-header"><h2 id={titleId}>{title}</h2><div className="task-dialog-actions">{actions}<Button variant="ghost" className="dig-icon-button" aria-label={closeLabel} onClick={onClose}>×</Button></div></header>
     <div className="dig-dialog-body">{children}</div>
   </div></div>

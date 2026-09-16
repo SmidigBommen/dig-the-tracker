@@ -1,3 +1,7 @@
+import { SpaceExportModuleImplementation, type SpaceExportModule } from './modules/export/export-module.js'
+import { observeRequest, RequestLimits } from './runtime/http-operations.js'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { foreignReferences } from './adapters/http/task-references.js'
 import { isAppearancePreference } from './contracts/appearance.js'
 import { startMaintenance } from './runtime/maintenance.js'
@@ -58,6 +62,7 @@ const MIME_TYPES: Record<string, string> = {
 }
 
 export interface ServerModules {
+  exports: SpaceExportModule
   identity: IdentityModule
   space: SpaceModule
   board: BoardModule
@@ -127,7 +132,10 @@ export function createTeamServer(
   isReady: () => Promise<boolean> = async () => false,
   shutdown?: AbortSignal,
 ) {
+  const requestLimits = new RequestLimits()
+  let activeExports = 0
   return createServer(async (request, response) => {
+    observeRequest(request,response)
     setSecurityHeaders(response)
     const origin = request.headers.origin
     if (origin && config.allowedOrigins.has(origin)) {
@@ -147,7 +155,7 @@ export function createTeamServer(
         return
       }
       if (method === 'GET' && pathname === '/health/ready') {
-        const ready = await isReady().catch(() => false)
+        const ready = !shutdown?.aborted && await isReady().catch(() => false)
         response.setHeader('cache-control', 'no-store')
         sendJson(response, ready ? 200 : 503, { status: ready ? 'ready' : 'unavailable' })
         return
@@ -158,6 +166,38 @@ export function createTeamServer(
         response.setHeader('access-control-allow-methods', 'GET,POST,OPTIONS')
         response.setHeader('access-control-allow-headers', 'content-type,x-csrf-token')
         response.end()
+        return
+      }
+
+      if (shutdown?.aborted && (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS' || pathname.endsWith('/export'))) {
+        response.setHeader('retry-after','5');sendFault(response,{ kind: 'temporarily-unavailable' });return
+      }
+      const retryAfterSeconds = requestLimits.retryAfter(request,pathname)
+      if (retryAfterSeconds) { response.setHeader('retry-after',String(retryAfterSeconds));sendFault(response,{ kind: 'rate-limited',retryAfterSeconds });return }
+
+      const exportMatch = /^\/api\/spaces\/([A-Z][A-Z0-9]{1,9})\/export$/.exec(pathname)
+      if (method === 'GET' && exportMatch) {
+        const identity = await requireIdentity(request,response,modules.identity,'read')
+        if (!identity) return
+        if (activeExports >= 2) { response.setHeader('retry-after','30');sendFault(response,{ kind: 'rate-limited',retryAfterSeconds: 30 });return }
+        activeExports++
+        const cancelled = new AbortController()
+        const signal = AbortSignal.any([cancelled.signal,AbortSignal.timeout(120_000)])
+        const cancel = () => cancelled.abort()
+        response.once('close',cancel)
+        try {
+          const access = await modules.space.authorize(identity,{ use: 'space-export',space: { kind: 'key',spaceKey: exportMatch[1] as SpaceKey } })
+          if (!access.ok) { sendFault(response,access.fault);return }
+          const result = await modules.exports.read(access.value,signal)
+          if (!result.ok) { sendFault(response,result.fault);return }
+          response.setHeader('content-type','application/json; charset=utf-8')
+          response.setHeader('content-disposition',`attachment; filename="${result.value.filename}"`)
+          response.setHeader('cache-control','no-store')
+          response.setHeader('x-accel-buffering','no')
+          const chunks = result.value.chunks
+          async function* data() { for await (const chunk of chunks) { if (chunk.kind === 'failed') throw new Error('Export interrupted');yield chunk.text } }
+          await pipeline(Readable.from(data()),response,{ signal })
+        } finally { response.off('close',cancel);cancel();activeExports-- }
         return
       }
 
@@ -520,7 +560,8 @@ export function createTeamServer(
       } else if (error instanceof RequestError) {
         sendJson(response, error.status, { error: error.message })
       } else {
-        console.error(error)
+        if (response.headersSent || response.destroyed) { response.destroy();return }
+        console.info(JSON.stringify({ event: 'http-failure',requestId: response.getHeader('x-request-id') }))
         sendJson(response, 500, { error: 'Internal server error' })
       }
     }
@@ -699,7 +740,7 @@ async function main() {
   const feedShutdown = new AbortController()
   setMaxListeners(0, feedShutdown.signal)
   let draining = false
-  const server = createTeamServer({ identity, space, board }, config, async () => {
+  const server = createTeamServer({ identity, space, board, exports: new SpaceExportModuleImplementation(db) }, config, async () => {
     if (draining) return false
     // pg supports a per-query timeout, which its QueryConfig type omits.
     const probe = { text: 'select 1', query_timeout: 2_000 }
@@ -713,6 +754,7 @@ async function main() {
   const shutdown = () => {
     if (draining) return
     draining = true
+    console.info(JSON.stringify({ event: 'server-draining' }))
     feedShutdown.abort()
     const maintenanceStopped = stopMaintenance()
     const deadline = setTimeout(() => process.exit(1), 30_000)
@@ -723,6 +765,7 @@ async function main() {
         await db.end()
       } finally {
         clearTimeout(deadline)
+        console.info(JSON.stringify({ event: 'server-stopped' }))
       }
     })
   }
@@ -732,7 +775,7 @@ async function main() {
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   main().catch((error) => {
-    console.error(error)
+    console.error(JSON.stringify({ event: 'startup-failed',kind: error instanceof Error ? error.name : 'unknown' }))
     process.exitCode = 1
   })
 }

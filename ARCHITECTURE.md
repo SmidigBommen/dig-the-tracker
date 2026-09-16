@@ -1,6 +1,6 @@
 # Architecture
 
-Dig is a React, Node, and PostgreSQL modular monolith. Slices 1 through 8 run authentication, Space membership, lifecycle controls, and Task capture, editing, movement, closure, history, comments, and Notifications through three server Modules. OpenID Connect is the only true-external dependency.
+Dig is a React, Node, and PostgreSQL modular monolith. Four server Modules own identity, Space administration, Board behavior, and Space export. OpenID Connect is the application's true-external dependency. Operator backup tooling uses an S3-compatible store separately from application requests.
 
 ## Running path
 
@@ -20,10 +20,12 @@ flowchart LR
     Identity[IdentityModule]
     Space[SpaceModule]
     Board[BoardModule]
+    Export[SpaceExportModule]
     OIDCAdapter[OpenID Connect Adapter]
     HTTP --> Identity
     HTTP --> Space
     HTTP --> Board
+    HTTP --> Export
     Identity --> OIDCAdapter
   end
 
@@ -36,6 +38,7 @@ flowchart LR
   Identity <--> TeamSchema
   Space <--> TeamSchema
   Board <--> TeamSchema
+  Export <--> TeamSchema
   Migrations[Migration runner] -.-> TeamSchema
 ```
 
@@ -72,6 +75,12 @@ Comment pages use immutable insertion ordering with their own Task-scoped cursor
 Opening a Task sends an explicit `markNotificationsRead: true` query flag and marks only the opener's Notifications for that Task read. Ordinary Task lookups and page loads leave read state unchanged. These reads acquire the Board write lock before changing read state and append a Board update when anything changes. This personal read state remains available in an archived Space. Explicit Board changes still require an active Space. Shared updates invalidate inbox queries without exposing inbox contents; read-state projections identify the Member and are filtered before feed delivery.
 
 Closing comments link to their immutable closure event. A forward migration imports existing closure text with its original author and timestamp. Comment edits and tombstones affect the text shown in history while closure identity, time, and Outcome remain unchanged. SpaceModule owns the private moderation audit writer invoked within the Board transaction.
+
+## Space export
+
+`SpaceExportModule.read` accepts `AuthorizedSpace<'space-export'>` and returns an attachment name and typed data/failure chunks. `SpaceModule.authorize` restricts this use to Space administrators. Private Space and Board readers own their respective SQL. Export uses a repeatable-read snapshot and cursors with 250-row batches. Fresh checks outside the snapshot stop downloads after access or session revocation without locking the session throughout the download.
+
+Version 1 has an explicit [JSON Schema](public/export/space-v1.schema.json). Each export uses a fresh HMAC key to derive local relationship IDs with bounded memory. Explicit projections exclude credentials and internal IDs. Current comment text and tombstones replace legacy closure text; history does not resurrect removed comments. A stream failure truncates the HTTP response, and the browser only saves a complete download. There are two active exports per process and a two-minute deadline.
 
 ## Session and sign-in flow
 
@@ -111,9 +120,9 @@ The browser's owned Adapter reads the event stream with fetch so BoardSession co
 
 The application image contains the browser build, server build, and migrations. Server startup applies and validates checksummed migrations before listening, including when deployed as a standalone Coolify application. Compose retains its separate migration service; the startup check then finds no pending migrations. PostgreSQL stays on the private container network.
 
-`/health/live` reports HTTP-process liveness. `/health/ready` checks PostgreSQL after startup has completed; the image probes it with Node. Shutdown marks readiness unavailable and allows up to 30 seconds for HTTP and database connections to close. Full mutation drain, backup verification, monitoring, and release hardening remain Slice 10 work.
+`/health/live` reports HTTP-process liveness. `/health/ready` checks PostgreSQL after startup has completed; the image probes it with Node. Shutdown marks readiness unavailable, rejects new mutations and exports, closes live feeds, and allows active requests up to 30 seconds before closing PostgreSQL. Compose allows a 35-second stop grace.
 
-The app still binds to host loopback in repository Compose. Coolify setup for real-provider sign-in validation precedes further Task development. See [the deployment guide](docs/coolify-deployment.md). Task authorization, rate limiting, operating checks, and the remaining team-release gates are not complete.
+The app binds to host loopback in repository Compose. Coolify uses private application and database networking behind HTTPS. HTTP logging emits generated request IDs and route categories without request content or raw exception messages. Process-local limits bound authentication and mutation bursts. [Release operations](docs/operations.md) defines backup/restore commands, S3 retention, monitoring hooks, log retention, and the remaining production gates. Off-server storage and operator alerts still require activation.
 
 ## Workflow and scheduled retention
 

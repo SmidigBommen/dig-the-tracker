@@ -1,0 +1,6 @@
+{
+  "Rules": [
+    { "ID": "dig-daily-14-days", "Status": "Enabled", "Filter": { "Prefix": "dig/daily/" }, "Expiration": { "Days": 14 } },
+    { "ID": "dig-monthly-12-months", "Status": "Enabled", "Filter": { "Prefix": "dig/monthly/" }, "Expiration": { "Days": 366 } }
+  ]
+}

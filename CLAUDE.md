@@ -8,11 +8,12 @@
 
 ## Current implementation
 
-- Slices 1 through 9 of the small-team MVP are implemented.
+- Slices 1 through 10 have implementation and local verification. Slice 10 production backup, monitoring, and deployment gates remain open; see `docs/operations.md`.
 - The running React entry is `src/team/TeamApp.tsx`; it handles sign-in, invitations, Space selection, membership administration, Space lifecycle, Task capture, editing, assignment, Tags, Subtasks, Task Archive, movement, closure Outcomes, history, comments, mentions, the in-app inbox, reload, and sign-out.
 - The Node HTTP Adapter is `api/server.ts`.
 - `IdentityModule` owns OpenID Connect correlation, PostgreSQL sessions, and account appearance preferences.
 - `SpaceModule` owns Space reads, invitations, membership, roles, lifecycle, audit, idempotent changes, access invalidation, and request authorization.
+- `SpaceExportModule.read` produces versioned JSON through typed streamed chunks. Its private readers retain Space and Board SQL ownership, snapshot consistency, bounded batches, and access rechecks.
 - `BoardModule` owns Task reads and changes, revisions, numbering, Tags, Subtasks, archive/restore, relative placement, order revisions, closure Outcomes, immutable flow history, comment revisions and tombstones, Notifications, cursor pages, and transaction-time access checks. `follow` streams committed updates with access rechecks, bounded replay, and recipient filtering. Declarative workflow edits are administrator-only and atomic. Scheduled archive preserves Task families and local-date retention; Space deletion removes scoped receipts while retaining non-personal key reservations.
 - `BoardSession` owns browser Task state, drafts, live updates, and snapshot recovery through the `BoardTransport` port. Owned HTTP and in-memory test Adapters share wire values in `api/contracts/board.ts`.
 - `AppearanceSession` owns personal palette/mode, startup reconciliation, save recovery, and same-account tab updates through `AppearanceTransport`. Theme changes preserve `BoardSession` and its drafts.
@@ -24,7 +25,7 @@
 
 ## Module rules
 
-- Test behavior through `IdentityModule`, `SpaceModule`, and `BoardModule`; do not expose a repository Interface to mock PostgreSQL.
+- Test behavior through `IdentityModule`, `SpaceModule`, `BoardModule`, and `SpaceExportModule`; do not expose a repository Interface to mock PostgreSQL.
 - OpenID Connect is a true-external port with production and mock Adapters.
 - Browser input cannot construct or inspect `AuthenticatedIdentity` or `AuthorizedSpace`.
 - An authorized Space is evidence to recheck inside the Board transaction, not a lasting bearer permission.
@@ -46,6 +47,6 @@
 | `npm run dev:api` and `npm run dev` | Start the server and Vite development processes |
 | `./scripts/compose -f podman-compose.yml up --build` | Run the configured app at `127.0.0.1:8080` |
 
-## Next slice
+## Release and theme work
 
-For theme changes, read [personal-theme implementation notes](docs/implementation/slice-09-personal-themes.md) and [UI foundations](docs/design/design-system.md). Release work is next in Slice 10; consult [the vertical-slice plan](docs/design/vertical-slice-plan.md) and [deployment guidance](docs/coolify-deployment.md) for its gates. Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.
+For theme changes, read [personal-theme implementation notes](docs/implementation/slice-09-personal-themes.md) and [UI foundations](docs/design/design-system.md). For export changes or release verification, read [Slice 10 notes](docs/implementation/slice-10-release-readiness.md). For backup setup, restoration, monitoring, or shutdown configuration, read [release operations](docs/operations.md). Production has no off-server backup configured as of 2026-09-16. Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.

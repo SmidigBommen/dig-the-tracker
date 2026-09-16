@@ -30,6 +30,7 @@ services:
     networks: [dig-private]
 
   dig-tracker:
+    stop_grace_period: 35s
     image: localhost/dig-tracker:local
     build:
       context: .

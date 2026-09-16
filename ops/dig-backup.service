@@ -1,0 +1,12 @@
+[Unit]
+Description=Dig off-server PostgreSQL backup
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/dig
+EnvironmentFile=/etc/dig/backup.env
+ExecStart=/usr/bin/node /opt/dig/scripts/backup-to-s3.mjs
+UMask=0077
+TimeoutStartSec=1h

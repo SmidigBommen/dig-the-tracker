@@ -27,3 +27,5 @@ dig-backup.dump
 *.njsproj
 *.sln
 *.sw?
+
+.test-artifacts/

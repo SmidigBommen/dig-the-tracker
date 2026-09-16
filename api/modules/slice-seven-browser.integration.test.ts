@@ -1,3 +1,4 @@
+import { SpaceExportModuleImplementation } from './export/export-module.js'
 // @vitest-environment jsdom
 import { createElement } from 'react'
 import { randomUUID } from 'node:crypto'
@@ -46,7 +47,7 @@ run('Slice 7 browser through HTTP and PostgreSQL', () => {
     const created = await space.change(resolved.value.identity, { requestId: randomUUID() as RequestId,
       command: { kind: 'create-space', input: { key: 'DIG', displayName: 'Delivery', timeZone: 'UTC' } } })
     expect(created.ok).toBe(true)
-    const server = createTeamServer({ identity, space, board }, loadConfig({ ALLOWED_ORIGINS: origin }))
+    const server = createTeamServer({ exports: new SpaceExportModuleImplementation(db), identity, space, board }, loadConfig({ ALLOWED_ORIGINS: origin }))
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
     const nativeFetch = globalThis.fetch

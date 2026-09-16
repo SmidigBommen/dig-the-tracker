@@ -1,3 +1,4 @@
+import { SpaceExportModuleImplementation } from './export/export-module.js'
 // @vitest-environment node
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { AddressInfo } from 'node:net'
@@ -1032,7 +1033,7 @@ run('Slice 2 membership and Space lifecycle', () => {
       installationAdministrators: new Set([identityKey('admin')]),
       oidc: null,
     }
-    const server = createTeamServer({ identity, space, board: new BoardModuleImplementation(db) }, config)
+    const server = createTeamServer({ exports: new SpaceExportModuleImplementation(db), identity, space, board: new BoardModuleImplementation(db) }, config)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
     allowedOrigins.add(origin)

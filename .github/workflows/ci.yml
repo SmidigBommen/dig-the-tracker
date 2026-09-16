@@ -38,3 +38,25 @@ jobs:
         env:
           DATABASE_URL: postgres://dig:dig-test@127.0.0.1:5432/dig
       - run: npm run build
+      - name: Prepare browser database
+        run: docker exec "${{ job.services.postgres.id }}" createdb -U dig dig_e2e
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run test:e2e
+        env:
+          DIG_E2E_DATABASE_URL: postgres://dig:dig-test@127.0.0.1:5432/dig_e2e
+      - name: Restore a complete database into an empty destination
+        run: npm run test:recovery
+        env:
+          DATABASE_URL: postgres://dig:dig-test@127.0.0.1:5432/dig_e2e
+          PG_TOOLS_CONTAINER: ${{ job.services.postgres.id }}
+          DIG_RECOVERY_TEST: '1'
+      - name: Build the release image
+        run: docker build -f Containerfile -t dig-tracker:release-check .
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failures
+          path: |
+            .test-artifacts/playwright-report/
+            .test-artifacts/playwright-results/
+          retention-days: 7

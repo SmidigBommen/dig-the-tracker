@@ -72,7 +72,7 @@ export async function migrate(databaseUrl: string, action: 'up' | 'reset' = 'up'
           await client.query('delete from schema_migrations where version = $1', [migration.version])
           await client.query('commit')
           applied.delete(migration.version)
-          console.log(`Rolled back ${migration.version}`)
+          console.info(JSON.stringify({ event: 'migration-rolled-back',version: migration.version }))
         } catch (error) {
           await client.query('rollback')
           throw error
@@ -87,7 +87,7 @@ export async function migrate(databaseUrl: string, action: 'up' | 'reset' = 'up'
         await client.query(migration.up)
         await client.query('insert into schema_migrations (version, checksum) values ($1, $2)', [migration.version, migration.checksum])
         await client.query('commit')
-        console.log(`Applied ${migration.version}`)
+        console.info(JSON.stringify({ event: 'migration-applied',version: migration.version }))
       } catch (error) {
         await client.query('rollback')
         throw error
@@ -108,7 +108,7 @@ async function main() {
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   main().catch((error) => {
-    console.error(error)
+    console.error(JSON.stringify({ event: 'migration-failed',kind: error instanceof Error ? error.name : 'unknown' }))
     process.exitCode = 1
   })
 }

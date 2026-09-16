@@ -1,6 +1,6 @@
 # Coolify and OpenID Connect setup
 
-This setup deploys the current Space and membership app so its real OpenID Connect sign-in can be verified before Task development resumes. It does not complete the remaining team-release work in Slice 10. The Coolify dashboard is `https://coolify.smidigbommen.no`; Dig uses `https://dig.smidigbommen.no` with Microsoft Entra.
+This guide records Dig's Coolify and OpenID Connect configuration. The Coolify dashboard is `https://coolify.smidigbommen.no`; Dig uses `https://dig.smidigbommen.no` with Microsoft Entra. Slice 10 adds [release operations](operations.md) for backup storage, recovery, monitoring, log retention, and shutdown grace. Those production gates remain open until verified on the deployed revision.
 
 ## Prepare the resources
 

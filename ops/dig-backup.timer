@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Dig off-server backup
+
+[Timer]
+OnCalendar=*-*-* 01:00:00 UTC
+Persistent=true
+Unit=dig-backup.service
+
+[Install]
+WantedBy=timers.target

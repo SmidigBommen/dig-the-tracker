@@ -1,3 +1,4 @@
+import { SpaceExportModuleImplementation } from './export/export-module.js'
 // @vitest-environment node
 import type { AddressInfo } from 'node:net'
 import { createTeamServer } from '../server.js'
@@ -237,7 +238,7 @@ run('Slice 3 capture and shape work', () => {
 
   it('captures and revises through authenticated HTTP with CSRF and typed safe faults', async () => {
     const app = await setup()
-    const server = createTeamServer(app, loadConfig({ ALLOWED_ORIGINS: origin }))
+    const server = createTeamServer({ ...app,exports: new SpaceExportModuleImplementation(db) }, loadConfig({ ALLOWED_ORIGINS: origin }))
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/spaces/DIG/board`
     const headers = { origin, cookie: `dig_session=${app.browserSession.sessionSecret}`,

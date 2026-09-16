@@ -1,3 +1,4 @@
+import { SpaceExportModuleImplementation } from './export/export-module.js'
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -331,7 +332,7 @@ run('Slice 8 search and reports', () => {
     await change(app,{ kind: 'capture-task',input: { title: 'Private work' } },'PRIVATE')
     const { createTeamServer } = await import('../server.js')
     const { loadConfig } = await import('../config.js')
-    const server = createTeamServer({ identity: app.identity,space: app.space,board: app.board },loadConfig({ ALLOWED_ORIGINS: origin }))
+    const server = createTeamServer({ exports: new SpaceExportModuleImplementation(db), identity: app.identity,space: app.space,board: app.board },loadConfig({ ALLOWED_ORIGINS: origin }))
     await new Promise<void>(resolve => server.listen(0,'127.0.0.1',resolve))
     const port = (server.address() as import('node:net').AddressInfo).port
     try {
