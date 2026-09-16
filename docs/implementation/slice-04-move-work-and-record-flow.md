@@ -20,7 +20,7 @@ Members can drag Tasks between Columns and relative to cards, or use the keyboar
 
 The slice adds coverage at the agreed `BoardModule`, `BoardSession` transport, and browser/HTTP seams. Database checks include concurrent moves, stale order, dense relative placement, cursor invalidation, idempotent closure, cross-Space Duplicate rejection, transactional rollback, WIP evidence, parent warnings, closure/reopen timing, family restore, and independently paged immutable history.
 
-Browser checks cover keyboard movement and closure through the real HTTP Adapter and PostgreSQL, drag movement, warning display, Duplicate navigation, authoritative reduction, uncertain retries, and preservation of drafts and independently loaded history. The integration browser uses the repository's DOM environment; supported-engine release testing remains Slice 9 work.
+Browser checks cover keyboard movement and closure through the real HTTP Adapter and PostgreSQL, drag movement, warning display, Duplicate navigation, authoritative reduction, uncertain retries, and preservation of drafts and independently loaded history. The integration browser uses the repository's DOM environment; supported-engine release testing remains Slice 10 work.
 
 `npm run build` and `npm run lint` passed. The full suite with PostgreSQL enabled exercised 98 tests. After correcting an older receipt assertion and the browser movement/reload timing issue, the affected files passed on rerun. This includes the existing 100,000-Task scale fixture.
 

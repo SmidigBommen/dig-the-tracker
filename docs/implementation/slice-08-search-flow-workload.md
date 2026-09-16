@@ -47,4 +47,4 @@ A local fixture with 100,000 retained Tasks checks bounded search, Flow, and Wor
 
 ## Next slice
 
-Slice 9 completes export and release verification, including supported-browser/accessibility checks, backup restore, load/security gates, and operational readiness. Preserve forward migrations and real production data.
+Slice 9 adds [personal themes](../design/slice-09-personal-themes.md). Slice 10 completes export and release verification, including supported-browser/accessibility checks, backup restore, load/security gates, and operational readiness. Preserve forward migrations and real production data.
