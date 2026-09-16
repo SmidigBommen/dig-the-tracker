@@ -548,6 +548,7 @@ function Board({
         <div>
           <p className="eyebrow">{board.space.key}</p>
           <h1>{board.space.displayName}</h1>
+          <p className="board-meta">{board.members.length} {board.members.length === 1 ? 'Member' : 'Members'} · {board.space.timeZone}</p>
           {board.space.lifecycle !== 'active' && (
             <p className="lifecycle-badge">
               {board.space.lifecycle === 'archived' ? 'Archived · read-only' : 'Deletion scheduled · read-only'}
@@ -555,10 +556,6 @@ function Board({
           )}
         </div>
         <div className="board-actions">
-          <p>{board.members.length} {board.members.length === 1 ? 'Member' : 'Members'} · {board.space.timeZone}</p>
-          {board.space.lifecycle === 'active' && (
-            <button className="danger-button" onClick={() => void onLeaveSpace()} disabled={busy}>Leave Space</button>
-          )}
           {canAdminister && (
             <>
               <button className="quiet-button" onClick={() => void onOpenManagement()} disabled={busy}>
@@ -570,6 +567,9 @@ function Board({
                 </button>
               )}
             </>
+          )}
+          {board.space.lifecycle === 'active' && (
+            <button className="danger-button" onClick={() => void onLeaveSpace()} disabled={busy}>Leave Space</button>
           )}
         </div>
       </div>

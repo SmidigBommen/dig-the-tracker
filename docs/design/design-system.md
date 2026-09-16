@@ -1,6 +1,6 @@
 # Dig UI foundations
 
-The Task dialog establishes the first shared UI components for Dig. The Board remains the working context behind it. Routine edits belong beside their values; secondary actions belong in the actions disclosure.
+Dig uses the same forest-green palette and control scale across the app shell, Board, Task dialogs, reports, and Space settings. The Board remains the working context behind a Task dialog. Routine edits belong beside their values; secondary actions belong in the actions disclosure.
 
 ## Tokens
 
@@ -8,14 +8,18 @@ The Task dialog establishes the first shared UI components for Dig. The Board re
 
 | Purpose | Token or rule |
 |---|---|
-| Backgrounds | Canvas, surface, raised surface, and hover surface |
+| Backgrounds | Dark forest canvas, recessed Columns and fields, surface cards, raised controls, and hover surface |
 | Text | Primary text for content; muted text for metadata and labels |
-| Accent | Pale green for primary actions, selected tabs, and keyboard focus |
+| Accent | Mint green for primary actions, selected tabs, keyboard focus, and drop targets |
 | Feedback | Warm red for destructive actions; amber for warnings |
 | Spacing | 4, 8, 12, 16, 24, and 32 pixels |
-| Typography | 14px body, 13px controls, 12px labels, 11px metadata, 24px Task title |
+| Typography | 15px body, 14px controls, 13px labels, 12px metadata, 24px Task title; page headings scale from 26 to 32px |
 | Corners | 8px controls, 14px dialog |
-| Controls | At least 34px high on desktop and 40px on narrow screens |
+| Controls | Shared buttons and fields are at least 40px high on desktop and 44px on narrow screens; phone form fields use 16px text |
+
+All colours belong in the shared tokens. Canvas, Columns, and cards have distinct surfaces, so the hierarchy remains visible without heavy shadows. Use `--dig-border-strong` for field boundaries. Reserve amber for warnings and warm red for destructive actions; an Active Column within its WIP limit uses green and a neutral limit label.
+
+Primary text has at least 9:1 contrast and muted text at least 5.49:1 against the canvas, surface, raised surface, and hover surface. The primary button's dark text on mint has 10.29:1 contrast. Strong field borders have at least 3.48:1 contrast against the field, surface, and raised surface. These are token-pair checks, not a full accessibility certification.
 
 ## Components
 
@@ -25,6 +29,16 @@ The Task dialog establishes the first shared UI components for Dig. The Board re
 - `Tabs` provides a labeled tab list, arrow-key navigation, Home/End, and a labeled content panel.
 
 These components own presentation and interaction. Task commands and draft state remain in `BoardSession`.
+
+The app shell's existing `primary-button`, `quiet-button`, and `danger-button` classes share the same button rules. Do not give them a separate palette or size scale. Global text selection, focus outlines, native options, and scrollbars also use the tokens.
+
+## Layout and readability
+
+The Space name and Member/time-zone metadata form one heading group. Space administration uses the same control size as Board actions; Leave Space is a quiet destructive action after the ordinary actions.
+
+Board Columns always stay in one horizontally scrolling row. Cards use 15px titles, 12px keys and tags, and 24px assignee avatars. Long content wraps inside its card. Keep visible Column borders and a mint outline plus green surface on the current drop target.
+
+On phones, header controls wrap, Task properties stack, and search and workload rows put age beneath the Task text. Tables scroll inside their own region. Chart dates and peak labels are HTML text so they retain their size when the chart shrinks. Keep native form controls large enough to avoid automatic text-field zoom on phones.
 
 ## Task dialog
 

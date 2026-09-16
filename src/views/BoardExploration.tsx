@@ -122,10 +122,11 @@ function WipHistory({ report }: { report: FlowView }) {
       const maximum = Math.max(1,...values)
       const points = values.map((value,index) => `${8+index/Math.max(1,values.length-1)*284},${82-value/maximum*68}`).join(' ')
       return <article key={column.id}><h4>{column.name}{column.archived ? ' · Archived' : ''}</h4>
-        <svg viewBox="0 0 300 100" role="img" aria-label={`${column.name} WIP over ${values.length} dates; maximum ${Math.max(0,...values)}, latest ${values.at(-1) ?? 0}`}>
+        <p className="chart-scale">Peak: {Math.max(0,...values)}</p>
+        <svg viewBox="0 0 300 90" role="img" aria-label={`${column.name} WIP over ${values.length} dates; maximum ${Math.max(0,...values)}, latest ${values.at(-1) ?? 0}`}>
           <path d="M8 82H292" className="chart-baseline" /><polyline points={points} className="chart-line" />
-          <text x="8" y="10">{Math.max(0,...values)}</text><text x="8" y="97">{dateLabel(report.startDate)}</text><text x="292" y="97" textAnchor="end">{dateLabel(report.endDate)}</text>
         </svg>
+        <div className="chart-axis"><span>{dateLabel(report.startDate)}</span><span>{dateLabel(report.endDate)}</span></div>
       </article>
     })}</div>
     {columns.length > 0 && <details className="report-definitions"><summary>View daily counts</summary><div className="report-table-scroll" tabIndex={0} role="region" aria-label="Daily WIP counts"><table>
