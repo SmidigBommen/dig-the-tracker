@@ -77,9 +77,14 @@ export class BoardModuleImplementation implements BoardModule {
     }
     const claims = inspectAuthorizedSpace(access)
     if (!claims || claims.use !== 'board-read') return { ok: false, fault: { kind: 'forbidden' } }
+    if (claims.agent && (['inbox','flow','workload','references'].includes(query.kind) || (query.kind==='task' && query.markNotificationsRead))) return { ok:false,fault:{ kind:'forbidden' } }
 
     try {
       return await inTransaction(this.db, async (client) => {
+        if(claims.agent) {
+          await client.query("set local statement_timeout='5s'")
+          await client.query("set local lock_timeout='3s'")
+        }
         const permitted = await recheckAccess(client, claims)
         if (!permitted.ok) return permitted
 
@@ -96,7 +101,7 @@ export class BoardModuleImplementation implements BoardModule {
         if (query.kind === 'workload') return { ok: true as const, value: { kind: 'workload' as const, sequence, value: await readWorkload(client,claims.spaceId,permitted.space.space_key,sequence,query.memberId,query.page) } }
         if (query.kind === 'flow') return { ok: true as const, value: { kind: 'flow' as const, sequence, value: await readFlow(client,claims.spaceId,permitted.space.space_key,permitted.space.time_zone,sequence,query.page,this.config.now?.() ?? new Date()) } }
         if (query.kind === 'workflow') return { ok: true as const, value: { kind: 'workflow' as const, sequence, value: await readWorkflow(client, claims.spaceId) } }
-        if (query.kind === 'inbox') return { ok: true as const, value: { kind: 'inbox' as const, sequence, value: await inboxPage(client, claims.spaceId, claims.memberId, query.page), unreadNotifications: await unreadCount(client, claims.spaceId, claims.memberId) } }
+        if (query.kind === 'inbox') return { ok: true as const, value: { kind: 'inbox' as const, sequence, value: await inboxPage(client, claims.spaceId, claims.memberId, query.page), unreadNotifications: claims.agent ? 0 : await unreadCount(client, claims.spaceId, claims.memberId) } }
         if (query.kind === 'tags') {
           if (query.text !== undefined && (typeof query.text !== 'string' || [...query.text].length > 40)) {
             throw new BoardRejection({ kind: 'invalid', issues: [{ field: 'text', message: 'Use at most 40 characters.' }] })
@@ -141,7 +146,7 @@ export class BoardModuleImplementation implements BoardModule {
           const readChange = query.markNotificationsRead === true
             ? await markNotificationsRead(client, claims.spaceId, claims.memberId, { taskId: task.id as TaskId }) : undefined
           if (readChange) sequence = (await appendUpdate(client, claims.spaceId, [readChange])).sequence
-          return { ok: true as const, value: { kind: 'task' as const, sequence, unreadNotifications: await unreadCount(client, claims.spaceId, claims.memberId),
+          return { ok: true as const, value: { kind: 'task' as const, sequence, unreadNotifications: claims.agent ? 0 : await unreadCount(client, claims.spaceId, claims.memberId),
             value: await taskDetail(client, task, sequence, query.subtasks, query.history, query.comments) satisfies TaskDetail } }
         }
         const [columnResult, memberResult] = await Promise.all([
@@ -198,7 +203,7 @@ export class BoardModuleImplementation implements BoardModule {
                 role: member.role,
               })),
               tasks: { items: [] },
-              unreadNotifications: await unreadCount(client, claims.spaceId, claims.memberId),
+              unreadNotifications: claims.agent ? 0 : await unreadCount(client, claims.spaceId, claims.memberId),
             },
           },
         }

@@ -1,3 +1,5 @@
+import { ConnectionsDialog } from '../agents/ConnectionsDialog.tsx'
+import { SpaceAgentSettings } from '../agents/SpaceAgentSettings.tsx'
 import { SpaceExportButton } from './SpaceExportButton.tsx'
 import { BoardWorkspace } from '../views/BoardWorkspace.tsx'
 import { AppearanceMenu } from '../appearance/AppearanceMenu.tsx'
@@ -44,6 +46,7 @@ const rememberedSpace = {
 export default function TeamApp() {
   const [appearance] = useState(() => new AppearanceSession(new HttpAppearanceTransport()))
   const [state, setState] = useState<AppState>({ kind: 'loading' })
+  const [connections,setConnections]=useState(false)
   const [busy, setBusy] = useState(false)
   const [invitationLink, setInvitationLink] = useState<string>()
   const [management, setManagement] = useState<SpaceManagement>()
@@ -409,7 +412,8 @@ export default function TeamApp() {
           <button className="quiet-button" onClick={() => void switchSpaceList()} disabled={busy}>
             {showingArchived ? 'Active Spaces' : 'Archived Spaces'}
           </button>
-          <AppearanceMenu session={appearance} displayName={state.session.identity.displayName} onSignOut={() => void signOut()} busy={busy} />
+          {connections && <ConnectionsDialog key={state.session.identity.id} csrfToken={state.session.csrfToken} onClose={()=>setConnections(false)} />}
+          <AppearanceMenu onConnections={()=>setConnections(true)} session={appearance} displayName={state.session.identity.displayName} onSignOut={() => void signOut()} busy={busy} />
         </div>
       </header>
 
@@ -418,6 +422,7 @@ export default function TeamApp() {
         ? <InvitationPanel busy={busy} onAccept={acceptInvitation} />
         : management
           ? <SpaceManagementPanel
+              csrfToken={state.session.csrfToken}
               management={management}
               busy={busy}
               onSetMemberRole={setMemberRole}
@@ -604,6 +609,7 @@ function Board({
 }
 
 function SpaceManagementPanel({
+  csrfToken,
   management,
   busy,
   onSetMemberRole,
@@ -614,6 +620,7 @@ function SpaceManagementPanel({
   onLoadMore,
   onClose,
 }: {
+  csrfToken: string
   management: SpaceManagement
   busy: boolean
   onSetMemberRole: (member: SpaceMember, role: SpaceMember['role']) => Promise<void>
@@ -637,6 +644,7 @@ function SpaceManagementPanel({
         <button className="quiet-button" onClick={() => void onClose()}>Back to Board</button>
       </div>
       <SpaceSettingsForm management={management} busy={busy} onRevise={onReviseSpace} onLifecycle={onChangeLifecycle} />
+      <SpaceAgentSettings key={`agents-${management.space.key}`} spaceKey={management.space.key} csrfToken={csrfToken} />
       <SpaceExportButton key={management.space.key} spaceKey={management.space.key} />
       <section className="management-panel" aria-label="Space Members">
         {management.members.map((member) => (

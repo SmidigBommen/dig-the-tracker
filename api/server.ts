@@ -1,3 +1,6 @@
+import { AgentModuleImplementation,type AgentModule } from './modules/agent/agent-module.js'
+import type { AgentManagementRequest } from './contracts/agents.js'
+import { serveMcp } from './adapters/mcp/handler.js'
 import { SpaceExportModuleImplementation, type SpaceExportModule } from './modules/export/export-module.js'
 import { observeRequest, RequestLimits } from './runtime/http-operations.js'
 import { Readable } from 'node:stream'
@@ -62,6 +65,7 @@ const MIME_TYPES: Record<string, string> = {
 }
 
 export interface ServerModules {
+  agents: AgentModule
   exports: SpaceExportModule
   identity: IdentityModule
   space: SpaceModule
@@ -74,13 +78,13 @@ function sendJson(response: ServerResponse, status: number, data: unknown) {
   response.end(JSON.stringify(data))
 }
 
-async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJson(request: IncomingMessage, maxBytes = 1_000_000): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     size += buffer.length
-    if (size > 1_000_000) throw new RequestError(413, 'Request body too large')
+    if (size > maxBytes) throw new RequestError(413, 'Request body too large')
     chunks.push(buffer)
   }
   if (chunks.length === 0) return {}
@@ -134,6 +138,7 @@ export function createTeamServer(
 ) {
   const requestLimits = new RequestLimits()
   let activeExports = 0
+  let activeMcp = 0
   return createServer(async (request, response) => {
     observeRequest(request,response)
     setSecurityHeaders(response)
@@ -174,6 +179,54 @@ export function createTeamServer(
       }
       const retryAfterSeconds = requestLimits.retryAfter(request,pathname)
       if (retryAfterSeconds) { response.setHeader('retry-after',String(retryAfterSeconds));sendFault(response,{ kind: 'rate-limited',retryAfterSeconds });return }
+
+      if (pathname === '/mcp') {
+        response.setHeader('cache-control','no-store')
+        const allowedHosts=new Set([...config.allowedOrigins].map(value=>new URL(value).hostname))
+        if(['127.0.0.1','localhost','::1'].includes(config.host))for(const host of ['127.0.0.1','localhost','[::1]'])allowedHosts.add(host)
+        let host=''
+        try { host=new URL(`http://${request.headers.host ?? ''}`).hostname } catch { /* Invalid Host is rejected below. */ }
+        if(!allowedHosts.has(host))throw new RequestError(403,'Host not allowed')
+        if(url.search)throw new RequestError(400,'MCP credentials belong in the Authorization header')
+        if(activeMcp>=4) { response.setHeader('retry-after','1');throw new RequestError(429,'Agent requests are busy. Try again shortly.') }
+        activeMcp++
+        const bodyDeadline=setTimeout(()=>request.destroy(),15_000)
+        try {
+          const token=request.headers.authorization?.match(/^Bearer (dig_agent_[A-Za-z0-9_-]{43})$/)?.[1]
+          if(!token) { response.setHeader('www-authenticate','Bearer realm="Dig"');throw new RequestError(401,'A Dig connection token is required') }
+          const authenticated=await modules.agents.authenticate(token)
+          if(!authenticated.ok) {
+            if(authenticated.fault.kind==='rate-limited') { response.setHeader('retry-after',String(authenticated.fault.retryAfterSeconds ?? 60));throw new RequestError(429,'Connection request limit reached. Try again shortly.') }
+            if(authenticated.fault.kind==='not-authenticated')response.setHeader('www-authenticate','Bearer realm="Dig", error="invalid_token"')
+            throw new RequestError(authenticated.fault.kind==='temporarily-unavailable' ? 503 : 401,'Connection unavailable. Check its token and expiry in Dig.')
+          }
+          if(method!=='POST') { response.setHeader('allow','POST');throw new RequestError(405,'This MCP endpoint accepts POST requests') }
+          if(!request.headers['content-type']?.startsWith('application/json'))throw new RequestError(415,'Use application/json')
+          const body=await readJson(request,64_000)
+          clearTimeout(bodyDeadline)
+          await serveMcp(request,response,body,modules.agents,authenticated.value)
+        }
+        finally { clearTimeout(bodyDeadline);activeMcp-- }
+        return
+      }
+      const agentSettings=/^\/api\/spaces\/([A-Z][A-Z0-9]{1,9})\/agent-access$/.exec(pathname)
+      if((pathname==='/api/agent-connections' || agentSettings) && (method==='GET' || method==='POST')) {
+        response.setHeader('cache-control','no-store')
+        if(method==='POST')assertMutationOrigin(request,config)
+        const identity=await requireIdentity(request,response,modules.identity,method==='POST' ? 'change' : 'read')
+        if(!identity)return
+        const body=method==='POST' ? await readJson(request) : undefined
+        const command=agentSettings ? body ? { ...body,kind:'set-space-access',spaceKey:agentSettings[1] } : { kind:'space-settings',spaceKey:agentSettings[1] }
+          : body ?? { kind:'list' }
+        if(!agentSettings && !['list','create','revoke','replace-token'].includes(String(command.kind)))throw new RequestError(400,'Invalid connection action')
+        const result=await modules.agents.manage(identity,command as AgentManagementRequest)
+        if(!result.ok) {
+          const status={ 'not-authenticated':401,forbidden:403,'not-found':404,invalid:400,conflict:409,'cursor-expired':409,'rate-limited':429,'temporarily-unavailable':503 }[result.fault.kind]
+          throw new RequestError(status,result.fault.message ?? 'Connection settings could not be loaded or saved. Reload and try again.')
+        }
+        sendJson(response,200,result.value)
+        return
+      }
 
       const exportMatch = /^\/api\/spaces\/([A-Z][A-Z0-9]{1,9})\/export$/.exec(pathname)
       if (method === 'GET' && exportMatch) {
@@ -740,7 +793,7 @@ async function main() {
   const feedShutdown = new AbortController()
   setMaxListeners(0, feedShutdown.signal)
   let draining = false
-  const server = createTeamServer({ identity, space, board, exports: new SpaceExportModuleImplementation(db) }, config, async () => {
+  const server = createTeamServer({ identity, space, board, agents: new AgentModuleImplementation(db,board), exports: new SpaceExportModuleImplementation(db) }, config, async () => {
     if (draining) return false
     // pg supports a per-query timeout, which its QueryConfig type omits.
     const probe = { text: 'select 1', query_timeout: 2_000 }

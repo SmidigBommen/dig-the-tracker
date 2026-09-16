@@ -9,7 +9,7 @@ it('drains safely and logs request identifiers without request content or except
   const logged = vi.spyOn(console,'info').mockImplementation((value: string) => { lines.push(value) })
   const shutdown = new AbortController()
   const unexpected = async () => { throw new Error('private-database-password') }
-  const server = createTeamServer({ exports: { read: unexpected },identity: { signIn: unexpected,session: unexpected,appearance: unexpected },
+  const server = createTeamServer({ agents: { manage: unexpected,authenticate: unexpected,read: unexpected },exports: { read: unexpected },identity: { signIn: unexpected,session: unexpected,appearance: unexpected },
     space: { read: unexpected,change: unexpected,authorize: unexpected },board: { read: unexpected,change: unexpected,follow: unexpected } },
     loadConfig({ ALLOWED_ORIGINS: 'https://dig.example.test' }),async () => true,shutdown.signal)
   await new Promise<void>(resolve => server.listen(0,'127.0.0.1',resolve))
@@ -34,7 +34,7 @@ it('drains safely and logs request identifiers without request content or except
 it('bounds authentication bursts and does not trust spoofed forwarding headers', async () => {
   const logged = vi.spyOn(console,'info').mockImplementation(() => undefined)
   const failed = async () => ({ ok: false as const,fault: { kind: 'not-authenticated' as const } })
-  const server = createTeamServer({ exports: { read: failed },identity: { signIn: failed,session: failed,appearance: failed },
+  const server = createTeamServer({ agents: { manage: failed,authenticate: failed,read: failed },exports: { read: failed },identity: { signIn: failed,session: failed,appearance: failed },
     space: { read: failed,change: failed,authorize: failed },board: { read: failed,change: failed,follow: failed } },loadConfig({ ALLOWED_ORIGINS: 'https://dig.example.test' }))
   await new Promise<void>(resolve => server.listen(0,'127.0.0.1',resolve))
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -45,4 +45,28 @@ it('bounds authentication bursts and does not trust spoofed forwarding headers',
     expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0)
     expect((await fetch(`${url}/health/live`)).status).toBe(200)
   } finally { server.closeAllConnections();await new Promise<void>(resolve => server.close(() => resolve()));logged.mockRestore() }
+})
+
+it('reserves MCP request slots while authentication is pending',async()=>{
+  const unexpected=async()=>{throw Error('Unexpected application operation')}
+  const pending:Array<()=>void>=[]
+  const server=createTeamServer({
+    agents:{manage:unexpected,read:unexpected,authenticate:()=>new Promise(resolve=>pending.push(()=>resolve({ok:false,fault:{kind:'not-authenticated'}})))},
+    exports:{read:unexpected},identity:{signIn:unexpected,session:unexpected,appearance:unexpected},
+    space:{read:unexpected,change:unexpected,authorize:unexpected},board:{read:unexpected,change:unexpected,follow:unexpected},
+  },loadConfig({ALLOWED_ORIGINS:'https://dig.example.test'}))
+  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve))
+  const url=`http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`
+  const request=()=>fetch(url,{method:'POST',headers:{authorization:`Bearer dig_agent_${'a'.repeat(43)}`,'content-type':'application/json'},body:'{}'})
+  const requests:Promise<Response>[]=[]
+  try {
+    for(let i=0;i<4;i++)requests.push(request())
+    await vi.waitFor(()=>expect(pending).toHaveLength(4))
+    const rejected=await request()
+    expect(rejected.status).toBe(429)
+    expect(rejected.headers.get('retry-after')).toBe('1')
+    expect(pending).toHaveLength(4)
+    for(const release of pending)release()
+    expect((await Promise.all(requests)).every(response=>response.status===401)).toBe(true)
+  } finally {for(const release of pending)release();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()))}
 })

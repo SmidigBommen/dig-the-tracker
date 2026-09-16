@@ -9,6 +9,8 @@
 ## Current implementation
 
 - Slices 1 through 10 have implementation and local verification. Slice 10 production backup, monitoring, and deployment gates remain open; see `docs/operations.md`.
+- Slice 11 adds read-only agent connections and remote MCP. Codex CLI is verified; actual desktop interaction remains an open gate. For setup or MCP changes, read [Slice 11 notes](docs/implementation/slice-11-agent-read-access.md) and [agent setup](docs/agent-setup.md).
+- `AgentModule` owns connection management, bearer authentication, and bounded reads. Keep grants tied to current membership and Space policy; Board rechecks agent credentials inside its transaction. Slices 12–14 write capabilities are not implemented.
 - The running React entry is `src/team/TeamApp.tsx`; it handles sign-in, invitations, Space selection, membership administration, Space lifecycle, Task capture, editing, assignment, Tags, Subtasks, Task Archive, movement, closure Outcomes, history, comments, mentions, the in-app inbox, reload, and sign-out.
 - The Node HTTP Adapter is `api/server.ts`.
 - `IdentityModule` owns OpenID Connect correlation, PostgreSQL sessions, and account appearance preferences.
@@ -25,7 +27,7 @@
 
 ## Module rules
 
-- Test behavior through `IdentityModule`, `SpaceModule`, `BoardModule`, and `SpaceExportModule`; do not expose a repository Interface to mock PostgreSQL.
+- Test behavior through `IdentityModule`, `SpaceModule`, `BoardModule`, `SpaceExportModule`, and `AgentModule`; do not expose a repository Interface to mock PostgreSQL.
 - OpenID Connect is a true-external port with production and mock Adapters.
 - Browser input cannot construct or inspect `AuthenticatedIdentity` or `AuthorizedSpace`.
 - An authorized Space is evidence to recheck inside the Board transaction, not a lasting bearer permission.

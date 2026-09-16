@@ -1,6 +1,6 @@
 # Dig task management
 
-Dig helps small teams manage work through a flow-based kanban system. This glossary defines the target language for the first team MVP; the current prototype still uses older terms in places.
+Dig helps small teams manage work through a flow-based kanban system. This glossary defines the domain language, including the planned agent collaboration extension.
 
 ## Language
 
@@ -125,5 +125,27 @@ A reference to a current member in a comment that directs their attention to the
 _Avoid_: Tag, notification
 
 **Notification**:
-A temporary inbox item that directs a member to a new assignment, mention, or comment on one of their assigned tasks.
+A temporary inbox item that directs a member to a task requiring their attention, such as an assignment, mention, comment, agent blocker, or review handoff.
 _Avoid_: Activity, message
+
+## Agent collaboration
+
+**Agent connection**:
+A named delegation through which external software acts for one person within selected spaces. An agent connection is not a member and does not imply that software is currently running.
+_Avoid_: Bot member, agent account, online agent
+
+**Agent run**:
+One explicitly requested work session acting through an agent connection. Separate work sessions remain distinct even when they use the same connection.
+_Avoid_: Connection, background worker
+
+**Task claim**:
+A temporary reservation of one task for one agent run, while its human assignee remains responsible for the work. A claim does not prevent human edits or prove that the agent is online.
+_Avoid_: Assignment, presence, task lock
+
+**Review column**:
+The existing non-completion column selected by a space administrator for agent review handoffs. It retains its normal flow role.
+_Avoid_: Review flow role, completion column
+
+**Review handoff**:
+An agent's report of its work and verification, delivered with the task for human review. A review handoff does not close the task or establish that its work is correct.
+_Avoid_: Completion, automatic approval

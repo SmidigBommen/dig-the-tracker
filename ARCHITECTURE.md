@@ -1,6 +1,6 @@
 # Architecture
 
-Dig is a React, Node, and PostgreSQL modular monolith. Four server Modules own identity, Space administration, Board behavior, and Space export. OpenID Connect is the application's true-external dependency. Operator backup tooling uses an S3-compatible store separately from application requests.
+Dig is a React, Node, and PostgreSQL modular monolith. Five server Modules own identity, Space administration, Board behavior, Space export, and agent connections. OpenID Connect is the application's true-external dependency. Operator backup tooling uses an S3-compatible store separately from application requests.
 
 ## Running path
 
@@ -17,6 +17,11 @@ flowchart LR
 
   subgraph Node[Node process]
     HTTP[HTTP Adapter]
+    MCP[MCP Adapter]
+    Agent[AgentModule]
+    MCP --> Agent
+    HTTP --> Agent
+    Agent --> Board
     Identity[IdentityModule]
     Space[SpaceModule]
     Board[BoardModule]
@@ -33,6 +38,8 @@ flowchart LR
     TeamSchema[(team schema)]
   end
 
+  Codex[External Codex client] <-->|Bearer token, Streamable HTTP| MCP
+  Agent <--> TeamSchema
   TeamClient <-->|JSON and session cookie| HTTP
   OIDCAdapter <-->|Discovery, token, JWKS| Provider[OpenID Connect provider]
   Identity <--> TeamSchema
@@ -75,6 +82,14 @@ Comment pages use immutable insertion ordering with their own Task-scoped cursor
 Opening a Task sends an explicit `markNotificationsRead: true` query flag and marks only the opener's Notifications for that Task read. Ordinary Task lookups and page loads leave read state unchanged. These reads acquire the Board write lock before changing read state and append a Board update when anything changes. This personal read state remains available in an archived Space. Explicit Board changes still require an active Space. Shared updates invalidate inbox queries without exposing inbox contents; read-state projections identify the Member and are filtered before feed delivery.
 
 Closing comments link to their immutable closure event. A forward migration imports existing closure text with its original author and timestamp. Comment edits and tombstones affect the text shown in history while closure identity, time, and Outcome remain unchanged. SpaceModule owns the private moderation audit writer invoked within the Board transaction.
+
+## Agent read access
+
+`AgentModule` exposes `manage`, `authenticate`, and `read`. Browser management requires an opaque human identity and live session; MCP authenticates a named, expiring connection into a separate opaque capability. The Agent Module owns connection and grant SQL. Private Space helpers own policy and membership reads, and a private Identity helper owns browser-session checks.
+
+MCP translates six read tools into these operations. Task reads reuse the Board Module with a privately constructed Space capability containing an agent credential instead of a browser session. The Board transaction locks Space, Member, then connection and rechecks current membership generation, Space policy, connection revision, expiry, and selected grants. Agent capabilities cannot enter Board change, follow, inbox, report, or export behavior.
+
+An administrator must enable each Space. Connections select explicit enabled Spaces and retain a read-only scope. Agent absence has no effect on human use. See [Slice 11 implementation](docs/implementation/slice-11-agent-read-access.md) for limits, client evidence, and remaining release gates; [the feature specification](docs/design/agent-access.md) describes future claims and writes.
 
 ## Space export
 

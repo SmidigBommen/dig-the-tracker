@@ -1,3 +1,4 @@
+import { AgentModuleImplementation } from './agent/agent-module.js'
 import { SpaceExportModuleImplementation } from './export/export-module.js'
 import { readFile } from 'node:fs/promises'
 import Ajv from 'ajv'
@@ -99,7 +100,7 @@ run('Slice 10 Space export', () => {
     let resume!: () => void
     const paused = new Promise<void>(resolve => { resume = resolve })
     const exporter = new SpaceExportModuleImplementation(db)
-    const server = createTeamServer({ ...app,exports: { async read(access,signal) {
+    const server = createTeamServer({ agents: new AgentModuleImplementation(db,new BoardModuleImplementation(db)), ...app,exports: { async read(access,signal) {
       const result = await exporter.read(access,signal)
       if (!result.ok) return result
       return { ok: true,value: { ...result.value,chunks: (async function* () {
@@ -160,7 +161,7 @@ run('Slice 10 Space export', () => {
   it('downloads an attachment through HTTP, denies anonymous and cross-Space access, and cancels cleanly', async () => {
     const app = await setup()
     await capture(app)
-    const server = createTeamServer({ ...app,exports: new SpaceExportModuleImplementation(db) },loadConfig({ ALLOWED_ORIGINS: origin }))
+    const server = createTeamServer({ agents: new AgentModuleImplementation(db,new BoardModuleImplementation(db)), ...app,exports: new SpaceExportModuleImplementation(db) },loadConfig({ ALLOWED_ORIGINS: origin }))
     await new Promise<void>(resolve => server.listen(0,'127.0.0.1',resolve))
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/spaces/DIG/export`
     const headers = { cookie: `dig_session=${app.browserSession.sessionSecret}` }

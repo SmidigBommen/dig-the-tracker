@@ -1,3 +1,4 @@
+import type { AgentClaims } from './agent/private-access.js'
 import type { AuthenticatedIdentity } from './identity/identity-module.js'
 import type { AuthorizedSpace, SpaceUse } from './space/space-module.js'
 import type {
@@ -18,14 +19,13 @@ interface IdentityClaims {
   absoluteExpiresAt: Date
 }
 
-interface AuthorizedSpaceClaims {
-  sessionId: SessionId
+type AuthorizedSpaceClaims = {
   identityId: IdentityId
   memberId: MemberId
   spaceId: SpaceId
   use: SpaceUse
   accessRevision: AccessRevision
-}
+} & ({ sessionId: SessionId; agent?: never } | { sessionId?: never; agent: AgentClaims })
 
 const identities = new WeakMap<object, IdentityClaims>()
 const spaces = new WeakMap<object, AuthorizedSpaceClaims>()

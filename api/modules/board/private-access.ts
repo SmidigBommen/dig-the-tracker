@@ -1,3 +1,5 @@
+import { lockAgentCredential,connectionGrants } from '../agent/private-access.js'
+import { recheckAgentGrant } from '../space/private-agent-access.js'
 import type { DbClient } from '../../db.js'
 import type { BoardFault, BoardOverview } from '../../contracts/board.js'
 import type { inspectAuthorizedSpace } from '../private-capabilities.js'
@@ -35,15 +37,21 @@ export async function recheckAccess(
   )
   if (!member.rows[0]) return { ok: false, fault: { kind: 'forbidden' } }
 
-  const session = await client.query(
-    `select id from team.browser_sessions
-     where id = $1 and identity_id = $2 and revoked_at is null
-       and absolute_expires_at > now()
-       and last_active_at + $3 * interval '1 millisecond' > now()
-     for share`,
-    [claims.sessionId, claims.identityId, SESSION_IDLE_MILLISECONDS],
-  )
-  if (!session.rows[0]) return { ok: false, fault: { kind: 'forbidden' } }
+  if (claims.agent) {
+    if (claims.use!=='board-read' || !await lockAgentCredential(client,claims.agent))return { ok:false,fault:{ kind:'forbidden' } }
+    const grant=(await connectionGrants(client,claims.agent.connectionId)).find(g=>g.spaceId===claims.spaceId && g.memberId===claims.memberId)
+    if (!grant || !await recheckAgentGrant(client,claims.identityId,grant))return { ok:false,fault:{ kind:'forbidden' } }
+  } else {
+    const session = await client.query(
+      `select id from team.browser_sessions
+       where id = $1 and identity_id = $2 and revoked_at is null
+         and absolute_expires_at > now()
+         and last_active_at + $3 * interval '1 millisecond' > now()
+       for share`,
+      [claims.sessionId, claims.identityId, SESSION_IDLE_MILLISECONDS],
+    )
+    if (!session.rows[0]) return { ok: false, fault: { kind: 'forbidden' } }
+  }
   if (claims.use !== 'board-read' && space.lifecycle !== 'active') {
     return { ok: false, fault: { kind: 'read-only', reason: space.lifecycle === 'archived' ? 'space-archived' : 'deletion-scheduled' } }
   }

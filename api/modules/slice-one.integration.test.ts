@@ -1,3 +1,4 @@
+import { AgentModuleImplementation } from './agent/agent-module.js'
 import { SpaceExportModuleImplementation } from './export/export-module.js'
 // @vitest-environment node
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -390,7 +391,7 @@ run('Slice 1 Module Interfaces', () => {
       installationAdministrators: new Set([identityKey('admin')]),
       oidc: null,
     }
-    const server = createTeamServer({ exports: new SpaceExportModuleImplementation(db), identity, space, board }, config)
+    const server = createTeamServer({ agents: new AgentModuleImplementation(db,new BoardModuleImplementation(db)), exports: new SpaceExportModuleImplementation(db), identity, space, board }, config)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const port = (server.address() as AddressInfo).port
     const origin = `http://127.0.0.1:${port}`

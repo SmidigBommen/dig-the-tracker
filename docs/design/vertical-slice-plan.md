@@ -1,6 +1,6 @@
 # Team MVP vertical-slice plan
 
-Status: Slices 1 through 9 implemented. Slice 10 release readiness remains planned.
+Status: Slices 1 through 10 implemented, with Slice 10 production gates still open. Slice 11 agent read access is implemented locally with desktop verification open. Slices 12–14 remain planned.
 
 ## Delivery rule
 
@@ -80,3 +80,16 @@ On 2026-09-08, API access was verified and Dig was switched to `master` with Aut
 ## Following implementation action
 
 Slice 10 implementation and local checks are complete; see [release evidence](../implementation/slice-10-release-readiness.md) and [the operations runbook](../operations.md). Complete the recorded production gates before declaring the release ready. Preserve real production data, stable workflow identities, immutable history, Space-local dates, bounded pages, and recipient privacy.
+
+## Planned extension: agent access
+
+The [agent feature specification](agent-access.md) records the accepted interview decisions. Agents connect on demand; Dig must work normally with no agent listening or watching. Existing human sign-in remains unchanged. Named personal tokens authorize remote MCP access through selected Spaces, and a local skill guides Codex through claimed work and human review.
+
+| Slice | User outcome |
+|---|---|
+| 11. Connect and read. Implemented locally; desktop gate open | Create a scoped connection, read Task context in Codex, and revoke access |
+| 12. Claim and work | Reserve a Task for one run, record permitted progress, and recover safely around human edits |
+| 13. Hand back for review | Atomically report blockers or hand off work with notifications and claim release |
+| 14. Verify and release | Prove installation, intermittent operation, client compatibility, and the full workflow |
+
+See [the delivery plan](agent-access-slices.md) for scope and required proof. These slices extend the MVP's deliberately private-browser API policy; they do not complete outstanding production backup or monitoring setup.

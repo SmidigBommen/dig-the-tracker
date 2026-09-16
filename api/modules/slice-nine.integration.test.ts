@@ -1,3 +1,4 @@
+import { AgentModuleImplementation } from './agent/agent-module.js'
 import { SpaceExportModuleImplementation } from './export/export-module.js'
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
@@ -53,7 +54,7 @@ run('Slice 9 personal appearance', () => {
 
   it('serves account preferences through HTTP with CSRF, value validation, and stale-write protection', async () => {
     const ada = await signIn()
-    const server = createTeamServer({ exports: new SpaceExportModuleImplementation(db), identity: ada.identity,
+    const server = createTeamServer({ agents: new AgentModuleImplementation(db,new BoardModuleImplementation(db)), exports: new SpaceExportModuleImplementation(db), identity: ada.identity,
       space: new SpaceModuleImplementation(db, { invitationHmacSecret: 'test-invitation-hmac-secret-with-32-bytes', sessionHmacSecret: 'test-session-hmac-secret-with-32-bytes' }),
       board: new BoardModuleImplementation(db) }, loadConfig({ ALLOWED_ORIGINS: origin }))
     await new Promise<void>(resolve => server.listen(0,'127.0.0.1',resolve))

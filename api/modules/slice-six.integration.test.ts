@@ -1,3 +1,4 @@
+import { AgentModuleImplementation } from './agent/agent-module.js'
 import { SpaceExportModuleImplementation } from './export/export-module.js'
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
@@ -208,7 +209,7 @@ run('Slice 6 live collaboration', () => {
   it('streams authenticated SSE through HTTP and closes it cleanly when the server drains', async () => {
     const app = await setup()
     const draining = new AbortController()
-    const server = createTeamServer({ ...app,exports: new SpaceExportModuleImplementation(db) }, loadConfig({ ALLOWED_ORIGINS: origin }), async () => true, draining.signal)
+    const server = createTeamServer({ agents: new AgentModuleImplementation(db,new BoardModuleImplementation(db)), ...app,exports: new SpaceExportModuleImplementation(db) }, loadConfig({ ALLOWED_ORIGINS: origin }), async () => true, draining.signal)
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address() as import('node:net').AddressInfo
     const base = `http://127.0.0.1:${address.port}`
@@ -243,7 +244,7 @@ run('Slice 6 live collaboration', () => {
 
   it('serves 100 authenticated HTTP feed connections with bounded recovery', async () => {
     const app = await setup()
-    const server = createTeamServer({ ...app,exports: new SpaceExportModuleImplementation(db) }, loadConfig({ ALLOWED_ORIGINS: origin }))
+    const server = createTeamServer({ agents: new AgentModuleImplementation(db,new BoardModuleImplementation(db)), ...app,exports: new SpaceExportModuleImplementation(db) }, loadConfig({ ALLOWED_ORIGINS: origin }))
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
     const address = server.address() as import('node:net').AddressInfo
     const url = `http://127.0.0.1:${address.port}/api/spaces/DIG/board/events?after=0`

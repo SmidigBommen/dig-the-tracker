@@ -12,8 +12,8 @@ const palettes: { value: Palette; label: string; description: string }[] = [
 ]
 const modes: { value: ThemeMode; label: string }[] = [{ value: 'system',label: 'System' },{ value: 'light',label: 'Light' },{ value: 'dark',label: 'Dark' }]
 
-export function AppearanceMenu({ session,displayName,onSignOut,busy }: {
-  session: AppearanceSession; displayName: string; onSignOut: () => void; busy: boolean
+export function AppearanceMenu({ session,displayName,onSignOut,onConnections,busy }: {
+  session: AppearanceSession; displayName: string; onSignOut: () => void; onConnections?: () => void; busy: boolean
 }) {
   const state = useSyncExternalStore(session.subscribe,session.getSnapshot)
   const [menu,setMenu] = useState(false)
@@ -36,6 +36,7 @@ export function AppearanceMenu({ session,displayName,onSignOut,busy }: {
       </button>
       {menu && <div className="personal-actions" id={id}>
         <Button variant="ghost" onClick={() => { trigger.current?.focus();setMenu(false);setChooser(true) }}>Appearance</Button>
+        {onConnections && <Button variant="ghost" onClick={() => { trigger.current?.focus();setMenu(false);onConnections() }}>Agent connections</Button>}
         <Button variant="ghost" onClick={onSignOut} disabled={busy}>Sign out</Button>
       </div>}
     </div>

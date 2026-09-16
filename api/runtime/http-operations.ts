@@ -6,7 +6,7 @@ export function observeRequest(request: IncomingMessage, response: ServerRespons
   response.setHeader('x-request-id',requestId)
   response.once('close',() => {
     const path = (request.url ?? '').split('?')[0]
-    const route = path.startsWith('/health/') ? 'health' : path.startsWith('/api/auth/') ? 'authentication'
+    const route = path==='/mcp' ? 'mcp' : path==='/api/agent-connections' ? 'agent-connections' : path.startsWith('/health/') ? 'health' : path.startsWith('/api/auth/') ? 'authentication'
       : path === '/api/session' ? 'session' : path === '/api/appearance' ? 'appearance'
       : /^\/api\/spaces\/[A-Z0-9]+\/export$/.test(path) ? 'space-export' : path.startsWith('/api/spaces') ? 'space' : path.startsWith('/api/') ? 'api' : 'static'
     console.info(JSON.stringify({ event: 'http-request',requestId,route,method: ['GET','POST','HEAD','OPTIONS'].includes(request.method ?? '') ? request.method : 'other',
@@ -24,7 +24,7 @@ export class RequestLimits {
     const windowMs = authentication ? 300_000 : 60_000
     const limit = authentication ? 120 : 300
     const cookie = request.headers.cookie?.match(/(?:^|;\s*)dig_session=([^;]*)/)?.[1]
-    const source = authentication || !cookie ? request.socket.remoteAddress ?? 'unknown' : cookie
+    const source = pathname==='/mcp' || authentication || !cookie ? request.socket.remoteAddress ?? 'unknown' : cookie
     const key = createHash('sha256').update(`${authentication}:${source}`).digest('hex')
     const now = Date.now()
     let bucket = this.buckets.get(key)
