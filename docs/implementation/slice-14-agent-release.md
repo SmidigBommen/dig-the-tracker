@@ -48,6 +48,8 @@ Numbers refer to the twelve scenarios in [the specification](../design/agent-acc
 | 11. Skill and client compatibility | Actual CLI 0.154.0 show/work/handoff with MCP 2025-06-18; independent client negotiation | Contract gaps, COOL-8; updated actual-client/setup evidence, COOL-9; desktop gate, COOL-11 |
 | 12. Accessible controls and release checks | Slice 13 four browser profiles, all six themes, image and restore checks | Final combined checks for resulting revision, COOL-10 |
 
+For future agent sessions, [the tracker instructions](../agents/issue-tracker.md) describe how to fetch the originating Task and keep Board/Git evidence connected.
+
 Public verification boundaries remain IdentityModule, SpaceModule, AgentModule, BoardModule, SpaceExportModule, the real HTTP/MCP endpoint, and browser behavior. PostgreSQL is real and disposable. Tests do not substitute internal repositories or inspect private implementation state to prove behavior.
 
 ## Evidence recorded so far
@@ -61,3 +63,19 @@ COOL-6 inventories the earlier automated evidence and adds the Board working agr
 COOL-11 requires actual desktop interaction and elapsed time. Simulated clocks establish deterministic server behavior; they do not establish multiple days of production observation. Record dates, tested client versions, Task references, the intervening human changes, and the return result before treating that gate as passed.
 
 The original Slice 10 off-server backup and monitoring activation remain separate operational obligations. Agent feature verification does not close them. No production credential will be revoked, production load test run, or deployment performed merely to fill this evidence table.
+
+## COOL-7 recovery verification
+
+The new `api/modules/slice-fourteen.integration.test.ts` tests recovery through the real MCP endpoint, independent SDK clients, public human Module calls, and disposable PostgreSQL. Server restarts here mean fresh server and Module instances in the test process. They do not claim a complete operating-system restart or several days of real elapsed time.
+
+Five scenarios cover:
+
+- A closed/reconnected client sees intervening human description edits and comments. An old revision fails; an intentional edit against the fresh revision preserves the human description and original live claim.
+- A reservation issued through the clock seam three days in the past is absent from current reads. Old writes fail, a fresh claim has a new ID, and the returning client retains the human context.
+- A network proxy discards an actual upstream review-handoff response. Public Task and inbox reads establish the commit before restart. After fresh server and client instances, the original request returns a committed receipt; repeated retries yield one report, history event, and inbox notification. Changed arguments conflict, a new operation with the released claim fails, and revocation denies later access.
+- Token replacement leaves discussion intact but rejects new writes from the old run. The old bearer token cannot replay its original operation. New work uses a new run and claim.
+- Replaying capture after fresh instances and claim release returns its historical receipt without creating another Task or restoring the claim. A current read remains authoritative for the claim state.
+
+No application defect was reproduced, so this increment changes tests and documentation only. Combined client, limits, browser, and operational verification remains in COOL-8 through COOL-11.
+
+Verification on 2026-09-17: the targeted Slice 12, 13, and 14 PostgreSQL suites passed 30 tests. ESLint and a strict standalone TypeScript check of the new recovery test passed. Standards and specification review both requested proof of commit before restart; the test now establishes report, released claim, and notification through public reads before replay, then checks the same Comment identity afterward. Full application/browser/container checks remain scheduled under COOL-10.
