@@ -1,3 +1,4 @@
+import { TaskClaimBadge,TaskClaimDetails } from '../agents/TaskClaim.tsx'
 import { BoardExploration } from './BoardExploration.tsx'
 import { Tabs } from '../ui/Tabs.tsx'
 import { WorkflowEditor } from './WorkflowEditor.tsx'
@@ -179,6 +180,7 @@ export function BoardWorkspace({ initialBoard, transport, initialTask }: { initi
         {detail.subtasks.next && <Button variant="secondary" disabled={busy || dirty || state.pagesStale} onClick={() => void session.loadMoreSubtasks()}>Load more Subtasks</Button>}
         {!detail.archived && <QuickCapture key={detail.id} label="Add a Subtask" disabled={readOnly || busy || Boolean(conflict)} onCapture={(title) => session.quickCapture(title, detail.id)} />}
       </section>}
+      <TaskClaimDetails claim={detail.claim} canRelease={detail.claim?.member.id===overview.currentMemberId || overview.members.find(member=>member.id===overview.currentMemberId)?.role==='space-administrator'} disabled={readOnly || busy || savingEdits} onRelease={()=>void session.releaseClaim()} />
       <TaskActivity key={detail.id} session={session} state={state} disabled={readOnly || busy || detail.archived} />
     </TaskDialog>}
     {draft && !draft.taskId && <TaskDialog title={draft.parentTaskId ? 'New Subtask' : 'New Task'} focusTitle onClose={() => { if (!busy) session.cancelDraft() }}>
@@ -206,7 +208,7 @@ function TaskCard({ task, onOpen, draggable, onDragStart, onDragEnd, onDrop }: {
   draggable: boolean; onDragStart: (event: DragEvent) => void; onDragEnd: () => void; onDrop: (event: DragEvent) => void }) {
   return <button className="work-card" onClick={onOpen} draggable={draggable} onDragStart={onDragStart} onDragEnd={onDragEnd} onDrop={onDrop}>
     <span className="work-card-top"><span className="work-key">{task.key}{task.parentTaskId ? ' · Subtask' : ''}</span><AssigneeAvatar task={task} /></span>
-    <strong>{task.title}</strong><Tags tags={task.tags.map((tag) => tag.name)} />
+    <strong>{task.title}</strong><TaskClaimBadge claim={task.claim} /><Tags tags={task.tags.map((tag) => tag.name)} />
   </button>
 }
 

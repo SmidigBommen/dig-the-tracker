@@ -38,7 +38,7 @@ export async function recheckAccess(
   if (!member.rows[0]) return { ok: false, fault: { kind: 'forbidden' } }
 
   if (claims.agent) {
-    if (claims.use!=='board-read' || !await lockAgentCredential(client,claims.agent))return { ok:false,fault:{ kind:'forbidden' } }
+    if ((claims.use!=='board-read' && !(claims.use==='board-change' && claims.agent.scope==='tasks:work' && claims.agent.runId)) || !await lockAgentCredential(client,claims.agent))return { ok:false,fault:{ kind:'forbidden' } }
     const grant=(await connectionGrants(client,claims.agent.connectionId)).find(g=>g.spaceId===claims.spaceId && g.memberId===claims.memberId)
     if (!grant || !await recheckAgentGrant(client,claims.identityId,grant))return { ok:false,fault:{ kind:'forbidden' } }
   } else {

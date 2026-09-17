@@ -1,3 +1,4 @@
+import { currentClaim } from './private-claims.js'
 import type { DbClient } from '../../db.js'
 import type { TaskSummary, TagView } from '../../contracts/board.js'
 import type { MemberId, TaskId, TaskKey, ColumnId, Revision } from '../shared.js'
@@ -32,6 +33,6 @@ export async function taskSummary(client: DbClient, task: TaskRow): Promise<Task
     `select tag.id, tag.name from team.task_tags link join team.tags tag on tag.id = link.tag_id and tag.space_id = link.space_id
      where link.space_id = $1 and link.task_id = $2 order by lower(tag.name), tag.id`, [task.space_id, task.id],
   )
-  return { outcome: currentOutcome(task), closedAt: task.closed_at?.toISOString() as import('../shared.js').Instant ?? null, archived: Boolean(task.archived_at), parentTaskId: task.parent_task_id as TaskId | null, tags: tags.rows, id: task.id as TaskId, key: `${task.space_key}-${task.number}` as TaskKey,
+  return { claim:await currentClaim(client,task.space_id,task.id),outcome: currentOutcome(task), closedAt: task.closed_at?.toISOString() as import('../shared.js').Instant ?? null, archived: Boolean(task.archived_at), parentTaskId: task.parent_task_id as TaskId | null, tags: tags.rows, id: task.id as TaskId, key: `${task.space_key}-${task.number}` as TaskKey,
     title: task.title, assignee: assignee?.rows[0] ?? null, columnId: task.column_id as ColumnId, revision: task.revision as Revision }
 }

@@ -4,10 +4,10 @@ import type { AgentSpaceOption } from '../../contracts/agents.js'
 export interface AgentGrant {
   spaceId: string; memberId: string; joinedAt: string; policyRevision: number
 }
-interface AgentSpaceRow { id: string; key: string; displayName: string; enabled: boolean; revision: number; lifecycle: string; accessRevision: number; memberId: string; joinedAt: string; role: string }
+interface AgentSpaceRow { id: string; key: string; displayName: string; enabled: boolean; revision: number; lifecycle: string; accessRevision: number; workEpoch:number; memberId: string; joinedAt: string; role: string }
 const projection=`s.id,s.space_key as key,s.display_name as "displayName",s.agent_access_enabled as enabled,
   s.agent_access_revision as revision,s.lifecycle,s.access_revision::int as "accessRevision",
-  m.id as "memberId",m.joined_at::text as "joinedAt",m.role`
+  s.agent_work_epoch as "workEpoch",m.id as "memberId",m.joined_at::text as "joinedAt",m.role`
 export async function eligibleAgentSpaces(client: DbClient,identityId: string): Promise<AgentSpaceOption[]> {
   return (await client.query<AgentSpaceOption>(`select s.id,s.space_key as key,s.display_name as "displayName",s.agent_access_enabled as enabled,s.agent_access_revision as revision
     from team.spaces s join team.members m on m.space_id=s.id where m.identity_id=$1 and m.ended_at is null
@@ -47,4 +47,13 @@ export async function recheckAgentGrant(client: DbClient,identityId: string,gran
       and m.id=$3 and m.identity_id=$4 and m.ended_at is null and m.joined_at=$5`,
     [grant.spaceId,grant.policyRevision,grant.memberId,identityId,grant.joinedAt])).rows[0]
   return Boolean(row)
+}
+
+export async function agentMemberName(client:DbClient,run:{spaceId:string;memberId:string;spaceEpoch:number}):Promise<string|undefined> {
+  return (await client.query<{name:string}>(`select i.display_name as name from team.spaces s join team.members m on m.space_id=s.id
+    join team.identities i on i.id=m.identity_id where s.id=$1 and m.id=$2 and s.agent_work_epoch=$3 and m.ended_at is null`,[run.spaceId,run.memberId,run.spaceEpoch])).rows[0]?.name
+}
+
+export async function lockAgentGrantSpaces(client:DbClient,ids:string[]):Promise<void> {
+  await client.query('select id from team.spaces where id=any($1::uuid[]) order by id for share',[ids])
 }

@@ -793,7 +793,7 @@ async function main() {
   const feedShutdown = new AbortController()
   setMaxListeners(0, feedShutdown.signal)
   let draining = false
-  const server = createTeamServer({ identity, space, board, agents: new AgentModuleImplementation(db,board), exports: new SpaceExportModuleImplementation(db) }, config, async () => {
+  const server = createTeamServer({ identity, space, board, agents: new AgentModuleImplementation(db,board,{runHmacSecret:config.sessionHmacSecret}), exports: new SpaceExportModuleImplementation(db) }, config, async () => {
     if (draining) return false
     // pg supports a per-query timeout, which its QueryConfig type omits.
     const probe = { text: 'select 1', query_timeout: 2_000 }

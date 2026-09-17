@@ -7,6 +7,7 @@ import { recordCommentModeration } from '../space/private-moderation-audit.js'
 import { BoardRejection, decodeCursor, encodeCursor, pageSize } from './private-cursors.js'
 
 interface CommentRow {
+  agent_attribution: CommentView['agent'] | null
   id: CommentId
   ordering_key: string
   task_id: string
@@ -29,7 +30,7 @@ const commentQuery = `select comment.*, identity.display_name,
   join team.identities identity on identity.id = member.identity_id`
 
 function commentView(row: CommentRow): CommentView {
-  return { id: row.id, text: row.text, revision: row.revision, mentions: row.mentions,
+  return { ...(row.agent_attribution ? {agent:row.agent_attribution} : {}),id: row.id, text: row.text, revision: row.revision, mentions: row.mentions,
     author: { id: row.author_member_id, displayName: row.display_name }, createdAt: row.created_at.toISOString() as Instant,
     editedAt: row.edited_at?.toISOString() as Instant ?? null, removedAt: row.removed_at?.toISOString() as Instant ?? null }
 }
@@ -50,8 +51,8 @@ export async function addComment(client: DbClient, spaceId: string, taskId: stri
   if (!task.rows[0]) throw new BoardRejection({ kind: 'not-found' })
   if (task.rows[0].archived_at) throw new BoardRejection({ kind: 'invalid', issues: [{ field: 'task', message: 'Restore the Task before commenting.' }] })
   await validateMentions(client, spaceId, mentions)
-  const created = await client.query<{ id: string }>(`insert into team.task_comments (space_id, task_id, author_member_id, text)
-    values ($1,$2,$3,$4) returning id`, [spaceId, taskId, actorId, text])
+  const created = await client.query<{ id: string }>(`insert into team.task_comments (space_id, task_id, author_member_id, text,agent_attribution)
+    values ($1,$2,$3,$4,nullif(current_setting('dig.agent_attribution',true),'')::jsonb) returning id`, [spaceId, taskId, actorId, text])
   await bindMentions(client, spaceId, created.rows[0].id, mentions)
   const recipients: Array<{ memberId: string; kind: 'mention' | 'comment' }> = [...new Set(mentions)].map((memberId) => ({ memberId, kind: 'mention' }))
   if (task.rows[0].assignee_id && !mentions.includes(task.rows[0].assignee_id as MemberId)) recipients.push({ memberId: task.rows[0].assignee_id, kind: 'comment' })

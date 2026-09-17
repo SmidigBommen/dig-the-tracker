@@ -9,7 +9,7 @@ import { SpaceExportModuleImplementation } from './export/export-module.js'
 import type { AddressInfo } from 'node:net'
 // @vitest-environment node
 import { beforeEach,afterEach,describe,it,expect } from 'vitest'
-import { randomUUID } from 'node:crypto'
+import { createHash,randomUUID } from 'node:crypto'
 import { createDatabase,type Database } from '../db.js'
 import { IdentityModuleImplementation } from './identity/identity-module.js'
 import { SpaceModuleImplementation } from './space/space-module.js'
@@ -214,12 +214,24 @@ run('Slice 11 agent connections',() => {
       await migrate(url.toString(),'up',directory)
       const app=await setup()
       const space={kind:'key' as const,spaceKey:'DIG' as SpaceKey}
-      const access=value(await app.space.authorize(app.who,{use:'board-change',space}))
-      value(await app.board.change(access,{requestId:randomUUID() as RequestId,command:{kind:'capture-task',input:{title:'Preserve me',description:'Existing human work'}}}))
-      const read=value(await app.space.authorize(app.who,{use:'board-read',space}))
-      const before=value(await app.board.read(read,{kind:'task',task:{kind:'key',taskKey:'DIG-1' as TaskKey},history:{size:10}}))
+      // Seed the historical schema directly. Current Board code needs the new
+      // claim tables and cannot act as the pre-migration application.
+      await db.query(`insert into team.tasks(space_id,number,column_id,title,description,created_by_member_id)
+        select s.id,1,c.id,'Preserve me','Existing human work',m.id from team.spaces s
+        join team.board_columns c on c.space_id=s.id and c.is_intake
+        join team.members m on m.space_id=s.id where s.id=$1`,[app.spaceId])
+      await copyFile('db/migrations/202609160002_agent_connections.sql',join(directory,'202609160002_agent_connections.sql'))
+      await migrate(url.toString(),'up',directory)
+      const legacyToken='dig_agent_'+ 'a'.repeat(43)
+      await db.query(`insert into team.agent_connections(id,identity_id,name,secret_hash,created_at,expires_at)
+        select $1,identity_id,'Existing read connection',$2,now(),now()+interval '30 days' from team.members where space_id=$3`,[randomUUID(),createHash('sha256').update(legacyToken).digest('hex'),app.spaceId])
       await migrate(url.toString())
-      expect(value(await app.board.read(read,{kind:'task',task:{kind:'key',taskKey:'DIG-1' as TaskKey},history:{size:10}}))).toEqual(before)
+      const legacy=value(await app.agents.authenticate(legacyToken))
+      expect(legacy.scope).toBe('tasks:read')
+      expect(await app.agents.work(legacy,{kind:'start-run',spaceKey:'DIG',requestId:randomUUID(),label:'No silent upgrade'})).toMatchObject({ok:false,fault:{kind:'forbidden'}})
+      const read=value(await app.space.authorize(app.who,{use:'board-read',space}))
+      expect(value(await app.board.read(read,{kind:'task',task:{kind:'key',taskKey:'DIG-1' as TaskKey},history:{size:10}})))
+        .toMatchObject({kind:'task',value:{title:'Preserve me',description:'Existing human work',claim:null}})
       expect((await app.identity.session({kind:'resolve',use:'read',evidence:{sessionSecret:app.session.sessionSecret}})).ok).toBe(true)
       expect(value(await app.agents.manage(app.who,{kind:'space-settings',spaceKey:'DIG'}))).toMatchObject({space:{enabled:false,revision:1}})
     } finally {await db.end();db=root;await root.query(`drop database ${name}`);await rm(directory,{recursive:true,force:true})}

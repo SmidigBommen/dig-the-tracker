@@ -1,3 +1,4 @@
+import type { AgentWorkView } from '../../api/contracts/agents.js'
 import { readFile } from 'node:fs/promises'
 import { test,expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
@@ -97,4 +98,86 @@ test('enable read-only agent access, save a token once, and revoke a connection'
   await expect(page.getByText('Revoked',{ exact:true })).toBeVisible()
   const denied=await page.request.post('/mcp',{ headers:{ authorization:`Bearer ${raw}`,'content-type':'application/json' },data:{ jsonrpc:'2.0',id:1,method:'tools/list' } })
   expect(denied.status()).toBe(401)
+})
+
+test('agent work appears live and a human can release its claim',async({page,context},info)=>{
+  const {Client,StreamableHTTPClientTransport}=await import('@modelcontextprotocol/client')
+  const fixture=JSON.parse(await readFile('.test-artifacts/browser-sessions.json','utf8'))[info.project.name]
+  await context.addCookies([{name:'dig_session',value:fixture.cookie,domain:'127.0.0.1',path:'/',httpOnly:true,sameSite:'Lax'}])
+  await page.goto('/')
+  await page.getByRole('button',{name:'Manage Space',exact:true}).click()
+  await expect(page.getByRole('button',{name:/^(Enable|Disable) agent access$/})).toBeVisible()
+  const enable=page.getByRole('button',{name:'Enable agent access',exact:true})
+  if(await enable.count())await enable.click()
+  await expect(page.getByText('Agent access is enabled.',{exact:true})).toBeVisible()
+  await page.getByRole('button',{name:'Back to Board',exact:true}).click()
+  await page.getByRole('button',{name:'Personal menu'}).click()
+  await page.getByRole('button',{name:'Agent connections',exact:true}).click()
+  await page.getByRole('textbox',{name:'Connection name',exact:true}).fill('Codex work test')
+  await page.getByRole('radio',{name:'Allow agent work',exact:true}).check()
+  await page.getByRole('checkbox',{name:new RegExp(fixture.key)}).check()
+  await page.getByRole('button',{name:'Create connection',exact:true}).click()
+  const token=await page.getByRole('textbox',{name:'Connection token',exact:true}).inputValue()
+  await page.getByRole('button',{name:'I saved the token',exact:true}).click()
+  await page.keyboard.press('Escape')
+  const client=new Client({name:'browser-work-check',version:'1'})
+  const call=async(name:string,args:Record<string,unknown>)=>{
+    const result=await client.callTool({name,arguments:args})
+    return result.structuredContent as {ok:boolean;value:AgentWorkView;fault?:{reason:string}}
+  }
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL('http://127.0.0.1:5180/mcp'),{authProvider:{token:async()=>token}}))
+    const started=await call('dig_start_run',{spaceKey:fixture.key,requestId:crypto.randomUUID(),label:'Browser proof'})
+    expect(started.ok).toBe(true)
+    if(started.value.kind!=='run')throw Error('Expected run')
+    const runId=started.value.run.id,runKey=started.value.run.runKey
+    const created=await call('dig_create_task',{spaceKey:fixture.key,runId,runKey,requestId:crypto.randomUUID(),title:'Agent live claim'})
+    expect(created.ok).toBe(true)
+    if(created.value.kind!=='changed')throw Error('Expected change')
+    const projection=created.value.receipt.update.changes.find(c=>c.kind==='task-upserted')
+    if(projection?.kind!=='task-upserted' || !projection.task.claim)throw Error('Expected claimed Task')
+    const task=projection.task
+    const card=page.getByRole('button',{name:new RegExp(`${task.key}.*Agent live claim`)})
+    await expect(card).toBeVisible()
+    await expect(card.getByText('Agent claim · Codex work test')).toBeVisible()
+    await card.click()
+    const claim=page.getByRole('region',{name:'Agent claim'})
+    await expect(claim).toBeVisible()
+    await expect(claim.getByText('Ada Tester via Codex work test')).toBeVisible()
+    expect((await new AxeBuilder({page}).include('[role="dialog"]').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()).violations).toEqual([])
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+    if(info.project.name==='chromium')for(const palette of ['Nature','Neutral','Tokyo Night'])for(const mode of ['Light','Dark']) {
+      await page.keyboard.press('Escape')
+      await page.getByRole('button',{name:'Personal menu'}).click()
+      await page.getByRole('button',{name:'Appearance',exact:true}).click()
+      await page.getByRole('radio',{name:palette,exact:true}).check()
+      await page.getByRole('radio',{name:mode,exact:true}).check()
+      await expect(page.getByText('Appearance saved',{exact:true})).toBeVisible()
+      await page.keyboard.press('Escape')
+      expect((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()).violations).toEqual([])
+      await card.click()
+      await expect(claim).toBeVisible()
+      expect((await new AxeBuilder({page}).include('[role="dialog"]').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()).violations).toEqual([])
+    }
+    await claim.getByRole('button',{name:'Release claim',exact:true}).focus()
+    await page.keyboard.press('Enter')
+    await expect(claim).toHaveCount(0)
+    const rejected=await call('dig_add_comment',{spaceKey:fixture.key,runId,runKey,requestId:crypto.randomUUID(),taskId:task.id,claimId:task.claim!.id,text:'After human release'})
+    expect(rejected).toMatchObject({ok:false,fault:{reason:'claim-lost'}})
+    await page.getByRole('textbox',{name:'Title',exact:true}).fill('Human remains in control')
+    await page.getByRole('textbox',{name:'Title',exact:true}).press('Tab')
+    await expect(page.getByText('All changes saved',{exact:true})).toBeVisible()
+    // Reacquire, then revoke the connection and observe the other open tab.
+    expect((await call('dig_claim_task',{spaceKey:fixture.key,runId,runKey,requestId:crypto.randomUUID(),taskId:task.id})).ok).toBe(true)
+    await expect(claim).toBeVisible()
+    const settings=await context.newPage()
+    await settings.goto('/')
+    await settings.getByRole('button',{name:'Personal menu'}).click()
+    await settings.getByRole('button',{name:'Agent connections',exact:true}).click()
+    await settings.locator('.agent-connection').filter({hasText:'Codex work test'}).getByRole('button',{name:'Revoke',exact:true}).click()
+    await settings.getByRole('button',{name:'Confirm revoke',exact:true}).click()
+    await expect(claim).toHaveCount(0)
+    await expect(page.getByRole('textbox',{name:'Title',exact:true})).toHaveValue('Human remains in control')
+    await settings.close()
+  } finally {await client.close()}
 })

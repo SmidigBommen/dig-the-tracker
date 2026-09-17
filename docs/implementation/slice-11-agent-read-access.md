@@ -39,7 +39,7 @@ DIG_MCP_DATABASE_URL=postgres://USER:PASSWORD@127.0.0.1:PORT/dig_mcp node script
 
 This opt-in test invokes the configured OpenAI model. It is separate from ordinary CI. Its first test observer incorrectly consumed request bodies; the observer now records Module calls and protocol headers without reading the stream.
 
-Actual Codex desktop interaction remains a manual gate. CLI success does not establish it. See [setup](../agent-setup.md) for the environment-variable requirement, then manually create a connection, read a real Task, revoke it, and verify the next call fails.
+On 2026-09-17, production readiness returned 200 and the native Codex MCP connection listed six read tools, read the COOL Space, and read COOL-1. This verifies production read access in the current Codex session. The full desktop create/read/revoke sequence remains a manual gate. See [setup](../agent-setup.md) for the environment-variable requirement, then manually create a connection, read a real Task, revoke it, and verify the next call fails.
 
 ## Verification
 
@@ -59,4 +59,4 @@ Passed locally on 2026-09-16:
 
 Local checks cover the browser token lifecycle, phone layout, keyboard focus, accessibility scans, token expiry, replacement, revocation, owner and selected-Space isolation, membership removal/re-invitation, policy invalidation, unread-inbox preservation, cursor pages, request budgets, and the concurrency boundary. Expiry is tested with an issuance clock in the past, with no agent listener running. This is simulated absence, not a multi-day production observation.
 
-The bundled skill is read-only. Production deployment, desktop interaction, the full agent-work feature, and Slice 10's off-server backup/monitoring gates remain separate.
+This records the Slice 11 read-only release. Slice 12 extends the skill with work mode; see [its implementation notes](slice-12-agent-work.md). Full desktop lifecycle checks, multi-day absence, the complete agent-work feature, and Slice 10's off-server backup/monitoring gates remain separate.

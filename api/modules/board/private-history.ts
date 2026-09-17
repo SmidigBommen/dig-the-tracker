@@ -17,6 +17,7 @@ interface EventRow {
 
 function entry(row: EventRow): TaskHistoryEntry {
   const summaries: Record<string, string> = {
+    'claim-task':'Claimed Task for agent work','release-task-claim':'Released agent claim',
     'comment-added': 'Added comment', 'comment-edited': 'Edited comment', 'comment-removed': 'Removed comment', 'comment-moderated': 'Removed comment as administrator',
     'capture-task': 'Created Task', 'revise-task': 'Edited Task', 'archive-task': 'Archived Task',
     'auto-archive-task': 'Automatically archived Task', 'restore-task': 'Restored Task', 'assignee-cleared': 'Unassigned Task after membership ended',
@@ -25,6 +26,7 @@ function entry(row: EventRow): TaskHistoryEntry {
   }
   return { id: row.id, kind: row.kind, occurredAt: row.occurred_at.toISOString() as Instant,
     summary: summaries[row.kind] ?? row.kind, actor: { id: row.actor_member_id, displayName: row.display_name },
+    ...(row.details.agent ? {agent:row.details.agent} : {}),
     ...(row.details.fromColumn ? { fromColumn: row.details.fromColumn } : {}),
     ...(row.details.toColumn ? { toColumn: row.details.toColumn } : {}),
     ...(row.details.outcome ? { outcome: row.details.outcome } : {}),
@@ -50,7 +52,7 @@ export async function historyPage(client: DbClient, spaceId: string, taskId: str
 export async function recordEvent(client: DbClient, spaceId: string, taskId: string, actorId: string, kind: string,
   details: Partial<TaskHistoryEntry>): Promise<TaskHistoryEntry> {
   const result = await client.query<{ id: string }>(`insert into team.task_events (space_id, task_id, actor_member_id, kind, details)
-    values ($1,$2,$3,$4,$5) returning id::text`, [spaceId, taskId, actorId, kind, details])
+    values ($1,$2,$3,$4,$5::jsonb || case when nullif(current_setting('dig.agent_attribution',true),'') is null then '{}'::jsonb else jsonb_build_object('agent',current_setting('dig.agent_attribution')::jsonb) end) returning id::text`, [spaceId, taskId, actorId, kind, details])
   const row = await client.query<EventRow>(`${eventQuery} where event.id = $1`, [result.rows[0].id])
   return entry(row.rows[0])
 }

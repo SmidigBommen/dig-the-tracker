@@ -1,6 +1,6 @@
 # Agent access delivery plan
 
-Status: Slice 11 read access is implemented locally, with desktop verification open. Slices 12–14 remain planned for the [agreed feature specification](agent-access.md). See [Slice 11 evidence](../implementation/slice-11-agent-read-access.md). The original Slice 10 operational release gates remain open independently.
+Status: Slices 11 and 12 are implemented locally. Production read access was verified through native Codex on 2026-09-17; Slice 12 deployment and full desktop lifecycle verification remain open. Slices 13–14 remain planned for the [agreed feature specification](agent-access.md). See [Slice 11 evidence](../implementation/slice-11-agent-read-access.md) and [Slice 12 evidence](../implementation/slice-12-agent-work.md). The original Slice 10 operational release gates remain open independently.
 
 Each slice must provide a demonstrable outcome through real Dig authentication, domain behavior, PostgreSQL, and the appropriate browser/MCP client. Forward migrations preserve production data. Keep agent access disabled until a Space administrator explicitly enables it.
 

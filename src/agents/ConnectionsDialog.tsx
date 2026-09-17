@@ -11,6 +11,7 @@ export function ConnectionsDialog({ csrfToken,onClose }:{ csrfToken:string;onClo
   const [data,setData]=useState<Connections>()
   const [issued,setIssued]=useState<Issued>()
   const [name,setName]=useState('Codex')
+  const [scope,setScope]=useState<'tasks:read'|'tasks:work'>('tasks:read')
   const [spaces,setSpaces]=useState<string[]>([])
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState<string>()
@@ -43,21 +44,26 @@ export function ConnectionsDialog({ csrfToken,onClose }:{ csrfToken:string;onClo
   }
   return <Dialog title="Agent connections" closeLabel="Close connections dialog" onClose={onClose}>
     <div className="agent-connections">
-      <p>Let Codex read work in selected Spaces as you. Connections can read Tasks and discussion, but cannot change work or read your inbox. Agents only connect when you use them.</p>
+      <p>Connect Codex to selected Spaces as you. Choose read access or explicitly allow claim-protected work. Connections cannot close Tasks, administer Spaces, or read your inbox. Agents only connect when you use them.</p>
       {error && <p role="alert" className="team-error">{error} <Button variant="ghost" disabled={busy} onClick={()=>void change({ kind:'list' })}>Reload</Button></p>}
       {issued ? <section className="agent-token" aria-labelledby="agent-token-title">
         <h3 id="agent-token-title">Save your token</h3>
         <p>Shown once. Save it in your password manager before closing. It expires {new Date(issued.connection.expiresAt).toLocaleDateString()}.</p>
         <label>Connection token<input ref={tokenField} readOnly value={issued.token} autoComplete="off" spellCheck={false} onFocus={event=>event.currentTarget.select()} /></label>
         <div className="agent-actions"><Button onClick={()=>void copy()}>{copied ? 'Copied' : 'Copy token'}</Button><Button variant="primary" onClick={()=>setIssued(undefined)}>I saved the token</Button></div>
-      </section> : <form className="agent-create" onSubmit={event=>{ event.preventDefault();void change({ kind:'create',id:creationId.current,name,spaceIds:spaces }) }}>
+      </section> : <form className="agent-create" onSubmit={event=>{ event.preventDefault();void change({ kind:'create',id:creationId.current,name,spaceIds:spaces,scope }) }}>
         <h3>New connection</h3>
+        <fieldset disabled={busy}><legend>Permission</legend>
+          <label className="agent-space-choice"><input type="radio" name="agent-scope" checked={scope==='tasks:read'} onChange={()=>setScope('tasks:read')} />Read only</label>
+          <label className="agent-space-choice"><input type="radio" name="agent-scope" checked={scope==='tasks:work'} onChange={()=>setScope('tasks:work')} />Allow agent work</label>
+          {scope==='tasks:work' && <p>Allows creating and claiming Tasks, editing claimed work, posting comments, and moving progress. Human review and completion stay with you.</p>}
+        </fieldset>
         <label>Connection name<input value={name} maxLength={80} required onChange={event=>setName(event.target.value)} placeholder="Codex on my Mac" /></label>
-        <fieldset disabled={busy}><legend>Spaces this connection can read</legend>
+        <fieldset disabled={busy}><legend>Spaces this connection can access</legend>
           {data?.eligibleSpaces.map(space=><label className="agent-space-choice" key={space.id}><input type="checkbox" checked={spaces.includes(space.id)} onChange={event=>setSpaces(previous=>event.target.checked ? [...previous,space.id] : previous.filter(id=>id!==space.id))} />{space.key} · {space.displayName}</label>)}
           {data && data.eligibleSpaces.length===0 && <p>A Space administrator must enable agent access in Manage Space first.</p>}
         </fieldset>
-        <p className="agent-note">Read access only · Expires after 30 days · Up to 20 Spaces</p>
+        <p className="agent-note">{scope==='tasks:read' ? 'Read access only' : 'Claim-protected work'} · Expires after 30 days · Up to 20 Spaces</p>
         <Button variant="primary" type="submit" disabled={busy || !name.trim() || !spaces.length || spaces.length>20}>{busy ? 'Saving…' : 'Create connection'}</Button>
       </form>}
       <details className="agent-setup"><summary>Connect Codex</summary><div>
@@ -75,6 +81,7 @@ export function ConnectionsDialog({ csrfToken,onClose }:{ csrfToken:string;onClo
           const active=!connection.revokedAt && Date.parse(connection.expiresAt)>Date.now()
           return <article className="agent-connection" key={connection.id}>
             <div><strong>{connection.name}</strong><span className="agent-note">{connection.revokedAt ? 'Revoked' : active ? `Expires ${new Date(connection.expiresAt).toLocaleDateString()}` : 'Expired'}</span></div>
+            <p className="agent-note">{connection.scope==='tasks:work' ? 'Agent work allowed' : 'Read only'}</p>
             <p>{connection.spaces.map(space=>`${space.key || space.displayName}${space.available ? '' : ' (unavailable)'}`).join(', ')}</p>
             <p className="agent-note">Created {new Date(connection.createdAt).toLocaleDateString()}. Last used {connection.lastUsedAt ? new Date(connection.lastUsedAt).toLocaleString() : 'never'}. This does not indicate whether an agent is online.</p>
             {connection.spaces.some(space=>!space.available) && <p className="agent-note">Create a new connection to grant access again after a Space or membership change.</p>}

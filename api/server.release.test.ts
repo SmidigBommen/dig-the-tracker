@@ -9,7 +9,7 @@ it('drains safely and logs request identifiers without request content or except
   const logged = vi.spyOn(console,'info').mockImplementation((value: string) => { lines.push(value) })
   const shutdown = new AbortController()
   const unexpected = async () => { throw new Error('private-database-password') }
-  const server = createTeamServer({ agents: { manage: unexpected,authenticate: unexpected,read: unexpected },exports: { read: unexpected },identity: { signIn: unexpected,session: unexpected,appearance: unexpected },
+  const server = createTeamServer({ agents: { work: unexpected,manage: unexpected,authenticate: unexpected,read: unexpected },exports: { read: unexpected },identity: { signIn: unexpected,session: unexpected,appearance: unexpected },
     space: { read: unexpected,change: unexpected,authorize: unexpected },board: { read: unexpected,change: unexpected,follow: unexpected } },
     loadConfig({ ALLOWED_ORIGINS: 'https://dig.example.test' }),async () => true,shutdown.signal)
   await new Promise<void>(resolve => server.listen(0,'127.0.0.1',resolve))
@@ -34,7 +34,7 @@ it('drains safely and logs request identifiers without request content or except
 it('bounds authentication bursts and does not trust spoofed forwarding headers', async () => {
   const logged = vi.spyOn(console,'info').mockImplementation(() => undefined)
   const failed = async () => ({ ok: false as const,fault: { kind: 'not-authenticated' as const } })
-  const server = createTeamServer({ agents: { manage: failed,authenticate: failed,read: failed },exports: { read: failed },identity: { signIn: failed,session: failed,appearance: failed },
+  const server = createTeamServer({ agents: { work: failed,manage: failed,authenticate: failed,read: failed },exports: { read: failed },identity: { signIn: failed,session: failed,appearance: failed },
     space: { read: failed,change: failed,authorize: failed },board: { read: failed,change: failed,follow: failed } },loadConfig({ ALLOWED_ORIGINS: 'https://dig.example.test' }))
   await new Promise<void>(resolve => server.listen(0,'127.0.0.1',resolve))
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -51,7 +51,7 @@ it('reserves MCP request slots while authentication is pending',async()=>{
   const unexpected=async()=>{throw Error('Unexpected application operation')}
   const pending:Array<()=>void>=[]
   const server=createTeamServer({
-    agents:{manage:unexpected,read:unexpected,authenticate:()=>new Promise(resolve=>pending.push(()=>resolve({ok:false,fault:{kind:'not-authenticated'}})))},
+    agents:{work:unexpected,manage:unexpected,read:unexpected,authenticate:()=>new Promise(resolve=>pending.push(()=>resolve({ok:false,fault:{kind:'not-authenticated'}})))},
     exports:{read:unexpected},identity:{signIn:unexpected,session:unexpected,appearance:unexpected},
     space:{read:unexpected,change:unexpected,authorize:unexpected},board:{read:unexpected,change:unexpected,follow:unexpected},
   },loadConfig({ALLOWED_ORIGINS:'https://dig.example.test'}))

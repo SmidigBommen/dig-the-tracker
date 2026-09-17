@@ -15,6 +15,7 @@ import { BoardModuleImplementation } from '../api-dist/modules/board/board-modul
 import { AgentModuleImplementation } from '../api-dist/modules/agent/agent-module.js'
 import { SpaceExportModuleImplementation } from '../api-dist/modules/export/export-module.js'
 import { MockOidcAdapter } from '../api-dist/adapters/oidc/mock-oidc-adapter.js'
+const workMode=process.env.DIG_MCP_WORK_TEST==='1'
 const url=process.env.DIG_MCP_DATABASE_URL
 if(!url || new URL(url).pathname!=='/dig_mcp' || !['127.0.0.1','localhost'].includes(new URL(url).hostname))throw Error('Use a disposable loopback dig_mcp database')
 const unwrap=result=>{ if(!result.ok)throw Error(`Fixture failed: ${result.fault.kind}`);return result.value }
@@ -27,7 +28,7 @@ try {
   const identity=new IdentityModuleImplementation(db,new MockOidcAdapter({issuer,subject:'codex-check',displayName:'Codex Tester'}),{
     redirectUri:origin+'/api/auth/callback',allowedOrigins:new Set([origin]),installationAdministrators:new Set([issuer+'|codex-check']),sessionHmacSecret:secret,
   })
-  const space=new SpaceModuleImplementation(db,{invitationHmacSecret:secret,sessionHmacSecret:secret}),board=new BoardModuleImplementation(db),agents=new AgentModuleImplementation(db,board)
+  const space=new SpaceModuleImplementation(db,{invitationHmacSecret:secret,sessionHmacSecret:secret}),board=new BoardModuleImplementation(db),agents=new AgentModuleImplementation(db,board,{runHmacSecret:secret})
   const begun=unwrap(await identity.signIn({kind:'begin'}))
   const signed=unwrap(await identity.signIn({kind:'complete',attemptSecret:begun.attemptSecret,callback:{code:'accepted-code',state:new URL(begun.authorizationUrl).searchParams.get('state')}}))
   const session=unwrap(await identity.session({kind:'resolve',use:'read',evidence:{sessionSecret:signed.session.sessionSecret}}))
@@ -36,10 +37,10 @@ try {
   const title=`Read proof ${randomUUID()}`
   unwrap(await board.change(access,{requestId:randomUUID(),command:{kind:'capture-task',input:{title,description:'Disposable local integration fixture.'}}}))
   unwrap(await agents.manage(session.identity,{kind:'set-space-access',spaceKey:'DIG',enabled:true,expectedRevision:1}))
-  const issued=unwrap(await agents.manage(session.identity,{kind:'create',id:randomUUID(),name:'Disposable Codex CLI',spaceIds:[created.result.space.id]}))
+  const issued=unwrap(await agents.manage(session.identity,{kind:'create',id:randomUUID(),name:'Disposable Codex CLI',spaceIds:[created.result.space.id],scope:workMode ? 'tasks:work' : 'tasks:read'}))
   const seen=[]
   server=createTeamServer({identity,space,board,agents:{
-    manage:agents.manage.bind(agents),authenticate:agents.authenticate.bind(agents),
+    work:async(principal,request)=>{const result=await agents.work(principal,request);seen.push({work:request.kind==='change' ? request.command.kind : request.kind,ok:result.ok});return result},manage:agents.manage.bind(agents),authenticate:agents.authenticate.bind(agents),
     read:async(principal,query)=>{seen.push({tool:query.kind});return agents.read(principal,query)},
   },exports:new SpaceExportModuleImplementation(db)},loadConfig({ALLOWED_ORIGINS:origin}))
   server.on('request',request=>{if(request.url==='/mcp' && request.headers['mcp-protocol-version'])seen.push({protocol:request.headers['mcp-protocol-version']})})
@@ -49,7 +50,9 @@ try {
   await copyFile(join(process.env.CODEX_HOME ?? join(homedir(),'.codex'),'auth.json'),join(codexHome,'auth.json'))
   await writeFile(join(codexHome,'config.toml'),`[mcp_servers.dig]\nurl = "${origin}/mcp"\nbearer_token_env_var = "DIG_TOKEN"\n`,{mode:0o600})
   await cp(resolve('skills/dig'),join(workspace,'.agents/skills/dig'),{recursive:true})
-  const child=spawn('codex',['exec','--ephemeral','--skip-git-repo-check','--sandbox','read-only','-C',workspace,'--output-last-message',output,'$dig show DIG-1. Read it through the configured Dig MCP tool and report its exact title. Do not use shell commands or change anything.'],{
+  const marker=`Verified work ${randomUUID()}`
+  const prompt=workMode ? `$dig work DIG-1. This is a disposable local MCP integration check in an empty temporary workspace. Read and claim the Task, set its description to exactly "${marker}", add a comment with exactly "${marker}", then release the claim. Report the exact original Task title. No code changes, shell commands, push, or deployment are needed.` : '$dig show DIG-1. Read it through the configured Dig MCP tool and report its exact title. Do not use shell commands or change anything.'
+  const child=spawn('codex',['exec','--ephemeral','--skip-git-repo-check','--sandbox','read-only','-C',workspace,'--output-last-message',output,prompt],{
     env:{...process.env,CODEX_HOME:codexHome,DIG_TOKEN:issued.token},stdio:['ignore','pipe','pipe'],
   })
   let diagnostics=''
@@ -61,8 +64,14 @@ try {
   if(code!==0 || !answer.includes(title) || !seen.some(call=>call.tool==='task')) {
     // The CLI may include tool content in diagnostics. Keep disposable credentials out of output.
     console.error(JSON.stringify({event:'codex-protocol-failure',calls:seen}))
-    console.error(diagnostics.replaceAll(issued.token,'[redacted]'))
+    if(!workMode)console.error(diagnostics.replaceAll(issued.token,'[redacted]'))
     throw Error('Codex CLI did not prove a Task read')
+  }
+  if(workMode) {
+    const principal=unwrap(await agents.authenticate(issued.token))
+    const task=unwrap(await agents.read(principal,{kind:'task',key:'DIG-1'})).value
+    if(task.description!==marker || task.claim!==null || !task.comments.items.some(comment=>comment.text===marker && comment.agent))throw Error('Codex work did not update, attribute, and release the Task')
+    for(const command of ['start-run','claim-task','revise-task','add-comment','release-task-claim'])if(!seen.some(call=>call.work===command && call.ok))throw Error(`Missing successful work call: ${command}`)
   }
   console.info(JSON.stringify({event:'codex-mcp-proof',passed:true,calls:seen}))
   unwrap(await agents.manage(session.identity,{kind:'revoke',id:issued.connection.id}))

@@ -63,7 +63,10 @@ export interface Page<T> {
 export interface TagView { id: TagId; name: string }
 export interface TaskReference { id: TaskId; key: TaskKey; spaceKey: SpaceKey }
 
+export interface AgentAttribution { connectionId:string;connectionName:string;runId:string }
+export interface TaskClaim extends AgentAttribution { id:string;member:{id:MemberId;displayName:string};startedAt:string;lastCheckInAt:string;expiresAt:string }
 export interface TaskSummary {
+  claim?: TaskClaim | null
   outcome: Outcome | null
   closedAt: Instant | null
   archived: boolean
@@ -181,6 +184,9 @@ export interface WorkflowColumnPlan {
 export interface WorkflowPlan { columns: WorkflowColumnPlan[] }
 
 export type BoardCommand =
+  | {kind:'claim-task';taskId:TaskId}
+  | {kind:'renew-task-claim';taskId:TaskId;claimId:string}
+  | {kind:'release-task-claim';taskId:TaskId;claimId:string}
   | { kind: 'capture-task'; input: CaptureTask }
   | { kind: 'revise-task'; task: VersionedTask; changes: TaskChanges }
   | { kind: 'place-task'; task: VersionedTask; destination: TaskDestination; closure?: Closure }
@@ -215,6 +221,7 @@ export interface WorkflowColumnView extends WorkflowColumnPlan {
 export interface WorkflowView { revision: Revision; columns: WorkflowColumnView[] }
 export interface MemberSummary { id: MemberId; displayName: string; role: BoardMemberView['role'] }
 export interface CommentView {
+  agent?: AgentAttribution
   id: CommentId
   text: string
   revision: Revision
@@ -226,6 +233,7 @@ export interface CommentView {
 }
 export interface CommentTombstone { id: CommentId; removedAt: Instant; revision: Revision }
 export interface TaskHistoryEntry {
+  agent?: AgentAttribution
   id: string
   occurredAt: Instant
   kind: string
@@ -272,7 +280,7 @@ export type BoardFault =
   | { kind: 'not-found' }
   | { kind: 'forbidden' }
   | { kind: 'read-only'; reason: 'space-archived' | 'deletion-scheduled' }
-  | { kind: 'conflict'; reason: 'stale-task' | 'stale-comment' | 'stale-order' | 'stale-workflow' | 'request-id-reused'; current?: BoardView; currentComment?: CommentView }
+  | { kind: 'conflict'; reason: 'stale-task' | 'stale-comment' | 'stale-order' | 'stale-workflow' | 'request-id-reused' | 'task-claimed' | 'claim-lost' | 'assigned-to-another-member' | 'run-invalid'; current?: BoardView; currentComment?: CommentView }
   | { kind: 'rule-violation'; rule: 'subtask-depth' | 'column-not-empty' | 'intake-required' | 'completion-required' | 'active-wip-limit-required' | 'closure-required' | 'duplicate-target-invalid' }
   | { kind: 'cursor-expired' }
   | { kind: 'rate-limited'; retryAfterSeconds: number }

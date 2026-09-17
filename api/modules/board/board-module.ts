@@ -1,3 +1,4 @@
+import { requireRun,changeClaim,authorizeAgentCommand } from './private-claims.js'
 import { readReferences } from './private-references.js'
 import { readFlow, readWorkload } from './private-reports.js'
 import { taskSummary, type TaskRow } from './private-task-summary.js'
@@ -8,7 +9,7 @@ import { changeComment, commentPage, commentForClosure } from './private-comment
 import { commitChange, appendUpdate } from './private-receipts.js'
 import { restoreFamily } from './private-family.js'
 import { transitionTask, changeOutcome } from './private-flow.js'
-import { historyPage } from './private-history.js'
+import { historyPage,recordEvent } from './private-history.js'
 import { placeTask, appendRank, taskPlacement } from './private-placement.js'
 import { BoardRejection, decodeCursor, encodeCursor, pageSize } from './private-cursors.js'
 import { createHash } from 'node:crypto'
@@ -85,6 +86,7 @@ export class BoardModuleImplementation implements BoardModule {
           await client.query("set local statement_timeout='5s'")
           await client.query("set local lock_timeout='3s'")
         }
+        if(this.config.now)await client.query("select set_config('dig.claim_clock',$1,true)",[this.config.now().toISOString()])
         const permitted = await recheckAccess(client, claims)
         if (!permitted.ok) return permitted
 
@@ -221,14 +223,14 @@ export class BoardModuleImplementation implements BoardModule {
   ): Promise<Result<ChangeReceipt, BoardFault>> {
     const claims = inspectAuthorizedSpace(access)
     if (!claims || claims.use !== 'board-change') return { ok: false, fault: { kind: 'forbidden' } }
-    if (request.command.kind !== 'set-workflow' && request.command.kind !== 'capture-task' && request.command.kind !== 'revise-task'
+    if (request.command.kind !== 'claim-task' && request.command.kind !== 'renew-task-claim' && request.command.kind !== 'release-task-claim' && request.command.kind !== 'set-workflow' && request.command.kind !== 'capture-task' && request.command.kind !== 'revise-task'
       && request.command.kind !== 'mark-notification-read' && request.command.kind !== 'mark-all-notifications-read' && request.command.kind !== 'revise-comment' && request.command.kind !== 'remove-comment' && request.command.kind !== 'add-comment' && request.command.kind !== 'change-outcome' && request.command.kind !== 'place-task' && request.command.kind !== 'archive-task' && request.command.kind !== 'restore-task') return { ok: false, fault: { kind: 'temporarily-unavailable' } }
     if (typeof request.requestId !== 'string' || !request.requestId || request.requestId.length > 100) {
       return { ok: false, fault: { kind: 'invalid', issues: [{ field: 'requestId', message: 'Use 1 to 100 characters.' }] } }
     }
-    const requestHash = createHash('sha256').update(canonicalJson(request.command)).digest('hex')
+    const requestHash = createHash('sha256').update(canonicalJson(claims.agent ? {command:request.command,runId:claims.agent.runId,claimId:claims.agent.claimId ?? null} : request.command)).digest('hex')
     const command = request.command
-    const input = command.kind === 'capture-task' ? command.input : command.kind === 'revise-task' ? command.changes : {}
+    const input = command.kind === 'capture-task' ? {...command.input,...(claims.agent ? {assigneeId:claims.memberId} : {})} : command.kind === 'revise-task' ? command.changes : {}
     if ((command.kind === 'capture-task' && input.title === undefined)
       || (input.title !== undefined && (typeof input.title !== 'string' || !input.title.trim() || [...input.title.trim()].length > 200))
       || (input.description !== undefined && (typeof input.description !== 'string' || [...input.description].length > 20_000))) {
@@ -240,6 +242,10 @@ export class BoardModuleImplementation implements BoardModule {
     }
     try {
       return await inTransaction(this.db, async (client) => {
+        if(claims.agent) {
+          await client.query("set local statement_timeout='5s'")
+          await client.query("set local lock_timeout='3s'")
+        }
         const permitted = await recheckAccess(client, claims)
         if (!permitted.ok) return permitted
         if (command.kind === 'set-workflow' && permitted.role !== 'space-administrator') return { ok: false as const, fault: { kind: 'forbidden' as const } }
@@ -254,6 +260,18 @@ export class BoardModuleImplementation implements BoardModule {
             fault: { kind: 'conflict' as const, reason: 'request-id-reused' as const } }
           return { ok: true as const, value: previous.rows[0].response }
         }
+        if(this.config.now)await client.query("select set_config('dig.claim_clock',$1,true)",[this.config.now().toISOString()])
+        if(claims.agent)await requireRun(client,claims)
+        if(command.kind==='claim-task' || command.kind==='renew-task-claim' || command.kind==='release-task-claim') {
+          await changeClaim(client,claims,command,permitted.role,this.config.now?.() ?? new Date())
+          const row=(await client.query<TaskRow>('select *, $3::text as space_key from team.tasks where space_id=$1 and id=$2',[claims.spaceId,command.taskId,permitted.space.space_key])).rows[0]
+          const task=await taskSummary(client,row)
+          const event=command.kind==='renew-task-claim' ? undefined : await recordEvent(client,claims.spaceId,row.id,claims.memberId,command.kind,{})
+          const changes:BoardProjectionChange[]=[{kind:'task-upserted',task,placement:await taskPlacement(client,claims.spaceId,row.id)}]
+          if(event)changes.push({kind:'history-appended',taskId:command.taskId,entries:[event]})
+          return {ok:true as const,value:await commitChange(client,claims.spaceId,claims.memberId,request,requestHash,{kind:command.kind,taskId:command.taskId},changes)}
+        }
+        await authorizeAgentCommand(client,claims,command)
         if (command.kind === 'set-workflow') {
           const workflow = await setWorkflow(client, claims.spaceId, claims.identityId, command.expectedRevision, command.desired)
           return { ok: true as const, value: await commitChange(client, claims.spaceId, claims.memberId, request, requestHash,
@@ -363,6 +381,7 @@ export class BoardModuleImplementation implements BoardModule {
             [claims.spaceId, number.rows[0].number, input.title!.trim(), input.description ?? '', claims.memberId, permitted.space.space_key, input.assigneeId ?? null, command.input.parentTaskId ?? null],
           )
           row = created.rows[0]
+          if(claims.agent)await changeClaim(client,claims,{kind:'claim-task',taskId:row.id as TaskId},permitted.role,this.config.now?.() ?? new Date())
           await appendRank(client, claims.spaceId, row.id, row.column_id)
           affectedOrderColumns = [row.column_id]
         }
@@ -382,8 +401,7 @@ export class BoardModuleImplementation implements BoardModule {
           }
         }
         if (command.kind === 'capture-task' || command.kind === 'revise-task') {
-          await client.query('insert into team.task_events (space_id, task_id, actor_member_id, kind, details) values ($1,$2,$3,$4,$5)',
-            [claims.spaceId, row.id, claims.memberId, command.kind, command])
+          events.push(await recordEvent(client,claims.spaceId,row.id,claims.memberId,command.kind,command))
         }
         const task = await taskSummary(client, row)
         const changes: BoardProjectionChange[] = []

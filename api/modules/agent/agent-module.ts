@@ -1,17 +1,18 @@
+import { publishClaimInvalidation } from '../board/private-claims.js'
 import type { BoardQuery,BoardView,BoardOverview } from '../../contracts/board.js'
-import { createHash,randomBytes } from 'node:crypto'
+import { createHash,createHmac,timingSafeEqual,randomBytes } from 'node:crypto'
 import type { Database,DbClient } from '../../db.js'
 import type { AuthenticatedIdentity } from '../identity/identity-module.js'
 import { inspectAuthenticatedIdentity,makeAuthorizedSpace } from '../private-capabilities.js'
 import { lockBrowserAccess } from '../identity/private-browser-access.js'
-import { lockAgentSpace,lockGrantSpaces,eligibleAgentSpaces,changeAgentPolicy,describeAgentGrants,recheckAgentGrant } from '../space/private-agent-access.js'
+import { lockAgentSpace,lockGrantSpaces,eligibleAgentSpaces,changeAgentPolicy,describeAgentGrants,recheckAgentGrant,lockAgentGrantSpaces } from '../space/private-agent-access.js'
 import { AgentRejected,authenticateClaims,connectionGrants,inspectAgent,lockAgentCredential } from './private-access.js'
-import type { AgentManagementRequest,AgentManagementView,AgentConnectionView } from '../../contracts/agents.js'
+import type { AgentManagementRequest,AgentManagementView,AgentConnectionView,AgentWorkRequest,AgentWorkView } from '../../contracts/agents.js'
 import type { BoardModule } from '../board/board-module.js'
 import { isDatabaseError,type Result,type SpaceId,type MemberId,type IdentityId,type AccessRevision,type TaskKey,type PageRequest } from '../shared.js'
 export type AgentFault = { kind: 'not-authenticated' | 'forbidden' | 'not-found' | 'invalid' | 'conflict' | 'cursor-expired' | 'rate-limited' | 'temporarily-unavailable'; message?: string; retryAfterSeconds?:number }
 declare const agentBrand: unique symbol
-export interface AuthenticatedAgent { readonly [agentBrand]: true }
+export interface AuthenticatedAgent { readonly [agentBrand]: true;readonly scope:'tasks:read'|'tasks:work' }
 export type AgentRead =
   | { kind:'spaces' }
   | { kind:'space';spaceKey:string }
@@ -21,6 +22,7 @@ export type AgentRead =
   | { kind:'workflow';spaceKey:string }
 export type AgentReadView = Exclude<BoardView,{kind:'overview'}> | {kind:'overview';sequence:number;value:Omit<BoardOverview,'unreadNotifications'>} | { kind:'spaces';spaces:Array<{ id:string;key:string;displayName:string }> }
 export interface AgentModule {
+  work(agent:AuthenticatedAgent,request:AgentWorkRequest):Promise<Result<AgentWorkView,AgentFault | import('../../contracts/board.js').BoardFault>>
   read(agent:AuthenticatedAgent,query:AgentRead):Promise<Result<AgentReadView,AgentFault>>
   manage(identity: AuthenticatedIdentity,request: AgentManagementRequest): Promise<Result<AgentManagementView,AgentFault>>
   authenticate(token: string): Promise<Result<AuthenticatedAgent,AgentFault>>
@@ -44,7 +46,7 @@ export class AgentModuleImplementation implements AgentModule {
     }
     return retry
   }
-  constructor(private readonly db: Database,private readonly board: BoardModule,private readonly config: { now?: () => Date } = {}) {}
+  constructor(private readonly db: Database,private readonly board: BoardModule,private readonly config: { now?: () => Date;runHmacSecret?:string } = {}) {}
   private async transaction<T>(work: (client: DbClient)=>Promise<T>): Promise<Result<T,AgentFault>> {
     let client: DbClient
     try { client=await this.db.connect() } catch { return { ok:false,fault:{ kind:'temporarily-unavailable' } } }
@@ -82,12 +84,22 @@ export class AgentModuleImplementation implements AgentModule {
           if(space.lifecycle!=='active')reject('forbidden','Restore this Space before changing agent access.')
           if(space.revision!==request.expectedRevision)reject('conflict','Agent settings changed. Reload and try again.')
           const next=space.enabled===request.enabled ? space : await changeAgentPolicy(client,space.id,request.enabled)
+          if(space.enabled && !request.enabled)await publishClaimInvalidation(client,[space.id])
           return { kind:'space-settings',space:{ id:next.id,key:next.key,displayName:next.displayName,enabled:next.enabled,revision:next.revision } }
         }
         return { kind:'space-settings',space:{ id:space.id,key:space.key,displayName:space.displayName,enabled:space.enabled,revision:space.revision } }
       }
+      let affectedSpaces:string[]=[]
+      if(request.kind==='revoke' || request.kind==='replace-token') {
+        if(typeof request.id!=='string' || !uuid.test(request.id))reject('invalid')
+        const owned=await client.query('select id from team.agent_connections where id=$1 and identity_id=$2',[request.id,claims.identityId])
+        if(!owned.rowCount)reject('not-found')
+        affectedSpaces=(await connectionGrants(client,request.id)).map(grant=>grant.spaceId)
+        await lockAgentGrantSpaces(client,affectedSpaces)
+      }
       let grants: Awaited<ReturnType<typeof lockGrantSpaces>>
       if(request.kind==='create') {
+        if(request.scope!==undefined && !['tasks:read','tasks:work'].includes(request.scope))reject('invalid')
         if(!uuid.test(request.id) || typeof request.name!=='string' || !request.name.trim() || [...request.name.trim()].length>80
           || !Array.isArray(request.spaceIds) || request.spaceIds.length<1 || request.spaceIds.length>20 || request.spaceIds.some(id=>typeof id!=='string' || !uuid.test(id))
           || new Set(request.spaceIds).size!==request.spaceIds.length)reject('invalid','Choose a name and 1 to 20 enabled Spaces.')
@@ -110,8 +122,8 @@ export class AgentModuleImplementation implements AgentModule {
         if(count.rows[0].count>=20)reject('invalid','Revoke an unused connection before creating another. The limit is 20 active connections.')
         const token=`dig_agent_${randomBytes(32).toString('base64url')}`
         const now=this.config.now?.() ?? new Date(),expires=new Date(now.getTime()+30*24*60*60*1000)
-        const row=(await client.query<ConnectionRow>(`insert into team.agent_connections(id,identity_id,name,secret_hash,created_at,expires_at)
-          values($1,$2,$3,$4,$5,$6) returning ${connectionFields}`,[request.id,claims.identityId,request.name.trim(),hash(token),now,expires])).rows[0]
+        const row=(await client.query<ConnectionRow>(`insert into team.agent_connections(id,identity_id,name,secret_hash,created_at,expires_at,scope)
+          values($1,$2,$3,$4,$5,$6,$7) returning ${connectionFields}`,[request.id,claims.identityId,request.name.trim(),hash(token),now,expires,request.scope ?? 'tasks:read'])).rows[0]
         for(const grant of grants!)await client.query(`insert into team.agent_space_grants(connection_id,space_id,member_id,member_joined_at,policy_revision)
           values($1,$2,$3,$4,$5)`,[row.id,grant.spaceId,grant.memberId,grant.joinedAt,grant.policyRevision])
         return { kind:'issued',connection:await this.view(client,row,claims.identityId),token }
@@ -122,6 +134,7 @@ export class AgentModuleImplementation implements AgentModule {
       if(!row)reject('not-found')
       if(request.kind==='revoke') {
         await client.query('update team.agent_connections set revoked_at=coalesce(revoked_at,now()),revision=revision+1 where id=$1',[row.id])
+        await publishClaimInvalidation(client,affectedSpaces)
         return { kind:'revoked' }
       }
       if(!Number.isSafeInteger(request.expectedRevision) || row.revision!==request.expectedRevision)reject('conflict','The token changed. Reload before replacing it.')
@@ -130,6 +143,7 @@ export class AgentModuleImplementation implements AgentModule {
       const expires=new Date((this.config.now?.() ?? new Date()).getTime()+30*24*60*60*1000)
       const next=(await client.query<ConnectionRow>(`update team.agent_connections set secret_hash=$2,expires_at=$3,revision=revision+1
         where id=$1 returning ${connectionFields}`,[row.id,hash(token),expires])).rows[0]
+      await publishClaimInvalidation(client,affectedSpaces)
       return { kind:'issued',connection:await this.view(client,next,claims.identityId),token }
     })
   }
@@ -182,15 +196,50 @@ export class AgentModuleImplementation implements AgentModule {
     }
     return result
   }
+  async work(agent:AuthenticatedAgent,request:AgentWorkRequest):Promise<Result<AgentWorkView,AgentFault | import('../../contracts/board.js').BoardFault>> {
+    const claims=inspectAgent(agent)
+    if(!claims || claims.scope!=='tasks:work')return {ok:false,fault:{kind:'forbidden'}}
+    if(!request || !['start-run','change'].includes(request.kind) || typeof request.spaceKey!=='string' || !/^[A-Z][A-Z0-9]{1,9}$/.test(request.spaceKey)
+      || typeof request.requestId!=='string' || !request.requestId || request.requestId.length>100)return {ok:false,fault:{kind:'invalid'}}
+    if(!this.config.runHmacSecret || this.config.runHmacSecret.length<32)return {ok:false,fault:{kind:'temporarily-unavailable'}}
+    const runKey=(id:string)=>createHmac('sha256',this.config.runHmacSecret!).update(`dig-agent-run:${claims.connectionId}:${id}`).digest('base64url')
+    if(request.kind==='change' && (typeof request.runKey!=='string' || !/^[A-Za-z0-9_-]{43}$/.test(request.runKey)
+      || !timingSafeEqual(Buffer.from(request.runKey),Buffer.from(runKey(request.runId)))))return {ok:false,fault:{kind:'forbidden'}}
+    const authorized=await this.transaction(async client=>{
+      const space=await lockAgentSpace(client,claims.identityId,request.spaceKey)
+      if(!space)reject('not-found')
+      if(!await lockAgentCredential(client,claims))reject('not-authenticated')
+      const grant=(await connectionGrants(client,claims.connectionId)).find(g=>g.spaceId===space.id)
+      if(!grant || !await recheckAgentGrant(client,claims.identityId,grant))reject('forbidden')
+      if(request.kind==='start-run') {
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(request.requestId))reject('invalid','Use a private random UUID for the start request ID.')
+        if(typeof request.label!=='string' || !request.label.trim() || [...request.label].length>120)reject('invalid')
+        await client.query(`insert into team.agent_runs(connection_id,connection_revision,space_id,member_id,member_joined_at,policy_revision,space_epoch,request_id,label)
+          values($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict(connection_id,request_id) do nothing`,
+          [claims.connectionId,claims.revision,space.id,space.memberId,grant.joinedAt,grant.policyRevision,space.workEpoch,request.requestId,request.label.trim()])
+        const row=(await client.query<{id:string;label:string;created_at:Date;space_id:string;connection_revision:number;space_epoch:number}>(`select * from team.agent_runs where connection_id=$1 and request_id=$2`,[claims.connectionId,request.requestId])).rows[0]
+        if(row.label!==request.label.trim() || row.space_id!==space.id || row.connection_revision!==claims.revision || row.space_epoch!==space.workEpoch)reject('conflict','Start a new run with a new request ID.')
+        return {kind:'run' as const,run:{id:row.id,runKey:runKey(row.id),label:row.label,spaceKey:request.spaceKey,createdAt:row.created_at.toISOString()}}
+      }
+      if(!uuid.test(request.runId) || (request.claimId!==undefined && !uuid.test(request.claimId)))reject('invalid')
+      return {kind:'access' as const,access:makeAuthorizedSpace<'board-change'>({agent:{...claims,runId:request.runId,claimId:request.claimId},
+        identityId:claims.identityId as IdentityId,spaceId:space.id as SpaceId,memberId:space.memberId as MemberId,accessRevision:space.accessRevision as AccessRevision,use:'board-change'})}
+    })
+    if(!authorized.ok)return authorized
+    if(authorized.value.kind==='run')return {ok:true,value:authorized.value}
+    if(request.kind!=='change')return {ok:false,fault:{kind:'invalid'}}
+    const result=await this.board.change(authorized.value.access,{requestId:`agent:${hash(`${claims.connectionId}:${request.runId}:${request.requestId}`)}` as import('../shared.js').RequestId,command:request.command})
+    return result.ok ? {ok:true,value:{kind:'changed',receipt:result.value}} : result
+  }
   async authenticate(token: string): Promise<Result<AuthenticatedAgent,AgentFault>> {
     if(typeof token!=='string' || !/^dig_agent_[A-Za-z0-9_-]{43}$/.test(token))return { ok:false,fault:{ kind:'not-authenticated' } }
     return this.transaction(async client=>{
-      const row=(await client.query<{ id: string; identity_id: string; revision: number }>(`update team.agent_connections set last_used_at=$2
-        where secret_hash=$1 and revoked_at is null and expires_at>$2 and scope='tasks:read' returning id,identity_id,revision`,[hash(token),this.config.now?.() ?? new Date()])).rows[0]
+      const row=(await client.query<{ id: string; identity_id: string; revision: number;scope:'tasks:read'|'tasks:work' }>(`update team.agent_connections set last_used_at=$2
+        where secret_hash=$1 and revoked_at is null and expires_at>$2 and scope in ('tasks:read','tasks:work') returning id,identity_id,revision,scope`,[hash(token),this.config.now?.() ?? new Date()])).rows[0]
       if(!row)reject('not-authenticated')
       const retryAfterSeconds=this.consumeBudget(row.id,row.identity_id)
       if(retryAfterSeconds)throw new AgentRejected({ kind:'rate-limited',retryAfterSeconds })
-      return authenticateClaims({ connectionId:row.id,identityId:row.identity_id,revision:row.revision })
+      return authenticateClaims({ connectionId:row.id,identityId:row.identity_id,revision:row.revision,scope:row.scope })
     })
   }
 }

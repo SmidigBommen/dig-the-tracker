@@ -698,6 +698,12 @@ export class BoardSession {
     return true
   }
 
+  async releaseClaim() {
+    const detail=this.state.detail
+    if(!detail?.claim || !this.canChange())return
+    await this.commit({kind:'release-task-claim',taskId:detail.id,claimId:detail.claim.id},detail.id)
+  }
+
   async moveTask(task: TaskSummary, destination: TaskDestination, closure?: Closure) {
     if (!await this.saveEdits() || !this.canChange()) return false
     const current = this.state.detail?.id === task.id ? this.state.detail : task
@@ -838,6 +844,7 @@ export class BoardSession {
       if (fault.current?.kind === 'task') this.set({ conflict: fault.current.value, detail: fault.current.value })
     }
     if (fault.kind === 'conflict' && fault.reason === 'stale-comment') { error = 'This comment changed. Your draft is kept beside the current version.'; this.set({ commentConflict: fault.currentComment }) }
+    if (fault.kind === 'conflict' && fault.reason === 'claim-lost') error='This claim has expired or changed. Refresh the Task before trying again.'
     if (fault.kind === 'conflict' && fault.reason === 'stale-order') error = 'Another move changed this Column. The Board has been refreshed; choose the position again.'
     if (fault.kind === 'read-only') { error = 'This Space is read-only.'; this.set({ overview: { ...this.state.overview,
       space: { ...this.state.overview.space, lifecycle: fault.reason === 'space-archived' ? 'archived' : 'deletion_scheduled' } } }) }

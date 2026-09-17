@@ -9,8 +9,8 @@
 ## Current implementation
 
 - Slices 1 through 10 have implementation and local verification. Slice 10 production backup, monitoring, and deployment gates remain open; see `docs/operations.md`.
-- Slice 11 adds read-only agent connections and remote MCP. Codex CLI is verified; actual desktop interaction remains an open gate. For setup or MCP changes, read [Slice 11 notes](docs/implementation/slice-11-agent-read-access.md) and [agent setup](docs/agent-setup.md).
-- `AgentModule` owns connection management, bearer authentication, and bounded reads. Keep grants tied to current membership and Space policy; Board rechecks agent credentials inside its transaction. Slices 12–14 write capabilities are not implemented.
+- Slice 11 adds read-only agent connections and remote MCP. Native production Codex reads and local Codex CLI are verified; the full desktop credential lifecycle remains an open gate. For setup or MCP changes, read [Slice 11 notes](docs/implementation/slice-11-agent-read-access.md) and [agent setup](docs/agent-setup.md).
+- `AgentModule` owns connection management, bearer authentication, bounded reads, and run identity. Slice 12 adds explicit work consent, private run credentials, and two-hour renewable Task claims. Board owns claim-protected changes and human release. Recheck membership, policy, credential, run, and claim inside each change transaction; resolve committed receipts before requiring a still-active claim. For work or reconnect changes, read [Slice 12 notes](docs/implementation/slice-12-agent-work.md). Slice 13 review/blocker handoff and Slice 14 full compatibility gates remain planned.
 - The running React entry is `src/team/TeamApp.tsx`; it handles sign-in, invitations, Space selection, membership administration, Space lifecycle, Task capture, editing, assignment, Tags, Subtasks, Task Archive, movement, closure Outcomes, history, comments, mentions, the in-app inbox, reload, and sign-out.
 - The Node HTTP Adapter is `api/server.ts`.
 - `IdentityModule` owns OpenID Connect correlation, PostgreSQL sessions, and account appearance preferences.

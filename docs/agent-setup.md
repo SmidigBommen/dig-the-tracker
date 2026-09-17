@@ -1,11 +1,11 @@
 # Connect Codex to Dig
 
-Slice 11 provides read-only MCP access. Codex can read selected Spaces, Tasks, discussion, history, Tags, and workflow. It cannot change work, read your inbox, or administer Dig. You can close Codex whenever you like; Dig does not depend on an agent being connected.
+Dig provides read-only MCP access by default and optional claim-protected agent work. Codex can read selected Spaces, Tasks, discussion, history, Tags, and workflow. A connection with explicit work permission can create and claim Tasks, edit their text and Tags, add comments, and move progress. It cannot close Tasks, perform review handoff, read your inbox, or administer Dig. You can close Codex whenever you like; Dig does not depend on an agent being connected.
 
 ## Create a connection
 
 1. A Space administrator opens **Manage Space → Agent access** and enables access. It starts disabled.
-2. Open **Personal menu → Agent connections**. Give the connection a recognisable name and select its Spaces.
+2. Open **Personal menu → Agent connections**. Give the connection a recognisable name and select its Spaces. Keep **Read only**, or choose **Allow agent work** explicitly. Existing read connections remain read-only after upgrading Dig.
 3. Create the connection and save the token in your password manager. Dig shows it once and stores only its hash. It expires after 30 days.
 
 The connection acts as your existing Dig identity. Third-party login remains the way you manage your account. Each connection has a stable ID; the token is the secret that proves access, rather than a public identifier being treated as a password.
@@ -38,19 +38,23 @@ bearer_token_env_var = "DIG_TOKEN"
 
 The desktop process must inherit `DIG_TOKEN` when it launches. Opening an already-running app from a terminal does not replace its environment; a Finder launch normally has a different environment from your shell. Configure the token through your supported Codex MCP settings or launch the executable from an environment supplied by your credential manager. Do not put the token itself in configuration. See [Codex MCP configuration](https://developers.openai.com/codex/mcp) for current client options.
 
-Actual desktop interaction remains a manual compatibility gate; CLI and independent-client results are recorded in the [implementation notes](implementation/slice-11-agent-read-access.md). Do not infer desktop verification from a shared configuration format.
+On 2026-09-17, the native Codex session successfully read the production COOL Space and COOL-1 Task through Dig MCP. The full desktop create/revoke workflow and multi-day absence checks remain release gates. CLI and independent-client results are recorded in the [implementation notes](implementation/slice-11-agent-read-access.md).
 
 ## Optional local skill
 
 Copy the bundled `skills/dig` directory into your personal Codex skills directory, usually `~/.codex/skills/dig`. Review an existing installation before replacing it. Restart or refresh Codex's skill discovery, then invoke `$dig show DIG-42`.
 
-The skill uses the configured MCP tools and contains no credentials. Its current mode reads context. `$dig work` does not claim or update work until later slices add those operations.
+The skill uses the configured MCP tools and contains no credentials. A bare key or `$dig show DIG-42` reads context. `$dig work DIG-42` starts a distinct run and claims the Task when the connection allows work. The claim lasts two hours and is renewed explicitly during active work. Each Subtask needs its own claim. Human changes remain possible; conflicts require a fresh read.
+
+The claim appears on the card and in Task details, including the delegating person, connection, expiry, and last check-in. The owner or a Space administrator can **Release claim**. This stops future Dig writes under that claim; it cannot stop an external coding process. Closing, archiving, or reassigning a Task also ends its claim.
+
+Keep the private run key and random start request ID in the original Codex session context for reconnects. They are separate from the public run ID shown in attribution. A new session must start its own run. Preserve local code after a lost claim and reread Dig before resuming. Task permission never grants permission to push code or deploy. Review handoff and blocker notifications are planned for Slice 13.
 
 ## Replace or revoke access
 
-**Replace token** invalidates the previous token immediately and starts a fresh 30-day lifetime. Save the new token and update the environment that launches Codex. It preserves the original selected Spaces and read-only scope.
+**Replace token** invalidates the previous token immediately and starts a fresh 30-day lifetime. Save the new token and update the environment that launches Codex. It preserves the original selected Spaces and permission. Create a new connection to opt into agent work; replacing a read token does not upgrade it. Replacement invalidates existing runs and claims.
 
-**Revoke** ends a connection immediately. To resume, create a new one. Removing a Member, disabling agent access, or archiving a Space prevents further reads. Re-inviting a Member or disabling and re-enabling access does not revive old grants; create a new connection to grant those Spaces again. Restoring an archived Space restores the grant if membership and policy have not changed.
+**Revoke** ends a connection immediately. To resume, create a new one. Removing a Member, disabling agent access, or archiving a Space prevents further reads. Re-inviting a Member or disabling and re-enabling access does not revive old grants; create a new connection to grant those Spaces again. Restoring an archived Space restores the grant if membership and policy have not changed, but old runs and claims stay invalid. Start a new run for new work.
 
 Last-use time means a request authenticated. It is not online status. No scheduled ping, heartbeat comment, or always-running listener is needed.
 

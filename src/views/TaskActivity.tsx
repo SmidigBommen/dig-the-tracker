@@ -34,7 +34,7 @@ export function TaskActivity({ session, state, disabled }: { session: BoardSessi
 function outcomeName(kind: Outcome['kind']) { return kind[0].toUpperCase() + kind.slice(1) }
 
 function HistoryEntry({ entry,session,references }: { entry: TaskHistoryEntry; session: BoardSession; references?: TaskReference[] }) {
-  return <li><p><strong>{entry.actor.displayName}</strong> {entry.summary}
+  return <li><p><strong>{entry.actor.displayName}{entry.agent ? ` via ${entry.agent.connectionName}` : ''}</strong> {entry.summary}
     {entry.fromColumn && entry.toColumn && <> from {entry.fromColumn.name} to {entry.toColumn.name}</>}
     {entry.outcome && <>: {outcomeName(entry.outcome.kind)}</>}
     {entry.previousOutcome && <> · Previously {outcomeName(entry.previousOutcome.kind)}</>}

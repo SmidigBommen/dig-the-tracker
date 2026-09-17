@@ -35,6 +35,6 @@ for (const project of ['chromium','firefox','webkit','phone']) {
 await mkdir('.test-artifacts',{ recursive: true })
 await writeFile('.test-artifacts/browser-sessions.json',JSON.stringify(fixtures),{ mode: 0o600 })
 const shutdown = new AbortController()
-const server = createTeamServer({ agents:new AgentModuleImplementation(db,board),identity,space,board,exports },loadConfig({ ALLOWED_ORIGINS: origin,STATIC_DIR: 'dist' }),async () => true,shutdown.signal)
+const server = createTeamServer({ agents:new AgentModuleImplementation(db,board,{runHmacSecret:secret}),identity,space,board,exports },loadConfig({ ALLOWED_ORIGINS: origin,STATIC_DIR: 'dist' }),async () => true,shutdown.signal)
 server.listen(5180,'127.0.0.1')
 process.on('SIGTERM',() => { shutdown.abort();server.close(async () => { await db.end() }) })

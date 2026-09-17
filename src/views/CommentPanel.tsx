@@ -15,7 +15,7 @@ export function CommentPanel({ session, state, disabled }: { session: BoardSessi
       <Button variant="secondary" disabled={disabled} onClick={() => session.useCurrentCommentRevision()}>{state.commentConflict.removedAt ? 'Keep my draft as a new comment' : 'Keep my draft using this revision'}</Button>
     </section>}
     <ol>{detail.comments?.items.map((comment) => <li key={comment.id}>
-      <header><strong>{comment.author.displayName}</strong> <time dateTime={comment.createdAt} title={comment.createdAt}>{new Date(comment.createdAt).toLocaleString()}</time>
+      <header><strong>{comment.author.displayName}{comment.agent ? ` via ${comment.agent.connectionName}` : ''}</strong> <time dateTime={comment.createdAt} title={comment.createdAt}>{new Date(comment.createdAt).toLocaleString()}</time>
         {comment.editedAt && <span title={comment.editedAt}>Edited</span>}</header>
       {comment.removedAt ? <p>Comment removed</p> : <><PlainText session={session} references={state.references} text={comment.text} /><p className="comment-mentions">{comment.mentions.map((member) => <MemberMention key={member.id} member={member} current={state.overview.members.find((current) => current.id === member.id)} />)}</p>
         {comment.author.id === state.overview.currentMemberId && <Button variant="ghost" disabled={disabled || Boolean(draft?.text || draft?.commentId)} onClick={() => session.editComment(comment)}>Edit comment</Button>}

@@ -42,9 +42,13 @@ function changes(value: unknown, capture: boolean): CaptureTask | TaskChanges {
 
 export function parseBoardChange(value: unknown): ChangeRequest {
   const body = object(value, ['requestId', 'command'])
-  const command = object(body.command, ['kind', 'input', 'task', 'changes', 'destination', 'closure', 'outcome', 'taskId', 'text', 'mentions', 'comment', 'notificationId', 'desired', 'expectedRevision'])
+  const command = object(body.command, ['kind', 'input', 'task', 'changes', 'destination', 'closure', 'outcome', 'taskId', 'text', 'mentions', 'comment', 'notificationId', 'desired', 'expectedRevision','claimId'])
   const requestId = string(body.requestId) as RequestId
   switch (command.kind) {
+    case 'release-task-claim': {
+      object(command,['kind','taskId','claimId'])
+      return {requestId,command:{kind:'release-task-claim',taskId:string(command.taskId) as TaskId,claimId:string(command.claimId)}}
+    }
     case 'set-workflow': {
       object(command, ['kind', 'expectedRevision', 'desired'])
       if (!Number.isSafeInteger(command.expectedRevision) || Number(command.expectedRevision) < 1) throw new InvalidBoardRequest('Invalid workflow revision')
