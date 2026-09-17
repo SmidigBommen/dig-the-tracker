@@ -844,6 +844,7 @@ export class BoardSession {
       if (fault.current?.kind === 'task') this.set({ conflict: fault.current.value, detail: fault.current.value })
     }
     if (fault.kind === 'conflict' && fault.reason === 'stale-comment') { error = 'This comment changed. Your draft is kept beside the current version.'; this.set({ commentConflict: fault.currentComment }) }
+    if(fault.kind==='configuration')error=fault.reason==='agent-work-disabled' ? 'Enable agent work and choose a review destination in Workflow settings.' : 'Choose an existing non-Completion review Column, or disable agent work before saving.'
     if (fault.kind === 'conflict' && fault.reason === 'claim-lost') error='This claim has expired or changed. Refresh the Task before trying again.'
     if (fault.kind === 'conflict' && fault.reason === 'stale-order') error = 'Another move changed this Column. The Board has been refreshed; choose the position again.'
     if (fault.kind === 'read-only') { error = 'This Space is read-only.'; this.set({ overview: { ...this.state.overview,

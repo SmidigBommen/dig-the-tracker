@@ -1,4 +1,4 @@
-import type { AgentWorkView } from '../../api/contracts/agents.js'
+import type { AgentReadView,AgentWorkView } from '../../api/contracts/agents.js'
 import { readFile } from 'node:fs/promises'
 import { test,expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
@@ -100,7 +100,7 @@ test('enable read-only agent access, save a token once, and revoke a connection'
   expect(denied.status()).toBe(401)
 })
 
-test('agent work appears live and a human can release its claim',async({page,context},info)=>{
+test('agent work, blocker reports, and review handoff appear live with human control',async({page,context},info)=>{
   const {Client,StreamableHTTPClientTransport}=await import('@modelcontextprotocol/client')
   const fixture=JSON.parse(await readFile('.test-artifacts/browser-sessions.json','utf8'))[info.project.name]
   await context.addCookies([{name:'dig_session',value:fixture.cookie,domain:'127.0.0.1',path:'/',httpOnly:true,sameSite:'Lax'}])
@@ -111,6 +111,12 @@ test('agent work appears live and a human can release its claim',async({page,con
   if(await enable.count())await enable.click()
   await expect(page.getByText('Agent access is enabled.',{exact:true})).toBeVisible()
   await page.getByRole('button',{name:'Back to Board',exact:true}).click()
+  await page.getByRole('button',{name:'Workflow settings',exact:true}).click()
+  await page.getByRole('checkbox',{name:'Enable agent work in this Space',exact:true}).check()
+  await page.getByRole('combobox',{name:'Review destination',exact:true}).selectOption({label:'In Progress'})
+  expect((await new AxeBuilder({page}).include('[role="dialog"]').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()).violations).toEqual([])
+  await page.getByRole('button',{name:'Save workflow',exact:true}).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
   await page.getByRole('button',{name:'Personal menu'}).click()
   await page.getByRole('button',{name:'Agent connections',exact:true}).click()
   await page.getByRole('textbox',{name:'Connection name',exact:true}).fill('Codex work test')
@@ -146,19 +152,6 @@ test('agent work appears live and a human can release its claim',async({page,con
     await expect(claim.getByText('Ada Tester via Codex work test')).toBeVisible()
     expect((await new AxeBuilder({page}).include('[role="dialog"]').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()).violations).toEqual([])
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
-    if(info.project.name==='chromium')for(const palette of ['Nature','Neutral','Tokyo Night'])for(const mode of ['Light','Dark']) {
-      await page.keyboard.press('Escape')
-      await page.getByRole('button',{name:'Personal menu'}).click()
-      await page.getByRole('button',{name:'Appearance',exact:true}).click()
-      await page.getByRole('radio',{name:palette,exact:true}).check()
-      await page.getByRole('radio',{name:mode,exact:true}).check()
-      await expect(page.getByText('Appearance saved',{exact:true})).toBeVisible()
-      await page.keyboard.press('Escape')
-      expect((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()).violations).toEqual([])
-      await card.click()
-      await expect(claim).toBeVisible()
-      expect((await new AxeBuilder({page}).include('[role="dialog"]').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()).violations).toEqual([])
-    }
     await claim.getByRole('button',{name:'Release claim',exact:true}).focus()
     await page.keyboard.press('Enter')
     await expect(claim).toHaveCount(0)
@@ -168,6 +161,51 @@ test('agent work appears live and a human can release its claim',async({page,con
     await page.getByRole('textbox',{name:'Title',exact:true}).press('Tab')
     await expect(page.getByText('All changes saved',{exact:true})).toBeVisible()
     // Reacquire, then revoke the connection and observe the other open tab.
+    expect((await call('dig_claim_task',{spaceKey:fixture.key,runId,runKey,requestId:crypto.randomUUID(),taskId:task.id})).ok).toBe(true)
+    await expect(claim).toBeVisible()
+    const readTask=async()=>{
+      const result=await client.callTool({name:'dig_get_task',arguments:{key:task.key}})
+      const view=(result.structuredContent as {value:AgentReadView}).value
+      if(view.kind!=='task')throw Error('Expected task')
+      return view.value
+    }
+    const blocked=await readTask()
+    expect((await call('dig_report_blocker',{spaceKey:fixture.key,runId,runKey,requestId:crypto.randomUUID(),taskId:task.id,claimId:blocked.claim!.id,expectedRevision:blocked.revision,report:{summary:'Missing test access',needed:'Please provide a test account'}})).ok).toBe(true)
+    await expect(claim).toHaveCount(0)
+    await expect(page.getByText('Agent blocker',{exact:true})).toBeVisible()
+    await expect(page.getByText(/Please provide a test account/)).toBeVisible()
+    expect((await call('dig_claim_task',{spaceKey:fixture.key,runId,runKey,requestId:crypto.randomUUID(),taskId:task.id})).ok).toBe(true)
+    const current=await readTask()
+    const workflow=(await client.callTool({name:'dig_get_workflow',arguments:{spaceKey:fixture.key}})).structuredContent as {value:AgentReadView}
+    if(workflow.value.kind!=='workflow')throw Error('Expected workflow')
+    expect((await call('dig_handoff_review',{spaceKey:fixture.key,runId,runKey,requestId:crypto.randomUUID(),taskId:task.id,claimId:current.claim!.id,expectedRevision:current.revision,expectedWorkflowRevision:workflow.value.value.revision,report:{summary:'Ready for your review',verification:{outcome:'not-run',details:'External test account unavailable'},limitations:'Please verify after test access is restored'}})).ok).toBe(true)
+    await expect(claim).toHaveCount(0)
+    await expect(page.getByText('Agent review handoff',{exact:true})).toBeVisible()
+    await expect(page.getByText(/Verification: Not run/)).toBeVisible()
+    await expect(page.getByRole('combobox',{name:'Column',exact:true})).toHaveValue(workflow.value.value.agentWork!.reviewColumnId!)
+    expect((await new AxeBuilder({page}).include('[role="dialog"]').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()).violations).toEqual([])
+    if(info.project.name==='chromium')for(const palette of ['Nature','Neutral','Tokyo Night'])for(const mode of ['Light','Dark']) {
+      await page.keyboard.press('Escape')
+      await page.getByRole('button',{name:'Personal menu'}).click()
+      await page.getByRole('button',{name:'Appearance',exact:true}).click()
+      await page.getByRole('radio',{name:palette,exact:true}).check()
+      await page.getByRole('radio',{name:mode,exact:true}).check()
+      await expect(page.getByText('Appearance saved',{exact:true})).toBeVisible()
+      await page.keyboard.press('Escape')
+      expect((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()).violations).toEqual([])
+      await page.getByRole('button',{name:'Workflow settings',exact:true}).click()
+      expect((await new AxeBuilder({page}).include('[role="dialog"]').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()).violations).toEqual([])
+      await page.keyboard.press('Escape')
+      await page.getByRole('button',{name:new RegExp(`${task.key}.*Human remains in control`)}).click()
+      await expect(page.getByText('Agent review handoff',{exact:true})).toBeVisible()
+      expect((await new AxeBuilder({page}).include('[role="dialog"]').withTags(['wcag2a','wcag2aa','wcag21aa','wcag22aa']).analyze()).violations).toEqual([])
+    }
+    await page.screenshot({path:`.test-artifacts/slice13-${info.project.name}.png`,fullPage:true})
+    await page.keyboard.press('Escape')
+    await page.getByRole('button',{name:/^Inbox/}).click()
+    await expect(page.getByText(/via Codex work test requested your review/)).toBeVisible()
+    await expect(page.getByText(/via Codex work test reported a blocker/)).toBeVisible()
+    await page.getByRole('button',{name:new RegExp(`Open ${task.key}:`)}).first().click()
     expect((await call('dig_claim_task',{spaceKey:fixture.key,runId,runKey,requestId:crypto.randomUUID(),taskId:task.id})).ok).toBe(true)
     await expect(claim).toBeVisible()
     const settings=await context.newPage()

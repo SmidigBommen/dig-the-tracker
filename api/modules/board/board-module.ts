@@ -1,9 +1,10 @@
+import { finishAgentReport } from './private-agent-reports.js'
 import { requireRun,changeClaim,authorizeAgentCommand } from './private-claims.js'
 import { readReferences } from './private-references.js'
 import { readFlow, readWorkload } from './private-reports.js'
 import { taskSummary, type TaskRow } from './private-task-summary.js'
 import { searchTasks } from './private-search.js'
-import { readWorkflow, setWorkflow } from './private-workflow.js'
+import { readWorkflow, setWorkflow, requireAgentWorkSettings } from './private-workflow.js'
 import { inboxPage, unreadCount, markNotificationsRead, notify } from './private-notifications.js'
 import { changeComment, commentPage, commentForClosure } from './private-comments.js'
 import { commitChange, appendUpdate } from './private-receipts.js'
@@ -223,7 +224,7 @@ export class BoardModuleImplementation implements BoardModule {
   ): Promise<Result<ChangeReceipt, BoardFault>> {
     const claims = inspectAuthorizedSpace(access)
     if (!claims || claims.use !== 'board-change') return { ok: false, fault: { kind: 'forbidden' } }
-    if (request.command.kind !== 'claim-task' && request.command.kind !== 'renew-task-claim' && request.command.kind !== 'release-task-claim' && request.command.kind !== 'set-workflow' && request.command.kind !== 'capture-task' && request.command.kind !== 'revise-task'
+    if (request.command.kind !== 'report-blocker' && request.command.kind !== 'handoff-review' && request.command.kind !== 'claim-task' && request.command.kind !== 'renew-task-claim' && request.command.kind !== 'release-task-claim' && request.command.kind !== 'set-workflow' && request.command.kind !== 'capture-task' && request.command.kind !== 'revise-task'
       && request.command.kind !== 'mark-notification-read' && request.command.kind !== 'mark-all-notifications-read' && request.command.kind !== 'revise-comment' && request.command.kind !== 'remove-comment' && request.command.kind !== 'add-comment' && request.command.kind !== 'change-outcome' && request.command.kind !== 'place-task' && request.command.kind !== 'archive-task' && request.command.kind !== 'restore-task') return { ok: false, fault: { kind: 'temporarily-unavailable' } }
     if (typeof request.requestId !== 'string' || !request.requestId || request.requestId.length > 100) {
       return { ok: false, fault: { kind: 'invalid', issues: [{ field: 'requestId', message: 'Use 1 to 100 characters.' }] } }
@@ -261,7 +262,7 @@ export class BoardModuleImplementation implements BoardModule {
           return { ok: true as const, value: previous.rows[0].response }
         }
         if(this.config.now)await client.query("select set_config('dig.claim_clock',$1,true)",[this.config.now().toISOString()])
-        if(claims.agent)await requireRun(client,claims)
+        if(claims.agent) {await requireAgentWorkSettings(client,claims.spaceId);await requireRun(client,claims)}
         if(command.kind==='claim-task' || command.kind==='renew-task-claim' || command.kind==='release-task-claim') {
           await changeClaim(client,claims,command,permitted.role,this.config.now?.() ?? new Date())
           const row=(await client.query<TaskRow>('select *, $3::text as space_key from team.tasks where space_id=$1 and id=$2',[claims.spaceId,command.taskId,permitted.space.space_key])).rows[0]
@@ -300,6 +301,7 @@ export class BoardModuleImplementation implements BoardModule {
           if (parent.rows[0].parent_task_id) return { ok: false as const,
             fault: { kind: 'rule-violation' as const, rule: 'subtask-depth' as const } }
         }
+        let reportComment:import('../../contracts/board.js').CommentView|undefined
         let events: TaskHistoryEntry[] = []
         let previousAssignee: string | null = null
         let row: TaskRow
@@ -351,6 +353,10 @@ export class BoardModuleImplementation implements BoardModule {
             }
             family = changed.rows
             row = family.find((task) => task.id === currentTask.id)!
+          } else if(command.kind==='report-blocker' || command.kind==='handoff-review') {
+            const reported=await finishAgentReport(client,claims.spaceId,claims.memberId,current.rows[0],command)
+            events=reported.events;reportComment=reported.comment
+            row=(await client.query<TaskRow>('select *, $3::text as space_key from team.tasks where space_id=$1 and id=$2',[claims.spaceId,current.rows[0].id,permitted.space.space_key])).rows[0]
           } else if (command.kind === 'place-task' || command.kind === 'change-outcome') {
             if (command.kind === 'place-task') {
               await placeTask(client, claims.spaceId, current.rows[0], command.destination)
@@ -408,7 +414,7 @@ export class BoardModuleImplementation implements BoardModule {
         if (command.kind === 'archive-task' && family.length <= 200) changes.push({ kind: 'tasks-archived', taskIds: family.map((task) => task.id as TaskId) })
         else if (command.kind === 'restore-task' && family.length <= 200) {
           for (const restored of family) changes.push({ kind: 'task-upserted', task: await taskSummary(client, restored), placement: await taskPlacement(client, claims.spaceId, restored.id) })
-        } else if (command.kind === 'capture-task' || command.kind === 'revise-task' || command.kind === 'place-task' || command.kind === 'change-outcome') changes.push({ kind: 'task-upserted', task, placement: await taskPlacement(client, claims.spaceId, task.id) })
+        } else if (command.kind === 'report-blocker' || command.kind === 'handoff-review' || command.kind === 'capture-task' || command.kind === 'revise-task' || command.kind === 'place-task' || command.kind === 'change-outcome') changes.push({ kind: 'task-upserted', task, placement: await taskPlacement(client, claims.spaceId, task.id) })
         if (command.kind === 'capture-task' || command.kind === 'archive-task' || command.kind === 'restore-task') {
           await client.query('update team.board_columns set order_revision = order_revision + 1 where space_id = $1 and id = any($2::uuid[])', [claims.spaceId, affectedOrderColumns])
         }
@@ -418,12 +424,13 @@ export class BoardModuleImplementation implements BoardModule {
             if (comment) changes.push({ kind: 'comment-upserted', taskId: task.id, comment })
           }
         }
+        if(reportComment)changes.push({kind:'comment-upserted',taskId:task.id,comment:reportComment})
         if (events.length) changes.push({ kind: 'history-appended', taskId: task.id, entries: events })
         const orders = await client.query<{ id: ColumnId; order_revision: Revision }>('select id, order_revision from team.board_columns where space_id = $1 and archived_at is null', [claims.spaceId])
         for (const column of orders.rows) changes.push({ kind: 'column-order-revised', columnId: column.id, revision: column.order_revision })
         const counts = await boardCounts(client, claims.spaceId)
         const warnings: BoardWarning[] = []
-        if (command.kind === 'place-task') {
+        if (command.kind === 'place-task' || command.kind==='handoff-review') {
           const destination = await client.query<{ flow_role: string; wip_limit: number | null }>(
             'select flow_role, wip_limit from team.board_columns where space_id = $1 and id = $2', [claims.spaceId, row.column_id])
           const column = destination.rows[0]
@@ -439,7 +446,7 @@ export class BoardModuleImplementation implements BoardModule {
         }
         changes.push({ kind: 'board-counts-revised', counts })
         const receipt = await commitChange(client, claims.spaceId, claims.memberId, request, requestHash,
-          { kind: command.kind, taskId: task.id }, changes, warnings)
+          { kind: command.kind, taskId: task.id,...(reportComment ? {commentId:reportComment.id} : {}) }, changes, warnings)
         return { ok: true as const, value: receipt }
       })
     } catch (error) {

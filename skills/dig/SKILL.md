@@ -5,7 +5,7 @@ description: Read, search, or work on Tasks in Dig through its configured MCP co
 
 # Dig
 
-This release supports reads and explicitly granted, claim-protected Task updates. The user connects an external Codex session when needed; no Board watcher or background agent is required.
+This release supports reads and explicitly granted, claim-protected Task updates, blocker reports, and human review handoff. The user connects an external Codex session when needed; no Board watcher or background agent is required.
 
 1. For a Task key, call `dig_get_task` directly. For a search, use `dig_list_spaces` if the Space is unknown, then `dig_search_tasks`. Default to open work unless the user requests closed or archived context.
 2. Read the returned discussion, history, and Subtasks relevant to the request. Follow each page's `next` cursor when more context is needed; request at most 50 items. On `cursor-expired`, restart that read and reconcile the current result.

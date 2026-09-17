@@ -27,6 +27,7 @@ export function SpaceAgentSettings({ spaceKey,csrfToken }:{spaceKey:string;csrfT
   return <section className="space-settings" aria-labelledby="space-agent-title">
     <h2 id="space-agent-title">Agent access</h2>
     <p>Allow Members to create personal connections for this Space. Members explicitly choose read access or claim-protected work. Agents are optional and do not run inside Dig.</p>
+    <p>Enable agent work and select its review destination in Workflow settings on the Board.</p>
     <p role="status">{settings ? `Agent access is ${settings.enabled ? 'enabled' : 'disabled'}.` : 'Loading agent settings…'}</p>
     {settings && (confirm ? <div className="agent-confirm"><p>Disable agent access? Existing connections will lose access to this Space immediately. Re-enabling requires Members to create new connections.</p><div className="agent-actions"><Button variant="danger" disabled={busy} onClick={()=>void change()}>Confirm disable</Button><Button disabled={busy} onClick={()=>setConfirm(false)}>Cancel</Button></div></div>
       : <Button disabled={busy} onClick={()=>settings.enabled ? setConfirm(true) : void change()}>{settings.enabled ? 'Disable agent access' : 'Enable agent access'}</Button>)}

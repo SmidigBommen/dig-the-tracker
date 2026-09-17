@@ -52,7 +52,11 @@ export function parseBoardChange(value: unknown): ChangeRequest {
     case 'set-workflow': {
       object(command, ['kind', 'expectedRevision', 'desired'])
       if (!Number.isSafeInteger(command.expectedRevision) || Number(command.expectedRevision) < 1) throw new InvalidBoardRequest('Invalid workflow revision')
-      const desired = object(command.desired, ['columns'])
+      const desired = object(command.desired, ['columns','agentWork'])
+      if(desired.agentWork!==undefined) {
+        const work=object(desired.agentWork,['enabled','reviewColumnId'])
+        if(typeof work.enabled!=='boolean' || (work.reviewColumnId!==null && typeof work.reviewColumnId!=='string'))throw new InvalidBoardRequest('Invalid agent work settings')
+      }
       if (!Array.isArray(desired.columns) || desired.columns.length > 200) throw new InvalidBoardRequest('Invalid workflow')
       for (const value of desired.columns) {
         const column = object(value, ['id', 'name', 'flowRole', 'intake', 'completion', 'wipLimit'])

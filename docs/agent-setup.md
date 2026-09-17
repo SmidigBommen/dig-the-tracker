@@ -1,10 +1,10 @@
 # Connect Codex to Dig
 
-Dig provides read-only MCP access by default and optional claim-protected agent work. Codex can read selected Spaces, Tasks, discussion, history, Tags, and workflow. A connection with explicit work permission can create and claim Tasks, edit their text and Tags, add comments, and move progress. It cannot close Tasks, perform review handoff, read your inbox, or administer Dig. You can close Codex whenever you like; Dig does not depend on an agent being connected.
+Dig provides read-only MCP access by default and optional claim-protected agent work. Codex can read selected Spaces, Tasks, discussion, history, Tags, and workflow. A connection with explicit work permission can create and claim Tasks, edit their text and Tags, add comments, move progress, report blockers, and hand work back for human review. It cannot close Tasks, read your inbox, or administer Dig. You can close Codex whenever you like; Dig does not depend on an agent being connected.
 
 ## Create a connection
 
-1. A Space administrator opens **Manage Space → Agent access** and enables access. It starts disabled.
+1. A Space administrator opens **Manage Space → Agent access** and enables access. It starts disabled. For agent work, also open **Workflow settings**, choose an existing non-Completion **Review destination**, and enable **Agent work**.
 2. Open **Personal menu → Agent connections**. Give the connection a recognisable name and select its Spaces. Keep **Read only**, or choose **Allow agent work** explicitly. Existing read connections remain read-only after upgrading Dig.
 3. Create the connection and save the token in your password manager. Dig shows it once and stores only its hash. It expires after 30 days.
 
@@ -48,7 +48,9 @@ The skill uses the configured MCP tools and contains no credentials. A bare key 
 
 The claim appears on the card and in Task details, including the delegating person, connection, expiry, and last check-in. The owner or a Space administrator can **Release claim**. This stops future Dig writes under that claim; it cannot stop an external coding process. Closing, archiving, or reassigning a Task also ends its claim.
 
-Keep the private run key and random start request ID in the original Codex session context for reconnects. They are separate from the public run ID shown in attribution. A new session must start its own run. Preserve local code after a lost claim and reread Dig before resuming. Task permission never grants permission to push code or deploy. Review handoff and blocker notifications are planned for Slice 13.
+Keep the private run key and random start request ID in the original Codex session context for reconnects. They are separate from the public run ID shown in attribution. A new session must start its own run. Preserve local code after a lost claim and reread Dig before resuming. Task permission never grants permission to push code or deploy. Use `dig_report_blocker` to record the problem and help needed, notify you, and release the claim without moving the Task. Use `dig_handoff_review` to post changes, verification results, limitations, and an optional PR or commit reference; move to the configured review Column; notify you; and release the claim together. A failed or unrun check is labelled honestly. Humans decide completion. Ordinary agent moves into the configured review destination are rejected.
+
+After upgrading from Slice 12, agent work pauses until an administrator chooses a review destination and enables work in Workflow settings. Existing temporary claims end; Tasks, assignments, connections, and read access remain. Disabling work later also ends claims. Reenabling it requires fresh claims. Changing or archiving the review Column requires a valid replacement or disabling work in the same save.
 
 ## Replace or revoke access
 
@@ -63,6 +65,8 @@ Last-use time means a request authenticated. It is not online status. No schedul
 - **401:** missing, expired, replaced, or revoked token. Check Agent connections, then restart Codex with the correct token environment variable.
 - **403 / Space unavailable:** verify membership, the selected Spaces, and the administrator's Agent access setting. Create a new connection after membership or policy invalidation.
 - **429:** wait for `Retry-After`. Adding connections does not increase the person's request allowance.
+- **Agent work disabled / review destination invalid:** a Space administrator must configure Workflow settings.
+- **Stale workflow during handoff:** keep the report, reread the current workflow, and reconcile the destination before retrying with a new request ID. After a lost response, retry the original ID and arguments first.
 - **Cursor expired:** the Board changed while paging. Restart the search or discussion page.
 - **Request or response too large:** reduce page sizes. Each read accepts at most 50 items per page.
 

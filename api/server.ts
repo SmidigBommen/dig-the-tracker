@@ -742,6 +742,7 @@ function mapFault(fault: HttpFault): { status: number; message: string } {
     case 'forbidden': return { status: 403, message: 'Not allowed' }
     case 'not-found': return { status: 404, message: 'Not found' }
     case 'read-only': return { status: 409, message: 'This Space is read-only' }
+    case 'configuration': return {status:409,message:fault.reason==='agent-work-disabled' ? 'Enable agent work and choose a review Column in Workflow settings.' : 'Choose an existing non-Completion review Column, or disable agent work.'}
     case 'conflict': return {
       status: 409,
       message: 'reason' in fault && fault.reason === 'space-key-unavailable'

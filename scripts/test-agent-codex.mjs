@@ -15,7 +15,8 @@ import { BoardModuleImplementation } from '../api-dist/modules/board/board-modul
 import { AgentModuleImplementation } from '../api-dist/modules/agent/agent-module.js'
 import { SpaceExportModuleImplementation } from '../api-dist/modules/export/export-module.js'
 import { MockOidcAdapter } from '../api-dist/adapters/oidc/mock-oidc-adapter.js'
-const workMode=process.env.DIG_MCP_WORK_TEST==='1'
+const handoffMode=process.env.DIG_MCP_HANDOFF_TEST==='1'
+const workMode=handoffMode || process.env.DIG_MCP_WORK_TEST==='1'
 const url=process.env.DIG_MCP_DATABASE_URL
 if(!url || new URL(url).pathname!=='/dig_mcp' || !['127.0.0.1','localhost'].includes(new URL(url).hostname))throw Error('Use a disposable loopback dig_mcp database')
 const unwrap=result=>{ if(!result.ok)throw Error(`Fixture failed: ${result.fault.kind}`);return result.value }
@@ -34,6 +35,11 @@ try {
   const session=unwrap(await identity.session({kind:'resolve',use:'read',evidence:{sessionSecret:signed.session.sessionSecret}}))
   const created=unwrap(await space.change(session.identity,{requestId:randomUUID(),command:{kind:'create-space',input:{key:'DIG',displayName:'Disposable MCP check',timeZone:'Europe/Oslo'}}}))
   const access=unwrap(await space.authorize(session.identity,{use:'board-change',space:{kind:'key',spaceKey:'DIG'}}))
+  if(workMode) {
+    const read=unwrap(await space.authorize(session.identity,{use:'board-read',space:{kind:'key',spaceKey:'DIG'}}))
+    const workflow=unwrap(await board.read(read,{kind:'workflow'})).value
+    unwrap(await board.change(access,{requestId:randomUUID(),command:{kind:'set-workflow',expectedRevision:workflow.revision,desired:{columns:workflow.columns,agentWork:{enabled:true,reviewColumnId:workflow.columns.find(c=>c.flowRole==='active').id}}}}))
+  }
   const title=`Read proof ${randomUUID()}`
   unwrap(await board.change(access,{requestId:randomUUID(),command:{kind:'capture-task',input:{title,description:'Disposable local integration fixture.'}}}))
   unwrap(await agents.manage(session.identity,{kind:'set-space-access',spaceKey:'DIG',enabled:true,expectedRevision:1}))
@@ -51,7 +57,7 @@ try {
   await writeFile(join(codexHome,'config.toml'),`[mcp_servers.dig]\nurl = "${origin}/mcp"\nbearer_token_env_var = "DIG_TOKEN"\n`,{mode:0o600})
   await cp(resolve('skills/dig'),join(workspace,'.agents/skills/dig'),{recursive:true})
   const marker=`Verified work ${randomUUID()}`
-  const prompt=workMode ? `$dig work DIG-1. This is a disposable local MCP integration check in an empty temporary workspace. Read and claim the Task, set its description to exactly "${marker}", add a comment with exactly "${marker}", then release the claim. Report the exact original Task title. No code changes, shell commands, push, or deployment are needed.` : '$dig show DIG-1. Read it through the configured Dig MCP tool and report its exact title. Do not use shell commands or change anything.'
+  const prompt=handoffMode ? `$dig work DIG-1. This is a disposable local MCP integration check in an empty temporary workspace. Read and claim the Task, set its description to exactly "${marker}", report a blocker explaining test access is missing and asking for a test account. Then simulate the person supplying access: reread and reclaim the Task, and hand it off for human review. Report verification as not-run because this fixture has no code or tests; use "${marker}" as the handoff summary. Report the exact original Task title. No shell commands, code changes, push, or deployment are needed.` : workMode ? `$dig work DIG-1. This is a disposable local MCP integration check in an empty temporary workspace. Read and claim the Task, set its description to exactly "${marker}", add a comment with exactly "${marker}", then release the claim. Report the exact original Task title. No code changes, shell commands, push, or deployment are needed.` : '$dig show DIG-1. Read it through the configured Dig MCP tool and report its exact title. Do not use shell commands or change anything.'
   const child=spawn('codex',['exec','--ephemeral','--skip-git-repo-check','--sandbox','read-only','-C',workspace,'--output-last-message',output,prompt],{
     env:{...process.env,CODEX_HOME:codexHome,DIG_TOKEN:issued.token},stdio:['ignore','pipe','pipe'],
   })
@@ -70,8 +76,9 @@ try {
   if(workMode) {
     const principal=unwrap(await agents.authenticate(issued.token))
     const task=unwrap(await agents.read(principal,{kind:'task',key:'DIG-1'})).value
-    if(task.description!==marker || task.claim!==null || !task.comments.items.some(comment=>comment.text===marker && comment.agent))throw Error('Codex work did not update, attribute, and release the Task')
-    for(const command of ['start-run','claim-task','revise-task','add-comment','release-task-claim'])if(!seen.some(call=>call.work===command && call.ok))throw Error(`Missing successful work call: ${command}`)
+    if(task.description!==marker || task.claim!==null || !task.comments.items.some(comment=>(handoffMode ? comment.reportKind==='review' && comment.text.includes(marker) : comment.text===marker) && comment.agent))throw Error('Codex work did not update, attribute, and release the Task')
+    if(handoffMode && (!task.comments.items.some(comment=>comment.reportKind==='blocked') || !task.comments.items.some(comment=>comment.text.includes('Verification: Not run'))))throw Error('Missing truthful handoff or blocker report')
+    for(const command of ['start-run','claim-task','revise-task',...(handoffMode ? ['report-blocker','handoff-review'] : ['add-comment','release-task-claim'])])if(!seen.some(call=>call.work===command && call.ok))throw Error(`Missing successful work call: ${command}`)
   }
   console.info(JSON.stringify({event:'codex-mcp-proof',passed:true,calls:seen}))
   unwrap(await agents.manage(session.identity,{kind:'revoke',id:issued.connection.id}))

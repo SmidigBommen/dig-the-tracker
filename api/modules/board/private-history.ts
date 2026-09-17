@@ -17,6 +17,7 @@ interface EventRow {
 
 function entry(row: EventRow): TaskHistoryEntry {
   const summaries: Record<string, string> = {
+    'agent-blocked':'Reported a blocker and released the claim','agent-review':'Handed off for human review and released the claim',
     'claim-task':'Claimed Task for agent work','release-task-claim':'Released agent claim',
     'comment-added': 'Added comment', 'comment-edited': 'Edited comment', 'comment-removed': 'Removed comment', 'comment-moderated': 'Removed comment as administrator',
     'capture-task': 'Created Task', 'revise-task': 'Edited Task', 'archive-task': 'Archived Task',

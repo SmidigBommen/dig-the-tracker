@@ -113,7 +113,8 @@ export interface WorkloadView {
 export interface NotificationView {
   id: NotificationId
   read: boolean
-  kind: 'assignment' | 'mention' | 'comment'
+  kind: 'assignment' | 'mention' | 'comment' | 'agent-blocked' | 'agent-review'
+  agent?: AgentAttribution
   task: { id: TaskId; key: TaskKey; title: string }
   actor: { id: MemberId; displayName: string }
   createdAt: Instant
@@ -181,9 +182,15 @@ export interface WorkflowColumnPlan {
   completion: boolean
   wipLimit: number | null
 }
-export interface WorkflowPlan { columns: WorkflowColumnPlan[] }
+export interface AgentWorkSettings { enabled: boolean; reviewColumnId: ColumnId | null }
+export interface WorkflowPlan { columns: WorkflowColumnPlan[]; agentWork?: AgentWorkSettings }
 
+export const agentReportLimits={summary:1500,needed:3000,verification:1500,limitations:1000,reference:500} as const
+export interface BlockerReport { summary: string; needed: string }
+export interface ReviewReport { summary: string; verification: { outcome: 'passed' | 'failed' | 'not-run'; details: string }; limitations: string; reference?: string }
 export type BoardCommand =
+  | {kind:'report-blocker'; task:VersionedTask; report:BlockerReport; mentions:MemberId[]}
+  | {kind:'handoff-review'; task:VersionedTask; expectedWorkflowRevision:Revision; report:ReviewReport; mentions:MemberId[]}
   | {kind:'claim-task';taskId:TaskId}
   | {kind:'renew-task-claim';taskId:TaskId;claimId:string}
   | {kind:'release-task-claim';taskId:TaskId;claimId:string}
@@ -218,9 +225,10 @@ export interface WorkflowColumnView extends WorkflowColumnPlan {
   orderRevision: Revision
   taskCount: number
 }
-export interface WorkflowView { revision: Revision; columns: WorkflowColumnView[] }
+export interface WorkflowView { revision: Revision; columns: WorkflowColumnView[]; agentWork?: AgentWorkSettings }
 export interface MemberSummary { id: MemberId; displayName: string; role: BoardMemberView['role'] }
 export interface CommentView {
+  reportKind?: 'blocked' | 'review'
   agent?: AgentAttribution
   id: CommentId
   text: string
@@ -276,11 +284,12 @@ export type BoardFeedItem =
   | { kind: 'closed'; reason: 'access-revoked' | 'space-archived' | 'server-draining' }
 
 export type BoardFault =
+  | { kind: 'configuration'; reason: 'agent-work-disabled' | 'review-column-invalid' }
   | { kind: 'invalid'; issues: FieldIssue[] }
   | { kind: 'not-found' }
   | { kind: 'forbidden' }
   | { kind: 'read-only'; reason: 'space-archived' | 'deletion-scheduled' }
-  | { kind: 'conflict'; reason: 'stale-task' | 'stale-comment' | 'stale-order' | 'stale-workflow' | 'request-id-reused' | 'task-claimed' | 'claim-lost' | 'assigned-to-another-member' | 'run-invalid'; current?: BoardView; currentComment?: CommentView }
+  | { kind: 'conflict'; reason: 'stale-task' | 'stale-comment' | 'stale-order' | 'stale-workflow' | 'request-id-reused' | 'task-claimed' | 'claim-lost' | 'assigned-to-another-member' | 'run-invalid' | 'review-handoff-required'; current?: BoardView; currentComment?: CommentView }
   | { kind: 'rule-violation'; rule: 'subtask-depth' | 'column-not-empty' | 'intake-required' | 'completion-required' | 'active-wip-limit-required' | 'closure-required' | 'duplicate-target-invalid' }
   | { kind: 'cursor-expired' }
   | { kind: 'rate-limited'; retryAfterSeconds: number }

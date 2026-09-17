@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { WorkflowColumnPlan } from '../../api/contracts/board.ts'
+import type { WorkflowColumnPlan,AgentWorkSettings } from '../../api/contracts/board.ts'
 import type { BoardSession, BoardSessionState } from '../board-session/board-session.ts'
 import { Button } from '../ui/Button.tsx'
 import { Dialog } from '../ui/Dialog.tsx'
@@ -10,6 +10,8 @@ type DraftColumn = WorkflowColumnPlan & { key: string; taskCount: number }
 export function WorkflowEditor({ session, state }: { session: BoardSession; state: BoardSessionState }) {
   const workflow = state.workflow!
   const [columns, setColumns] = useState<DraftColumn[]>(() => workflow.columns.filter((column) => !column.archived).map((column) => ({ ...column, key: column.id })))
+  const [agentWork,setAgentWork]=useState<AgentWorkSettings>(()=>workflow.agentWork ?? {enabled:false,reviewColumnId:null})
+  const validAgentWork=!agentWork.enabled || columns.some(column=>column.id && column.id===agentWork.reviewColumnId && column.flowRole!=='complete')
   const administrator = state.overview.members.find((member) => member.id === state.overview.currentMemberId)?.role === 'space-administrator'
   const disabled = state.busy || !state.connected || Boolean(state.pendingAction) || !administrator || state.overview.space.lifecycle !== 'active'
   const stale = workflow.revision !== state.overview.board.workflowRevision
@@ -25,8 +27,8 @@ export function WorkflowEditor({ session, state }: { session: BoardSession; stat
   return <Dialog title="Workflow" onClose={() => session.closeWorkflow()}>
     <form className="workflow-editor" onSubmit={(event) => {
       event.preventDefault()
-      if (disabled || !valid || stale) return
-      void session.saveWorkflow(workflow.revision, { columns: columns.map(({ id, name, flowRole, intake, completion, wipLimit }) => ({ id, name, flowRole, intake, completion, wipLimit })) })
+      if (disabled || !valid || !validAgentWork || stale) return
+      void session.saveWorkflow(workflow.revision, { agentWork, columns: columns.map(({ id, name, flowRole, intake, completion, wipLimit }) => ({ id, name, flowRole, intake, completion, wipLimit })) })
     }}>
       <h2>Shape your workflow</h2>
       <p className="workflow-intro">Changes apply together when you save. Empty a Column before changing its role, Intake status, or archiving it.</p>
@@ -56,6 +58,17 @@ export function WorkflowEditor({ session, state }: { session: BoardSession; stat
           <ul>{archived.map((column) => <li key={column.id}><div><strong>{column.name}</strong><span>{column.flowRole}{column.wipLimit ? ` · WIP limit ${column.wipLimit}` : ''}{!column.archived ? ' · Archive on save' : ''}</span></div>
             <Button onClick={() => setColumns((items) => [...items, { ...column, key: column.id }])} aria-label={`Restore Column ${column.name}`}>Restore</Button>
           </li>)}</ul></details>}
+        <section className="workflow-agent-settings" aria-labelledby="workflow-agent-title">
+          <h3 id="workflow-agent-title">Agent work</h3>
+          <label className="workflow-intake"><input type="checkbox" checked={agentWork.enabled} onChange={event=>setAgentWork(previous=>({...previous,enabled:event.target.checked}))} />Enable agent work in this Space</label>
+          <label>Review destination<select aria-label="Review destination" value={agentWork.reviewColumnId ?? ''} onChange={event=>setAgentWork(previous=>({...previous,reviewColumnId:(event.target.value || null) as AgentWorkSettings['reviewColumnId']}))}>
+            <option value="">Choose a Column</option>
+            {columns.filter(column=>column.id && column.flowRole!=='complete').map(column=><option key={column.id} value={column.id}>{column.name}</option>)}
+          </select></label>
+          <p>Agent handoff posts a report, moves here, notifies the delegating person, and releases the claim. A human decides completion. Save new Columns before choosing them here.</p>
+          {!agentWork.enabled && workflow.agentWork?.enabled && <p>Saving with agent work disabled ends existing claims. Read access remains available.</p>}
+          {!validAgentWork && <p role="status">Choose an existing non-Completion Column, or disable agent work before saving.</p>}
+        </section>
       </fieldset>
       {!valid && <p className="workflow-help" role="status">Choose exactly one Queue Column as Intake and one Complete Column. Name every Column and set a positive limit for each Active Column.</p>}
       {stale && <p className="workflow-help" role="status">The workflow changed while you were editing. Reload the current workflow to continue.</p>}
@@ -64,7 +77,7 @@ export function WorkflowEditor({ session, state }: { session: BoardSession; stat
         <Button variant="ghost" disabled={state.busy || Boolean(state.pendingAction)} onClick={() => session.closeWorkflow()}>Cancel</Button>
         {(stale || state.error) && <Button disabled={state.busy || Boolean(state.pendingAction)} onClick={() => void session.openWorkflow()}>Reload current workflow</Button>}
         {state.pendingAction ? <Button disabled={!state.connected || state.busy} onClick={() => void session.retryPendingChange()}>Retry pending change</Button>
-          : <Button variant="primary" type="submit" disabled={disabled || !valid || stale}>{state.busy ? 'Saving…' : 'Save workflow'}</Button>}
+          : <Button variant="primary" type="submit" disabled={disabled || !valid || !validAgentWork || stale}>{state.busy ? 'Saving…' : 'Save workflow'}</Button>}
       </div>
     </form>
   </Dialog>

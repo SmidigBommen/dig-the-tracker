@@ -40,6 +40,11 @@ run('Slice 12 agent work',() => {
     const app=await signIn()
     const created=value(await app.space.change(app.who,{ requestId: randomUUID() as RequestId,command: { kind: 'create-space',input: { key: 'DIG',displayName: 'Agent test',timeZone: 'Europe/Oslo' } } }))
     if(created.result.kind!=='space-created')throw Error('Expected Space')
+    const read=value(await app.space.authorize(app.who,{use:'board-read',space:{kind:'key',spaceKey:'DIG' as SpaceKey}}))
+    const workflow=value(await app.board.read(read,{kind:'workflow'}))
+    if(workflow.kind!=='workflow')throw Error('Expected workflow')
+    const write=value(await app.space.authorize(app.who,{use:'board-change',space:{kind:'key',spaceKey:'DIG' as SpaceKey}}))
+    value(await app.board.change(write,{requestId:randomUUID() as RequestId,command:{kind:'set-workflow',expectedRevision:workflow.value.revision,desired:{columns:workflow.value.columns,agentWork:{enabled:true,reviewColumnId:workflow.value.columns.find(c=>c.intake)!.id}}}}))
     return { ...app,spaceId: created.result.space.id }
   }
 
@@ -267,7 +272,7 @@ run('Slice 12 agent work',() => {
     const client=new Client({name:'work-test',version:'1'})
     try {
       await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`),{authProvider:{token:async()=>app.issued.token}}))
-      expect((await client.listTools()).tools).toHaveLength(14)
+      expect((await client.listTools()).tools).toHaveLength(16)
       const result=await client.callTool({name:'dig_create_task',arguments:{spaceKey:'DIG',runId:app.run.id,runKey:app.run.runKey,requestId:randomUUID(),title:'MCP write'}})
       expect(result.structuredContent).toMatchObject({ok:true,value:{kind:'changed'}})
       const task=await app.read()

@@ -8,6 +8,7 @@ import { BoardRejection, decodeCursor, encodeCursor, pageSize } from './private-
 
 interface CommentRow {
   agent_attribution: CommentView['agent'] | null
+  agent_report_kind:CommentView['reportKind']|null
   id: CommentId
   ordering_key: string
   task_id: string
@@ -30,7 +31,7 @@ const commentQuery = `select comment.*, identity.display_name,
   join team.identities identity on identity.id = member.identity_id`
 
 function commentView(row: CommentRow): CommentView {
-  return { ...(row.agent_attribution ? {agent:row.agent_attribution} : {}),id: row.id, text: row.text, revision: row.revision, mentions: row.mentions,
+  return { ...(row.agent_report_kind && !row.removed_at ? {reportKind:row.agent_report_kind} : {}),...(row.agent_attribution ? {agent:row.agent_attribution} : {}),id: row.id, text: row.text, revision: row.revision, mentions: row.mentions,
     author: { id: row.author_member_id, displayName: row.display_name }, createdAt: row.created_at.toISOString() as Instant,
     editedAt: row.edited_at?.toISOString() as Instant ?? null, removedAt: row.removed_at?.toISOString() as Instant ?? null }
 }
@@ -45,14 +46,14 @@ export async function commentPage(client: DbClient, spaceId: string, taskId: str
   return { items: rows.map(commentView), ...(result.rows.length > size ? { next: encodeCursor(scope, sequence, rows.at(-1)!.ordering_key) } : {}) }
 }
 
-export async function addComment(client: DbClient, spaceId: string, taskId: string, actorId: string, text: string, mentions: MemberId[] = []): Promise<CommentView> {
+export async function addComment(client: DbClient, spaceId: string, taskId: string, actorId: string, text: string, mentions: MemberId[] = [],reportKind?:CommentView['reportKind']): Promise<CommentView> {
   validateCommentText(text)
   const task = await client.query<{ archived_at: Date | null; assignee_id: string | null }>('select archived_at, assignee_id from team.tasks where space_id = $1 and id::text = $2', [spaceId, taskId])
   if (!task.rows[0]) throw new BoardRejection({ kind: 'not-found' })
   if (task.rows[0].archived_at) throw new BoardRejection({ kind: 'invalid', issues: [{ field: 'task', message: 'Restore the Task before commenting.' }] })
   await validateMentions(client, spaceId, mentions)
-  const created = await client.query<{ id: string }>(`insert into team.task_comments (space_id, task_id, author_member_id, text,agent_attribution)
-    values ($1,$2,$3,$4,nullif(current_setting('dig.agent_attribution',true),'')::jsonb) returning id`, [spaceId, taskId, actorId, text])
+  const created = await client.query<{ id: string }>(`insert into team.task_comments (space_id, task_id, author_member_id, text,agent_report_kind,agent_attribution)
+    values ($1,$2,$3,$4,$5,nullif(current_setting('dig.agent_attribution',true),'')::jsonb) returning id`, [spaceId, taskId, actorId, text,reportKind ?? null])
   await bindMentions(client, spaceId, created.rows[0].id, mentions)
   const recipients: Array<{ memberId: string; kind: 'mention' | 'comment' }> = [...new Set(mentions)].map((memberId) => ({ memberId, kind: 'mention' }))
   if (task.rows[0].assignee_id && !mentions.includes(task.rows[0].assignee_id as MemberId)) recipients.push({ memberId: task.rows[0].assignee_id, kind: 'comment' })

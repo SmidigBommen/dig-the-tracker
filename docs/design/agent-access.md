@@ -1,6 +1,6 @@
 # Agent access to Dig
 
-Status: product decisions agreed through the 2026-09-16 interview. Slice 11 read access is implemented locally; desktop verification remains open. Claims, writes, and handoff remain planned in Slices 12–14. See [implementation evidence](../implementation/slice-11-agent-read-access.md). [The interview record](agent-access-interview.md) preserves Q1–Q26 and the operator's clarification that agents are not always watching. [Standards research](../research/agent-access-mcp-api.md) separates verified protocol facts from recommendations.
+Status: product decisions agreed through the 2026-09-16 interview. Slices 11 through 13 implement reads, claims, writes, blockers, and review handoff locally. Slice 14 combined client and extended-absence verification remains open. See [handoff implementation evidence](../implementation/slice-13-agent-handoff.md). [The interview record](agent-access-interview.md) preserves Q1–Q26 and the operator's clarification that agents are not always watching. [Standards research](../research/agent-access-mcp-api.md) separates verified protocol facts from recommendations.
 
 ## User outcome
 

@@ -1,5 +1,5 @@
 import type { DbClient } from '../../db.js'
-import type { WorkflowPlan, WorkflowView, WorkflowColumnView } from '../../contracts/board.js'
+import type { WorkflowPlan, WorkflowView, WorkflowColumnView, AgentWorkSettings } from '../../contracts/board.js'
 import type { ColumnId, Revision } from '../shared.js'
 import { BoardRejection } from './private-cursors.js'
 
@@ -17,7 +17,7 @@ async function rows(client: DbClient, spaceId: string) {
 
 export async function readWorkflow(client: DbClient, spaceId: string): Promise<WorkflowView> {
   const board = await client.query<{ workflow_revision: Revision }>('select workflow_revision from team.boards where space_id = $1', [spaceId])
-  return { revision: board.rows[0].workflow_revision, columns: (await rows(client, spaceId)).map((row) => ({
+  return { revision: board.rows[0].workflow_revision, agentWork: await readAgentWorkSettings(client,spaceId), columns: (await rows(client, spaceId)).map((row) => ({
     id: row.id, name: row.name, flowRole: row.flow_role, intake: row.is_intake, completion: row.is_completion,
     wipLimit: row.wip_limit, archived: Boolean(row.archived_at), position: row.position,
     revision: row.revision, orderRevision: row.order_revision, taskCount: row.task_count,
@@ -60,6 +60,12 @@ export async function setWorkflow(client: DbClient, spaceId: string, identityId:
       invalid('Restore an archived Column with its previous role and WIP limit before changing it.')
     }
   }
+  const previousAgentWork=await readAgentWorkSettings(client,spaceId)
+  const agentWork=desired.agentWork ?? previousAgentWork
+  if(!agentWork || typeof agentWork.enabled!=='boolean' || (agentWork.reviewColumnId!==null && typeof agentWork.reviewColumnId!=='string'))invalid('Choose valid agent work settings.')
+  const review=columns.find(column=>column.id===agentWork.reviewColumnId)
+  const validReview=Boolean(review?.id && review.flowRole!=='complete' && !review.completion)
+  if(agentWork.enabled && !validReview)throw new BoardRejection({kind:'configuration',reason:'review-column-invalid'})
   // All checks precede writes; the Board lock serializes edits and Task movement.
   // Temporary negative positions and cleared flags make terminal replacement atomic.
   await client.query(`with positions as (select id, -1000000 - row_number() over (order by id)::int as position
@@ -88,9 +94,21 @@ export async function setWorkflow(client: DbClient, spaceId: string, identityId:
     previous_wip_limit=case when flow_role='complete' then previous_wip_limit else wip_limit end,
     revision=revision + case when archived_at is null then 1 else 0 end,
     order_revision=order_revision + case when archived_at is null then 1 else 0 end where space_id=$1 and id=$2`, [spaceId,row.id,columns.length+index])
-  await client.query('update team.boards set workflow_revision=workflow_revision+1 where space_id=$1', [spaceId])
+  await client.query('update team.boards set workflow_revision=workflow_revision+1,agent_work_enabled=$2,agent_review_column_id=$3 where space_id=$1', [spaceId,agentWork.enabled,validReview ? agentWork.reviewColumnId : null])
+  if(previousAgentWork.enabled && !agentWork.enabled)await client.query('delete from team.task_claims where space_id=$1',[spaceId])
   const workflow = await readWorkflow(client, spaceId)
   await client.query(`insert into team.space_audit(space_id,actor_identity_id,action,details,occurred_at)
     values($1,$2,'workflow-changed',$3,now())`, [spaceId, identityId, { revision: workflow.revision }])
   return workflow
+}
+
+export async function readAgentWorkSettings(client:DbClient,spaceId:string):Promise<AgentWorkSettings> {
+  return (await client.query<AgentWorkSettings>('select agent_work_enabled as enabled,agent_review_column_id as "reviewColumnId" from team.boards where space_id=$1',[spaceId])).rows[0]
+}
+export async function requireAgentWorkSettings(client:DbClient,spaceId:string):Promise<AgentWorkSettings> {
+  const settings=await readAgentWorkSettings(client,spaceId)
+  if(!settings.enabled)throw new BoardRejection({kind:'configuration',reason:'agent-work-disabled'})
+  const destination=await client.query("select id from team.board_columns where space_id=$1 and id=$2 and archived_at is null and flow_role<>'complete'",[spaceId,settings.reviewColumnId])
+  if(!destination.rowCount)throw new BoardRejection({kind:'configuration',reason:'review-column-invalid'})
+  return settings
 }

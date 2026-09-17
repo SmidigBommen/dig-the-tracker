@@ -11,6 +11,7 @@ type ClaimCommand=Extract<BoardCommand,{kind:'claim-task'|'renew-task-claim'|'re
 export async function currentClaim(client:DbClient,spaceId:string,taskId:string):Promise<TaskClaim|null> {
   const row=(await client.query<{id:string;run_id:string;started_at:Date;checked_in_at:Date;expires_at:Date;assignee_id:string}>(`select c.*,t.assignee_id from team.task_claims c
     join team.tasks t on t.id=c.task_id and t.space_id=c.space_id where c.space_id=$1 and c.task_id=$2
+      and exists(select 1 from team.boards b where b.space_id=c.space_id and b.agent_work_enabled)
       and c.expires_at>coalesce(nullif(current_setting('dig.claim_clock',true),'')::timestamptz,now()) and t.archived_at is null and t.closed_at is null`,[spaceId,taskId])).rows[0]
   if(!row)return null
   const run=await readLiveRun(client,row.run_id,spaceId)
@@ -50,7 +51,11 @@ export async function changeClaim(client:DbClient,claims:Claims,command:ClaimCom
 }
 
 export async function authorizeAgentCommand(client:DbClient,claims:Claims,command:BoardCommand):Promise<void> {
-  if(!claims.agent)return
+  if(!claims.agent) {
+    if(command.kind==='report-blocker' || command.kind==='handoff-review')throw new BoardRejection({kind:'forbidden'})
+    return
+  }
+  if(command.kind==='report-blocker' || command.kind==='handoff-review') {await requireClaim(client,claims,command.task.taskId);return}
   if(command.kind==='capture-task') {
     if(Object.keys(command.input).some(key=>!['title','description','tags','parentTaskId'].includes(key)))throw new BoardRejection({kind:'forbidden'})
     if(command.input.parentTaskId)await requireClaim(client,claims,command.input.parentTaskId)
@@ -67,6 +72,8 @@ export async function authorizeAgentCommand(client:DbClient,claims:Claims,comman
     const column=(await client.query<{flow_role:string}>('select flow_role from team.board_columns where space_id=$1 and id::text=$2 and archived_at is null',[claims.spaceId,command.destination.columnId])).rows[0]
     if(!column)throw new BoardRejection({kind:'not-found'})
     if(column.flow_role==='complete')throw new BoardRejection({kind:'forbidden'})
+    const review=await client.query('select id from team.boards where space_id=$1 and agent_review_column_id::text=$2',[claims.spaceId,command.destination.columnId])
+    if(review.rowCount)throw new BoardRejection({kind:'conflict',reason:'review-handoff-required'})
     return
   }
   throw new BoardRejection({kind:'forbidden'})

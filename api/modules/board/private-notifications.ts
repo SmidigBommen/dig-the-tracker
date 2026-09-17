@@ -6,9 +6,9 @@ import { BoardRejection, decodeCursor, encodeCursor, pageSize } from './private-
 export async function notify(client: DbClient, spaceId: string, actorId: string, taskId: string,
   recipients: Array<{ memberId: string; kind: NotificationView['kind'] }>, commentId?: string) {
   for (const recipient of recipients) {
-    if (recipient.memberId === actorId) continue
-    const inserted = await client.query(`insert into team.notifications (space_id, recipient_member_id, actor_member_id, task_id, comment_id, kind)
-      select $1, id, $3, $4, $5, $6 from team.members where space_id = $1 and id = $2 and ended_at is null`,
+    if (recipient.memberId === actorId && recipient.kind!=='agent-blocked' && recipient.kind!=='agent-review') continue
+    const inserted = await client.query(`insert into team.notifications (space_id, recipient_member_id, actor_member_id, task_id, comment_id, kind,agent_attribution)
+      select $1, id, $3, $4, $5, $6,nullif(current_setting('dig.agent_attribution',true),'')::jsonb from team.members where space_id = $1 and id = $2 and ended_at is null`,
     [spaceId, recipient.memberId, actorId, taskId, commentId ?? null, recipient.kind])
     if (inserted.rowCount) await advanceInboxRevision(client, spaceId, recipient.memberId)
   }
@@ -29,7 +29,7 @@ export async function inboxPage(client: DbClient, spaceId: string, memberId: str
   await client.query('delete from team.notifications where space_id = $1 and recipient_member_id = $2 and expires_at <= now()', [spaceId, memberId])
   const result = await client.query<{
     id: NotificationId; ordering_key: string; task_id: TaskId; key: TaskKey; title: string; kind: NotificationView['kind'];
-    actor_member_id: MemberId; display_name: string; created_at: Date; expires_at: Date; read_at: Date | null;
+    agent_attribution:NotificationView['agent']|null; actor_member_id: MemberId; display_name: string; created_at: Date; expires_at: Date; read_at: Date | null;
   }>(`select notification.*, task.title, space.space_key || '-' || task.number::text as key, identity.display_name
     from team.notifications notification join team.tasks task on task.space_id = notification.space_id and task.id = notification.task_id
     join team.spaces space on space.id = notification.space_id
@@ -39,7 +39,7 @@ export async function inboxPage(client: DbClient, spaceId: string, memberId: str
       ${last ? 'and notification.ordering_key < $4::bigint' : ''} order by notification.ordering_key desc limit $3`,
   [spaceId, memberId, size + 1, ...(last ? [last] : [])])
   const rows = result.rows.slice(0, size)
-  return { items: rows.map((row) => ({ id: row.id, kind: row.kind, read: Boolean(row.read_at),
+  return { items: rows.map((row) => ({ id: row.id, kind: row.kind, ...(row.agent_attribution ? {agent:row.agent_attribution} : {}), read: Boolean(row.read_at),
     task: { id: row.task_id, key: row.key, title: row.title }, actor: { id: row.actor_member_id, displayName: row.display_name },
     createdAt: row.created_at.toISOString() as Instant, expiresAt: row.expires_at.toISOString() as Instant })),
   ...(result.rows.length > size ? { next: encodeCursor(scope, currentRevision, rows.at(-1)!.ordering_key) } : {}) }

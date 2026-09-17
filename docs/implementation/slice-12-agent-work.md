@@ -64,4 +64,4 @@ Standards review: zero unresolved findings. The deleted-Space race during connec
 
 Specification review: zero unresolved findings. Private run credentials and random recovery IDs prevent public-ID takeover; effective expiry removes badges when a token expires before its claim.
 
- Production read access was verified through the native Codex session on 2026-09-17; production agent writes have not been tested. Slice 13 handoff, Slice 14 extended absence/client checks, and Slice 10 off-server backup and monitoring gates remain open.
+Production reads, claim and assignment, and ordinary Backlog → In Progress → Review movement of COOL-4 were verified through native Codex on 2026-09-17 and confirmed by the user. That movement did not constitute a Slice 13 handoff or send a review notification. [Slice 13](slice-13-agent-handoff.md) adds those operations. Slice 14 extended absence/client checks and Slice 10 off-server backup and monitoring gates remain open.

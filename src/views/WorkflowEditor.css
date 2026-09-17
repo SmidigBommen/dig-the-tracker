@@ -18,3 +18,8 @@
 .workflow-archive li > div { display: grid; gap: var(--dig-space-1); }
 .workflow-archive strong { color: var(--dig-text); font-weight: 500; }
 @media (max-width: 650px) { .workflow-column-fields { grid-template-columns: minmax(0,1fr) minmax(0,1fr); } .workflow-column-heading { flex-wrap: wrap; } }
+
+.workflow-agent-settings { display: grid; gap: var(--dig-space-3); margin-top: var(--dig-space-6); padding-top: var(--dig-space-6); border-top: 1px solid var(--dig-border); }
+.workflow-agent-settings label { display: grid; gap: var(--dig-space-2); }
+.workflow-agent-settings label.workflow-intake { display: flex; align-items: center; min-height: var(--dig-control-height); }
+.workflow-agent-settings p { margin: 0; color: var(--dig-muted); font-size: var(--dig-font-control); }
