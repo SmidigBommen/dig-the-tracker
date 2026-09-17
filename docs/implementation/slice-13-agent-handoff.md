@@ -50,4 +50,4 @@ DIG_MCP_DATABASE_URL=postgres://USER:PASSWORD@127.0.0.1:PORT/dig_mcp DIG_MCP_HAN
 
 Build first. The script revokes its temporary connection and removes local credentials afterward. The older read and claim/edit/release checks remain available through the same script.
 
-Slice 13 production deployment, Slice 14 combined desktop/absence verification, and Slice 10 off-server backup and monitoring activation remain open. Local smoke tests do not close those operational gates.
+Production deployment and the COOL-3 simulation confirmed handoff, report, claim release, and subsequent human completion on 2026-09-17. The simulation performed no code changes or tests. Slice 14 combined desktop/absence verification and Slice 10 off-server backup and monitoring activation remain open. Local smoke tests do not close those operational gates.

@@ -71,3 +71,5 @@ Last-use time means a request authenticated. It is not online status. No schedul
 - **Request or response too large:** reduce page sizes. Each read accepts at most 50 items per page.
 
 Dig accepts bearer tokens at `/mcp` only. Browser cookies do not authenticate MCP, and credentials in query strings are rejected. The existing browser HTTP endpoints remain private application interfaces, not a supported public API.
+
+For the architecture, tool lifecycle, and recovery behavior, see [How Dig's MCP works](mcp-how-it-works.md), with SVG sequence and information-flow diagrams.

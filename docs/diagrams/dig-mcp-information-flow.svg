@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1360" height="1270" viewBox="0 0 1360 1270" role="img" aria-labelledby="title desc">
+<title id="title">Dig MCP: information flow and trust boundaries</title><desc id="desc">Data flow between the person, Codex reasoning and client runtime, local workspace, Dig MCP adapter, domain modules, PostgreSQL, and the browser. Bearer authentication and private run credentials protect agent requests; human requests use a separate session.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#236342"/></marker></defs>
+<style>text{font-family:Arial,Helvetica,sans-serif;fill:#20392b} .small{font-size:14px} .body{font-size:16px} .heading{font-size:19px;font-weight:700} .title{font-size:28px;font-weight:700} .muted{fill:#50685a} .line{fill:none;stroke:#236342;stroke-width:2;marker-end:url(#arrow)} .reply{stroke-dasharray:6 4}</style>
+<rect width="1360" height="1270" fill="#fff"/>
+<text x="40" y="48" class="title" text-anchor="start"><tspan x="40" dy="0">Dig MCP: information flow</tspan></text>
+<text x="40" y="78" class="body muted" text-anchor="start"><tspan x="40" dy="0">Tools carry selected Task context and permitted operations; Dig persists state and enforces authority.</tspan></text>
+<rect x="30" y="110" width="1300" height="290" rx="10" fill="#f4f8f5" stroke="#b8cdbf"/>
+<text x="50" y="140" class="heading" text-anchor="start"><tspan x="50" dy="0">User and agent environment</tspan></text>
+<rect x="55" y="173" width="220" height="170" rx="10" fill="#fff" stroke="#b8cdbf"/>
+<text x="71" y="203" class="heading" text-anchor="start"><tspan x="71" dy="0">Person</tspan></text>
+<text x="71" y="232" class="small" text-anchor="start"><tspan x="71" dy="0">Requests work</tspan><tspan x="71" dy="20">Chooses connection scope</tspan><tspan x="71" dy="20">Reviews reports</tspan><tspan x="71" dy="20">Controls completion</tspan></text>
+<rect x="345" y="173" width="340" height="170" rx="10" fill="#fff" stroke="#b8cdbf"/>
+<text x="361" y="203" class="heading" text-anchor="start"><tspan x="361" dy="0">Codex reasoning + runtime</tspan></text>
+<text x="361" y="232" class="small" text-anchor="start"><tspan x="361" dy="0">Model selects tools from schemas</tspan><tspan x="361" dy="20">Client sends HTTPS requests</tspan><tspan x="361" dy="20">Runtime supplies bearer token</tspan><tspan x="361" dy="20">Session retains private run context</tspan></text>
+<rect x="885" y="173" width="410" height="170" rx="10" fill="#fff" stroke="#b8cdbf"/>
+<text x="901" y="203" class="heading" text-anchor="start"><tspan x="901" dy="0">Local repository and tools</tspan></text>
+<text x="901" y="232" class="small" text-anchor="start"><tspan x="901" dy="0">Code, tests, shell, Git</tspan><tspan x="901" dy="20">Separate from Dig MCP</tspan><tspan x="901" dy="20">Task access does not grant</tspan><tspan x="901" dy="20">push or deployment permission</tspan></text>
+<path d="M 275 222 H 345" class="line"/>
+<path d="M 685 260 H 885" class="line"/>
+<text x="785" y="236" class="small" text-anchor="middle"><tspan x="785" dy="0">Separate workspace</tspan><tspan x="785" dy="18">tool calls</tspan></text>
+<rect x="30" y="477" width="845" height="382" rx="10" fill="#f0f5fb" stroke="#b9cadc"/>
+<text x="50" y="508" class="heading" text-anchor="start"><tspan x="50" dy="0">Dig application server</tspan></text>
+<rect x="55" y="545" width="345" height="132" rx="10" fill="#fff" stroke="#b8cdbf"/>
+<text x="71" y="575" class="heading" text-anchor="start"><tspan x="71" dy="0">HTTP + MCP adapter</tspan></text>
+<text x="71" y="604" class="small" text-anchor="start"><tspan x="71" dy="0">Bearer authentication at /mcp</tspan><tspan x="71" dy="20">JSON-RPC and strict input schemas</tspan><tspan x="71" dy="20">Bounded input/output and concurrency</tspan></text>
+<rect x="455" y="545" width="395" height="132" rx="10" fill="#fff" stroke="#b8cdbf"/>
+<text x="471" y="575" class="heading" text-anchor="start"><tspan x="471" dy="0">Agent + Board modules</tspan></text>
+<text x="471" y="604" class="small" text-anchor="start"><tspan x="471" dy="0">Grants, membership, runs, claims</tspan><tspan x="471" dy="20">Task/workflow revision checks</tspan><tspan x="471" dy="20">Transactions, receipts, attribution</tspan></text>
+<path d="M 400 608 H 455" class="line"/>
+<path d="M 480 343 V 438 H 300 V 545" class="line"/>
+<text x="75" y="424" class="small" text-anchor="start"><tspan x="75" dy="0">HTTPS request</tspan><tspan x="75" dy="21">Tool name + arguments</tspan></text>
+<path d="M 345 545 V 460 H 590 V 343" class="line reply"/>
+<text x="595" y="424" class="small" text-anchor="start"><tspan x="595" dy="0">Tool result → model context</tspan><tspan x="595" dy="21">Task data, receipts, or faults</tspan></text>
+<rect x="55" y="719" width="795" height="114" rx="10" fill="#fff7e3" stroke="#b8cdbf"/>
+<text x="71" y="749" class="heading" text-anchor="start"><tspan x="71" dy="0">What the server does not execute</tspan></text>
+<text x="71" y="778" class="small" text-anchor="start"><tspan x="71" dy="0">Dig does not run the model, execute repository code, or launch agents.</tspan><tspan x="71" dy="20">Task text is work context; permissions come from the authenticated connection.</tspan></text>
+<rect x="945" y="550" width="365" height="258" rx="10" fill="#fff" stroke="#b8cdbf"/>
+<text x="961" y="580" class="heading" text-anchor="start"><tspan x="961" dy="0">PostgreSQL</tspan></text>
+<text x="961" y="609" class="small" text-anchor="start"><tspan x="961" dy="0">Identity and connection grants</tspan><tspan x="961" dy="20">Token hashes, run records, claims</tspan><tspan x="961" dy="20">Tasks, Comments, workflow</tspan><tspan x="961" dy="20">History and Notifications</tspan><tspan x="961" dy="20">Saved request receipts</tspan><tspan x="961" dy="20">Committed Board updates</tspan></text>
+<path d="M 850 580 H 945" class="line"/>
+<text x="897" y="562" class="small" text-anchor="middle"><tspan x="897" dy="0">SQL</tspan></text>
+<path d="M 945 635 H 850" class="line reply"/>
+<rect x="945" y="907" width="365" height="155" rx="10" fill="#fff" stroke="#b8cdbf"/>
+<text x="961" y="937" class="heading" text-anchor="start"><tspan x="961" dy="0">Human browser</tspan></text>
+<text x="961" y="966" class="small" text-anchor="start"><tspan x="961" dy="0">Sign-in through third-party OIDC</tspan><tspan x="961" dy="20">Session cookie + CSRF for changes</tspan><tspan x="961" dy="20">SSE and fresh reads update the UI</tspan></text>
+<path d="M 790 859 V 980 H 945" class="line"/>
+<text x="565" y="929" class="small" text-anchor="start"><tspan x="565" dy="0">Committed Board updates</tspan><tspan x="565" dy="21">and recipient-scoped inbox reads</tspan></text>
+<path d="M 1075 907 V 872 H 865 V 697 H 730 V 677" class="line"/>
+<text x="920" y="894" class="small" text-anchor="start"><tspan x="920" dy="0">Browser API</tspan></text>
+<rect x="55" y="1082" width="1255" height="140" rx="10" fill="#f0f7f2" stroke="#b8cdbf"/>
+<text x="71" y="1112" class="heading" text-anchor="start"><tspan x="71" dy="0">When no agent is connected</tspan></text>
+<text x="71" y="1141" class="small" text-anchor="start"><tspan x="71" dy="0">Board data, comments, and notifications remain available.</tspan><tspan x="71" dy="20">Claims expire without a listener. Human actions do not wake Codex.</tspan><tspan x="71" dy="20">On return: resolve uncertain requests, read current state, then reacquire</tspan><tspan x="71" dy="20">authority if needed. MCP transport sessions do not own work state.</tspan></text>
+<text x="40" y="1244" class="small muted" text-anchor="start"><tspan x="40" dy="0">Model hosting and retention follow the client/provider configuration. Selected tool results enter the agent’s context.</tspan></text>
+</svg>

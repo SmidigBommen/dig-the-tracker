@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="2812" viewBox="0 0 1320 2812" role="img" aria-labelledby="title desc">
+<title id="title">Dig MCP: request and review sequence</title><desc id="desc">Sequence from user request through authenticated MCP discovery, task claim, progress move, atomic handoff, and human completion. Dashed arrows are responses. Every MCP request authenticates separately.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#236342"/></marker></defs>
+<style>text{font-family:Arial,Helvetica,sans-serif;fill:#20392b} .small{font-size:14px} .body{font-size:16px} .heading{font-size:19px;font-weight:700} .title{font-size:28px;font-weight:700} .muted{fill:#50685a} .line{fill:none;stroke:#236342;stroke-width:2;marker-end:url(#arrow)} .reply{stroke-dasharray:6 4}</style>
+<rect width="1320" height="2812" fill="#fff"/>
+<text x="40" y="48" class="title" text-anchor="start"><tspan x="40" dy="0">Dig MCP: from a request to human review</tspan></text>
+<text x="40" y="78" class="body muted" text-anchor="start"><tspan x="40" dy="0">Slice 13 behavior • HTTPS tool calls • PostgreSQL owns persistent work state</tspan></text>
+<rect x="20" y="108" width="180" height="46" rx="10" fill="#f0f7f2" stroke="#b8cdbf"/>
+<text x="110" y="138" class="heading" text-anchor="middle"><tspan x="110" dy="0">Person</tspan></text>
+<line x1="110" y1="154" x2="110" y2="2727" stroke="#bfd0c4" stroke-dasharray="4 6"/>
+<rect x="290" y="108" width="180" height="46" rx="10" fill="#f0f7f2" stroke="#b8cdbf"/>
+<text x="380" y="138" class="heading" text-anchor="middle"><tspan x="380" dy="0">Codex client</tspan></text>
+<line x1="380" y1="154" x2="380" y2="2727" stroke="#bfd0c4" stroke-dasharray="4 6"/>
+<rect x="565" y="108" width="180" height="46" rx="10" fill="#f0f7f2" stroke="#b8cdbf"/>
+<text x="655" y="138" class="heading" text-anchor="middle"><tspan x="655" dy="0">Dig server</tspan></text>
+<line x1="655" y1="154" x2="655" y2="2727" stroke="#bfd0c4" stroke-dasharray="4 6"/>
+<rect x="835" y="108" width="180" height="46" rx="10" fill="#f0f7f2" stroke="#b8cdbf"/>
+<text x="925" y="138" class="heading" text-anchor="middle"><tspan x="925" dy="0">PostgreSQL</tspan></text>
+<line x1="925" y1="154" x2="925" y2="2727" stroke="#bfd0c4" stroke-dasharray="4 6"/>
+<rect x="1110" y="108" width="180" height="46" rx="10" fill="#f0f7f2" stroke="#b8cdbf"/>
+<text x="1200" y="138" class="heading" text-anchor="middle"><tspan x="1200" dy="0">Dig browser</tspan></text>
+<line x1="1200" y1="154" x2="1200" y2="2727" stroke="#bfd0c4" stroke-dasharray="4 6"/>
+<rect x="32" y="167" width="1256" height="35" rx="5" fill="#e8f2eb" stroke="none"/>
+<text x="48" y="190" class="heading" text-anchor="start"><tspan x="48" dy="0">1  Discover available capabilities</tspan></text>
+<text x="245.0" y="242" class="small" text-anchor="middle"><tspan x="245.0" dy="0">Work on COOL-3</tspan></text>
+<path d="M 110 255 H 380" class="line"/>
+<text x="517.5" y="295" class="small" text-anchor="middle"><tspan x="517.5" dy="0">initialize: protocol</tspan><tspan x="517.5" dy="18">and client capabilities</tspan></text>
+<path d="M 380 322 H 655" class="line"/>
+<text x="517.5" y="362" class="small" text-anchor="middle"><tspan x="517.5" dy="0">Protocol and server</tspan><tspan x="517.5" dy="18">capabilities</tspan></text>
+<path d="M 655 389 H 380" class="line reply"/>
+<text x="517.5" y="429" class="small" text-anchor="middle"><tspan x="517.5" dy="0">notifications/initialized;</tspan><tspan x="517.5" dy="18">then tools/list</tspan></text>
+<path d="M 380 456 H 655" class="line"/>
+<text x="517.5" y="496" class="small" text-anchor="middle"><tspan x="517.5" dy="0">Tool names, descriptions,</tspan><tspan x="517.5" dy="18">and input schemas</tspan></text>
+<path d="M 655 523 H 380" class="line reply"/>
+<rect x="32" y="567" width="1256" height="35" rx="5" fill="#e8f2eb" stroke="none"/>
+<text x="48" y="590" class="heading" text-anchor="start"><tspan x="48" dy="0">2  Read current context and claim the Task</tspan></text>
+<text x="517.5" y="628" class="small" text-anchor="middle"><tspan x="517.5" dy="0">dig_get_task +</tspan><tspan x="517.5" dy="18">dig_get_workflow</tspan></text>
+<path d="M 380 655 H 655" class="line"/>
+<text x="790.0" y="695" class="small" text-anchor="middle"><tspan x="790.0" dy="0">Recheck access; read Task,</tspan><tspan x="790.0" dy="18">discussion, and workflow</tspan></text>
+<path d="M 655 722 H 925" class="line"/>
+<text x="790.0" y="776" class="small" text-anchor="middle"><tspan x="790.0" dy="0">Current data and revisions</tspan></text>
+<path d="M 925 789 H 655" class="line reply"/>
+<text x="517.5" y="843" class="small" text-anchor="middle"><tspan x="517.5" dy="0">Bounded structured results</tspan></text>
+<path d="M 655 856 H 380" class="line reply"/>
+<text x="517.5" y="910" class="small" text-anchor="middle"><tspan x="517.5" dy="0">dig_start_run</tspan></text>
+<path d="M 380 923 H 655" class="line"/>
+<text x="790.0" y="977" class="small" text-anchor="middle"><tspan x="790.0" dy="0">Persist attributed run</tspan></text>
+<path d="M 655 990 H 925" class="line"/>
+<text x="517.5" y="1044" class="small" text-anchor="middle"><tspan x="517.5" dy="0">Run ID + private run key</tspan></text>
+<path d="M 655 1057 H 380" class="line reply"/>
+<text x="517.5" y="1111" class="small" text-anchor="middle"><tspan x="517.5" dy="0">dig_claim_task</tspan></text>
+<path d="M 380 1124 H 655" class="line"/>
+<text x="790.0" y="1164" class="small" text-anchor="middle"><tspan x="790.0" dy="0">Check assignment; reserve</tspan><tspan x="790.0" dy="18">Task for this run</tspan></text>
+<path d="M 655 1191 H 925" class="line"/>
+<text x="517.5" y="1231" class="small" text-anchor="middle"><tspan x="517.5" dy="0">Receipt with claim ID</tspan><tspan x="517.5" dy="18">and expiry</tspan></text>
+<path d="M 655 1258 H 380" class="line reply"/>
+<text x="517.5" y="1298" class="small" text-anchor="middle"><tspan x="517.5" dy="0">dig_get_task: reread</tspan><tspan x="517.5" dy="18">revision after claiming</tspan></text>
+<path d="M 380 1325 H 655" class="line"/>
+<rect x="32" y="1369" width="1256" height="35" rx="5" fill="#e8f2eb" stroke="none"/>
+<text x="48" y="1392" class="heading" text-anchor="start"><tspan x="48" dy="0">3  Record progress; work happens outside Dig</tspan></text>
+<text x="517.5" y="1430" class="small" text-anchor="middle"><tspan x="517.5" dy="0">dig_move_task</tspan><tspan x="517.5" dy="18">to In Progress</tspan></text>
+<path d="M 380 1457 H 655" class="line"/>
+<text x="790.0" y="1497" class="small" text-anchor="middle"><tspan x="790.0" dy="0">Recheck claim and revisions;</tspan><tspan x="790.0" dy="18">commit move + receipt</tspan></text>
+<path d="M 655 1524 H 925" class="line"/>
+<text x="517.5" y="1578" class="small" text-anchor="middle"><tspan x="517.5" dy="0">Movement receipt</tspan></text>
+<path d="M 655 1591 H 380" class="line reply"/>
+<rect x="245" y="1632" width="790" height="68" rx="6" fill="#fff7e3" stroke="#decea4"/>
+<text x="259" y="1654" class="small" text-anchor="start"><tspan x="259" dy="0">Coding and tests use the agent’s separate workspace tools.</tspan><tspan x="259" dy="20">The COOL-3 demonstration simulated this stage and made no code changes.</tspan></text>
+<rect x="32" y="1710" width="1256" height="35" rx="5" fill="#e8f2eb" stroke="none"/>
+<text x="48" y="1733" class="heading" text-anchor="start"><tspan x="48" dy="0">4  Hand off atomically</tspan></text>
+<text x="517.5" y="1785" class="small" text-anchor="middle"><tspan x="517.5" dy="0">Reread Task and workflow</tspan></text>
+<path d="M 380 1798 H 655" class="line"/>
+<text x="517.5" y="1838" class="small" text-anchor="middle"><tspan x="517.5" dy="0">Current Task revision and</tspan><tspan x="517.5" dy="18">review mapping revision</tspan></text>
+<path d="M 655 1865 H 380" class="line reply"/>
+<text x="517.5" y="1905" class="small" text-anchor="middle"><tspan x="517.5" dy="0">dig_handoff_review</tspan><tspan x="517.5" dy="18">with report and claim</tspan></text>
+<path d="M 380 1932 H 655" class="line"/>
+<text x="790.0" y="1972" class="small" text-anchor="middle"><tspan x="790.0" dy="0">Begin transaction;</tspan><tspan x="790.0" dy="18">check access and receipts</tspan></text>
+<path d="M 655 1999 H 925" class="line"/>
+<rect x="520" y="2040" width="620" height="88" rx="6" fill="#fff7e3" stroke="#decea4"/>
+<text x="534" y="2062" class="small" text-anchor="start"><tspan x="534" dy="0">For a new request: validate run, claim, Task, and workflow revisions.</tspan><tspan x="534" dy="20">Commit report + Review move + notification + claim release,</tspan><tspan x="534" dy="20">history, Board update, and retry receipt together.</tspan></text>
+<text x="790.0" y="2148" class="small" text-anchor="middle"><tspan x="790.0" dy="0">Commit succeeds</tspan></text>
+<path d="M 925 2161 H 655" class="line reply"/>
+<text x="517.5" y="2215" class="small" text-anchor="middle"><tspan x="517.5" dy="0">Confirmed handoff receipt</tspan></text>
+<path d="M 655 2228 H 380" class="line reply"/>
+<text x="927.5" y="2282" class="small" text-anchor="middle"><tspan x="927.5" dy="0">Browser SSE delivers committed Board update</tspan></text>
+<path d="M 655 2295 H 1200" class="line"/>
+<text x="245.0" y="2349" class="small" text-anchor="middle"><tspan x="245.0" dy="0">Work is ready for human review</tspan></text>
+<path d="M 380 2362 H 110" class="line reply"/>
+<rect x="32" y="2406" width="1256" height="35" rx="5" fill="#e8f2eb" stroke="none"/>
+<text x="48" y="2429" class="heading" text-anchor="start"><tspan x="48" dy="0">5  Human review and completion</tspan></text>
+<text x="655.0" y="2481" class="small" text-anchor="middle"><tspan x="655.0" dy="0">Read report, comment, and mark complete</tspan></text>
+<path d="M 110 2494 H 1200" class="line"/>
+<text x="927.5" y="2548" class="small" text-anchor="middle"><tspan x="927.5" dy="0">Browser API with session + CSRF</tspan></text>
+<path d="M 1200 2561 H 655" class="line"/>
+<text x="790.0" y="2601" class="small" text-anchor="middle"><tspan x="790.0" dy="0">Validate and commit</tspan><tspan x="790.0" dy="18">human action</tspan></text>
+<path d="M 655 2628 H 925" class="line"/>
+<text x="927.5" y="2682" class="small" text-anchor="middle"><tspan x="927.5" dy="0">Updated Task: Done</tspan></text>
+<path d="M 655 2695 H 1200" class="line reply"/>
+<text x="40" y="2776" class="small muted" text-anchor="start"><tspan x="40" dy="0">Solid arrows: requests/actions. Dashed arrows: responses. Every MCP request authenticates; checks are abbreviated here.</tspan></text>
+</svg>

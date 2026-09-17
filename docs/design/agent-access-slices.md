@@ -1,6 +1,6 @@
 # Agent access delivery plan
 
-Status: Slices 11 through 13 are implemented locally. Production reads, claim, assignment, and ordinary movement were verified through native Codex on 2026-09-17. Slice 13 deployment and Slice 14 combined client/absence verification remain open. See [Slice 11 evidence](../implementation/slice-11-agent-read-access.md), [Slice 12 evidence](../implementation/slice-12-agent-work.md), and [Slice 13 evidence](../implementation/slice-13-agent-handoff.md). The original Slice 10 operational release gates remain open independently.
+Status: Slices 11 through 13 are implemented locally. Production reads, claim, assignment, and ordinary movement were verified through native Codex on 2026-09-17. Slice 13 production handoff and human completion were verified with COOL-3. Slice 14 is tracked as COOL-6 through COOL-11; combined client/absence verification remains open. See [the Task index and acceptance map](../implementation/slice-14-agent-release.md). See [Slice 11 evidence](../implementation/slice-11-agent-read-access.md), [Slice 12 evidence](../implementation/slice-12-agent-work.md), and [Slice 13 evidence](../implementation/slice-13-agent-handoff.md). The original Slice 10 operational release gates remain open independently.
 
 Each slice must provide a demonstrable outcome through real Dig authentication, domain behavior, PostgreSQL, and the appropriate browser/MCP client. Forward migrations preserve production data. Keep agent access disabled until a Space administrator explicitly enables it.
 

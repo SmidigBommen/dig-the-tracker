@@ -52,3 +52,7 @@
 ## Release and theme work
 
 For theme changes, read [personal-theme implementation notes](docs/implementation/slice-09-personal-themes.md) and [UI foundations](docs/design/design-system.md). For export changes or release verification, read [Slice 10 notes](docs/implementation/slice-10-release-readiness.md). For backup setup, restoration, monitoring, or shutdown configuration, read [release operations](docs/operations.md). Production has no off-server backup configured as of 2026-09-16. Keep this file and `ARCHITECTURE.md` synchronized with delivered behavior.
+
+## Tracked implementation work
+
+Use the connected Dig Board alongside Git for planned implementation. For Slice 14, read [the Task index and acceptance map](docs/implementation/slice-14-agent-release.md). Read the current Task and discussion, claim it, and move it to In Progress before work. Record meaningful findings and verification in Task comments. Include the Task key in commits or PRs, then use an explicit blocker or review handoff. A human decides completion; pushes and deployments still need the user's instruction. Use the bundled [Dig work skill](skills/dig/references/work.md) for run, claim, and retry rules.
